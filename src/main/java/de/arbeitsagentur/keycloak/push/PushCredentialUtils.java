@@ -1,4 +1,4 @@
-package com.example.keycloak.push;
+package de.arbeitsagentur.keycloak.push;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;

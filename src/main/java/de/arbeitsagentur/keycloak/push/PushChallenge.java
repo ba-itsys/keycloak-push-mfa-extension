@@ -1,4 +1,4 @@
-package com.example.keycloak.push;
+package de.arbeitsagentur.keycloak.push;
 
 import java.time.Instant;
 import java.util.Arrays;

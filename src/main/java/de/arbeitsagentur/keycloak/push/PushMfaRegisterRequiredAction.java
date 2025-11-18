@@ -1,4 +1,4 @@
-package com.example.keycloak.push;
+package de.arbeitsagentur.keycloak.push;
 
 import jakarta.ws.rs.core.MultivaluedMap;
 import org.keycloak.authentication.InitiatedActionSupport;

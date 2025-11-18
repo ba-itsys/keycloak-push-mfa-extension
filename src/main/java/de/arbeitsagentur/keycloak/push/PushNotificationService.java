@@ -1,4 +1,4 @@
-package com.example.keycloak.push;
+package de.arbeitsagentur.keycloak.push;
 
 import org.jboss.logging.Logger;
 import org.keycloak.models.KeycloakSession;

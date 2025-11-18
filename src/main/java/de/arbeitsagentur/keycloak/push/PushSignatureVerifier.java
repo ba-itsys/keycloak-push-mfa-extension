@@ -1,4 +1,4 @@
-package com.example.keycloak.push;
+package de.arbeitsagentur.keycloak.push;
 
 import jakarta.ws.rs.BadRequestException;
 import org.keycloak.common.VerificationException;

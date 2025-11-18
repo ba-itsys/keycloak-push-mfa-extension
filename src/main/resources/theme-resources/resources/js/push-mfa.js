@@ -43,30 +43,14 @@
 
     function createChallengeWatcher(config) {
         var eventsUrl = config.eventsUrl || '';
-        var fallbackMillis = typeof config.fallbackMillis === 'number' ? config.fallbackMillis : 0;
         var formId = config.targetFormId;
-        var fallbackTimer = null;
-
-        function scheduleFallback() {
-            if (!fallbackMillis || fallbackMillis <= 0) {
-                return;
-            }
-            if (fallbackTimer) {
-                clearTimeout(fallbackTimer);
-            }
-            fallbackTimer = window.setTimeout(function () {
-                submitForm(formId);
-            }, fallbackMillis);
-        }
 
         if (!eventsUrl) {
-            scheduleFallback();
             return;
         }
 
         if (typeof EventSource === 'undefined') {
-            console.warn('push-mfa: EventSource unsupported, falling back to timer');
-            scheduleFallback();
+            console.warn('push-mfa: EventSource unsupported in this browser');
             return;
         }
 
@@ -75,9 +59,6 @@
             try {
                 var payload = event && event.data ? JSON.parse(event.data) : {};
                 if (payload.status && payload.status !== 'PENDING') {
-                    if (fallbackTimer) {
-                        clearTimeout(fallbackTimer);
-                    }
                     source.close();
                     submitForm(formId);
                 }
@@ -87,9 +68,7 @@
         });
 
         source.addEventListener('error', function (err) {
-            console.warn('push-mfa: SSE error, switching to fallback timer', err);
-            source.close();
-            scheduleFallback();
+            console.warn('push-mfa: SSE error (EventSource will retry automatically)', err);
         });
     }
 
@@ -106,8 +85,7 @@
     function initLoginPage(root, config) {
         createChallengeWatcher({
             eventsUrl: config.eventsUrl,
-            targetFormId: config.formId,
-            fallbackMillis: config.fallbackMillis || 0
+            targetFormId: config.formId
         });
     }
 
@@ -124,11 +102,9 @@
                     qrPayload: dataset.pushQrValue || ''
                 });
             } else if (page === 'login-wait') {
-                var fallback = parseInt(dataset.pushFallbackMs, 10);
                 initLoginPage(node, {
                     eventsUrl: dataset.pushEventsUrl || '',
-                    formId: dataset.pushFormId || '',
-                    fallbackMillis: isNaN(fallback) ? 0 : fallback
+                    formId: dataset.pushFormId || ''
                 });
             }
         });

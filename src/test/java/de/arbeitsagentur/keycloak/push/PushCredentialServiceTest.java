@@ -1,4 +1,4 @@
-package com.example.keycloak.push;
+package de.arbeitsagentur.keycloak.push;
 
 import org.junit.jupiter.api.Test;
 import org.keycloak.credential.CredentialModel;

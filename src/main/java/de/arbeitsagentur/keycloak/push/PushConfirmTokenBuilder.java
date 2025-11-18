@@ -1,4 +1,4 @@
-package com.example.keycloak.push;
+package de.arbeitsagentur.keycloak.push;
 
 import jakarta.ws.rs.core.UriBuilder;
 import org.keycloak.crypto.KeyUse;
@@ -8,7 +8,6 @@ import org.keycloak.jose.jws.JWSBuilder;
 import org.keycloak.jose.jws.JWSBuilder.EncodingBuilder;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
-import org.keycloak.models.UserModel;
 
 import java.net.URI;
 import java.security.PrivateKey;
@@ -16,16 +15,18 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 
-final class PushEnrollmentTokenBuilder {
+final class PushConfirmTokenBuilder {
 
-    private PushEnrollmentTokenBuilder() {
+    private PushConfirmTokenBuilder() {
     }
 
     static String build(KeycloakSession session,
                         RealmModel realm,
-                        UserModel user,
-                        PushChallenge challenge,
-                        URI baseUri) {
+                        String pseudonymousUserId,
+                        String challengeId,
+                        Instant challengeExpiresAt,
+                        URI baseUri,
+                        String clientId) {
         KeyWrapper key = session.keys().getActiveKey(realm, KeyUse.SIG, Algorithm.RS256.toString());
         if (key == null || key.getPrivateKey() == null) {
             throw new IllegalStateException("No active signing key for realm");
@@ -38,15 +39,16 @@ final class PushEnrollmentTokenBuilder {
 
         Map<String, Object> payload = new HashMap<>();
         payload.put("iss", issuer.toString());
-        payload.put("aud", "push-mfa");
-        payload.put("sub", user.getId());
-        payload.put("username", user.getUsername());
-        payload.put("realm", realm.getName());
-        payload.put("enrollmentId", challenge.getId());
-        payload.put("nonce", PushChallengeStore.encodeNonce(challenge.getNonce()));
-        payload.put("exp", challenge.getExpiresAt().getEpochSecond());
-        payload.put("iat", Instant.now().getEpochSecond());
-        payload.put("typ", "push-enroll-challenge");
+        payload.put("sub", pseudonymousUserId);
+        payload.put("typ", PushMfaConstants.PUSH_MESSAGE_TYPE);
+        payload.put("ver", PushMfaConstants.PUSH_MESSAGE_VERSION);
+        payload.put("cid", challengeId);
+        if (clientId != null) {
+            payload.put("client_id", clientId);
+        }
+        Instant issuedAt = Instant.now();
+        payload.put("iat", issuedAt.getEpochSecond());
+        payload.put("exp", challengeExpiresAt.getEpochSecond());
 
         Algorithm algorithm = Algorithm.RS256;
         if (key.getAlgorithm() != null) {
@@ -59,11 +61,11 @@ final class PushEnrollmentTokenBuilder {
         }
 
         PrivateKey privateKey = (PrivateKey) key.getPrivateKey();
-        EncodingBuilder encodingBuilder = new JWSBuilder()
+        EncodingBuilder builder = new JWSBuilder()
             .kid(key.getKid())
             .type("JWT")
             .jsonContent(payload);
 
-        return encodingBuilder.sign(algorithm, privateKey);
+        return builder.sign(algorithm, privateKey);
     }
 }

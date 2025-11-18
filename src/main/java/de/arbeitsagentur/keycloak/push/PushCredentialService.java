@@ -1,4 +1,4 @@
-package com.example.keycloak.push;
+package de.arbeitsagentur.keycloak.push;
 
 import org.keycloak.credential.CredentialModel;
 import org.keycloak.models.UserModel;

@@ -61,19 +61,11 @@
             }
         </style>
 
-        <#if pollingIntervalSeconds??>
-            <#assign waitSeconds = pollingIntervalSeconds?number>
-        <#else>
-            <#assign waitSeconds = 5>
-        </#if>
-        <#assign waitFallbackMs = waitSeconds * 1000>
-
         <div id="kc-push-wait-root"
              class="${properties.kcContentWrapperClass!}"
              data-push-mfa-page="login-wait"
              data-push-events-url="${pushChallengeWatchUrl!""}"
-             data-push-form-id="kc-push-form"
-             data-push-fallback-ms="${waitFallbackMs?c}">
+             data-push-form-id="kc-push-form">
             <div class="kc-push-card">
                 <p class="kc-push-hint">${msg("push-mfa-wait-details")!"Approve the notification on your device to continue."}</p>
 

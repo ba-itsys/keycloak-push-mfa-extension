@@ -12,12 +12,14 @@ public final class PushMfaConstants {
     public static final String USER_CREDENTIAL_DISPLAY_NAME = "Push MFA Device";
 
     public static final String CHALLENGE_NOTE = "push-mfa-challenge-id";
+    public static final String CHALLENGE_WATCH_SECRET_NOTE = "push-mfa-challenge-watch-secret";
     public static final String CHALLENGE_APPROVE = "approve";
     public static final String CHALLENGE_DENY = "deny";
     public static final String ENROLL_CHALLENGE_NOTE = "push-mfa-enroll-challenge-id";
     public static final String ENROLL_SSE_TOKEN_NOTE = "push-mfa-enroll-sse-token";
     public static final String PUSH_MESSAGE_VERSION = "1";
     public static final String PUSH_MESSAGE_TYPE = "1";
+    public static final String PUSH_APP_URI_PREFIX = "push-mfa-login-app://?token=";
 
     public static final int NONCE_BYTES_SIZE = 32;
     public static final Duration CHALLENGE_TTL = Duration.ofSeconds(120);

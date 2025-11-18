@@ -56,6 +56,7 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Re
         form.setAttribute("pushUsername", context.getUser().getUsername());
         form.setAttribute("enrollmentToken", enrollmentToken);
         form.setAttribute("qrPayload", enrollmentToken);
+        form.setAttribute("pushQrUri", PushMfaConstants.PUSH_APP_URI_PREFIX + enrollmentToken);
         form.setAttribute("enrollChallengeId", challenge.getId());
         form.setAttribute("pollingIntervalSeconds", 3);
         String eventsUrl = buildEnrollmentEventsUrl(context, challenge);

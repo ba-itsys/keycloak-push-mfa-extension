@@ -7,10 +7,12 @@ services:
       - start-dev
       - --debug
       - --verbose
+      - --features=dpop
     environment:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
       KC_LOG_LEVEL: info
+      KC_FEATURES: dpop
       JAVA_OPTS_APPEND: -Dkeycloak.migration.dir=/opt/keycloak/data/import -Dkeycloak.migration.strategy=OVERWRITE_EXISTING
     ports:
       - "8080:8080"

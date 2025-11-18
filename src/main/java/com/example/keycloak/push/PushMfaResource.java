@@ -28,6 +28,10 @@ import org.keycloak.TokenVerifier.Predicate;
 import org.keycloak.common.VerificationException;
 import org.keycloak.crypto.SignatureProvider;
 import org.keycloak.crypto.SignatureVerifierContext;
+import org.keycloak.crypto.KeyWrapper;
+import org.keycloak.crypto.KeyType;
+import org.keycloak.crypto.AsymmetricSignatureVerifierContext;
+import org.keycloak.crypto.ECDSASignatureVerifierContext;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
@@ -37,10 +41,12 @@ import org.keycloak.services.Urls;
 import org.keycloak.util.TokenUtil;
 import org.keycloak.jose.jws.Algorithm;
 import org.keycloak.jose.jws.JWSInput;
-import org.keycloak.jose.jws.crypto.RSAProvider;
+import org.keycloak.jose.jwk.JWK;
 import org.keycloak.util.JsonSerialization;
+import org.keycloak.util.JWKSUtils;
 
 import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
@@ -49,13 +55,13 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.HashMap;
 import java.util.concurrent.CompletableFuture;
-import java.security.PublicKey;
 
 @Path("/")
 @Produces(MediaType.APPLICATION_JSON)
 public class PushMfaResource {
 
     private static final Logger LOG = Logger.getLogger(PushMfaResource.class);
+    private static final SecureRandom RANDOM = new SecureRandom();
 
     private final KeycloakSession session;
     private final PushChallengeStore challengeStore;
@@ -94,9 +100,7 @@ public class PushMfaResource {
         }
 
         Algorithm algorithm = deviceResponse.getHeader().getAlgorithm();
-        if (algorithm == null || !algorithm.name().startsWith("RS")) {
-            throw new BadRequestException("Unsupported signature algorithm: " + algorithm);
-        }
+        requireSupportedAlgorithm(algorithm, "enrollment token");
 
         JsonNode payload;
         try {
@@ -136,13 +140,10 @@ public class PushMfaResource {
         if (jwkNode.isMissingNode() || jwkNode.isNull()) {
             throw new BadRequestException("Enrollment token is missing cnf.jwk claim");
         }
+        KeyWrapper deviceKey = keyWrapperFromNode(jwkNode);
+        ensureKeyMatchesAlgorithm(deviceKey, algorithm.name());
 
-        PublicKey devicePublicKey = PushCryptoUtils.publicKeyFromJwk(jwkNode);
-        if (devicePublicKey == null) {
-            throw new BadRequestException("Unable to derive public key from cnf.jwk");
-        }
-
-        if (!RSAProvider.verify(deviceResponse, devicePublicKey)) {
+        if (!PushSignatureVerifier.verify(deviceResponse, deviceKey)) {
             throw new ForbiddenException("Invalid enrollment token signature");
         }
 
@@ -190,7 +191,7 @@ public class PushMfaResource {
             .map(challenge -> new LoginChallenge(
                 device.user().getId(),
                 challenge.getId(),
-                challenge.getExpiresAt(),
+                challenge.getExpiresAt().toString(),
                 challenge.getClientId()))
             .toList();
         return Response.ok(Map.of("challenges", pending)).build();
@@ -236,9 +237,7 @@ public class PushMfaResource {
         }
 
         Algorithm algorithm = loginResponse.getHeader().getAlgorithm();
-        if (algorithm == null || !algorithm.name().startsWith("RS")) {
-            throw new BadRequestException("Unsupported signature algorithm: " + algorithm);
-        }
+        requireSupportedAlgorithm(algorithm, "authentication token");
 
         JsonNode payload;
         try {
@@ -262,17 +261,10 @@ public class PushMfaResource {
             throw new BadRequestException("Authentication token algorithm mismatch");
         }
 
-        PublicKey publicKey;
-        try {
-            publicKey = PushCryptoUtils.publicKeyFromJwkString(data.getPublicKeyJwk());
-        } catch (IllegalArgumentException ex) {
-            throw new BadRequestException("Stored credential contains invalid JWK");
-        }
-        if (publicKey == null) {
-            throw new BadRequestException("Stored credential missing public key material");
-        }
+        KeyWrapper publicKey = keyWrapperFromString(data.getPublicKeyJwk());
+        ensureKeyMatchesAlgorithm(publicKey, algorithm.name());
 
-        if (!RSAProvider.verify(loginResponse, publicKey)) {
+        if (!PushSignatureVerifier.verify(loginResponse, publicKey)) {
             throw new ForbiddenException("Invalid authentication token signature");
         }
 
@@ -294,6 +286,20 @@ public class PushMfaResource {
 
         challengeStore.resolve(challengeId, PushChallengeStatus.APPROVED);
         return Response.ok(Map.of("status", "approved")).build();
+    }
+
+    @GET
+    @Path("login/challenges/{cid}/events")
+    @Produces(MediaType.SERVER_SENT_EVENTS)
+    public void streamLoginChallengeEvents(@PathParam("cid") String challengeId,
+                                           @QueryParam("secret") String secret,
+                                           @Context SseEventSink sink,
+                                           @Context Sse sse) {
+        if (sink == null || sse == null) {
+            return;
+        }
+        LOG.infof("Received login SSE stream request for challenge %s", challengeId);
+        CompletableFuture.runAsync(() -> emitLoginChallengeEvents(challengeId, secret, sink, sse));
     }
 
     @PUT
@@ -331,16 +337,16 @@ public class PushMfaResource {
         JsonNode jwkNode = Optional.ofNullable(request.publicKeyJwk())
             .orElseThrow(() -> new BadRequestException("Request missing publicKeyJwk"));
         String algorithm = require(request.algorithm(), "algorithm");
+        requireSupportedAlgorithm(algorithm, "rotate-key request");
+        String normalizedAlgorithm = algorithm.toUpperCase();
 
-        PublicKey newPublicKey = PushCryptoUtils.publicKeyFromJwk(jwkNode);
-        if (newPublicKey == null) {
-            throw new BadRequestException("Unable to derive public key from publicKeyJwk");
-        }
+        KeyWrapper newKey = keyWrapperFromNode(jwkNode);
+        ensureKeyMatchesAlgorithm(newKey, normalizedAlgorithm);
 
         PushCredentialData current = device.credentialData();
         PushCredentialData updated = new PushCredentialData(
             jwkNode.toString(),
-            algorithm,
+            normalizedAlgorithm,
             Instant.now().toEpochMilli(),
             current.getDeviceType(),
             current.getFirebaseId(),
@@ -353,6 +359,14 @@ public class PushMfaResource {
 
     private RealmModel realm() {
         return session.getContext().getRealm();
+    }
+
+    private UserModel userByUsername(String username) {
+        UserModel user = session.users().getUserByUsername(realm(), username);
+        if (user == null) {
+            throw new NotFoundException("User not found");
+        }
+        return user;
     }
 
     private UserModel getUser(String userId) {
@@ -456,9 +470,7 @@ public class PushMfaResource {
         }
 
         Algorithm algorithm = dpop.getHeader().getAlgorithm();
-        if (algorithm == null || !algorithm.name().startsWith("RS")) {
-            throw new BadRequestException("Unsupported DPoP algorithm: " + algorithm);
-        }
+        requireSupportedAlgorithm(algorithm, "DPoP proof");
 
         String typ = dpop.getHeader().getType();
         if (typ == null || !"dpop+jwt".equalsIgnoreCase(typ)) {
@@ -518,17 +530,10 @@ public class PushMfaResource {
             throw new BadRequestException("DPoP algorithm mismatch");
         }
 
-        PublicKey publicKey;
-        try {
-            publicKey = PushCryptoUtils.publicKeyFromJwkString(credentialData.getPublicKeyJwk());
-        } catch (IllegalArgumentException ex) {
-            throw new BadRequestException("Stored credential contains invalid JWK");
-        }
-        if (publicKey == null) {
-            throw new BadRequestException("Stored credential missing public key material");
-        }
+        KeyWrapper keyWrapper = keyWrapperFromString(credentialData.getPublicKeyJwk());
+        ensureKeyMatchesAlgorithm(keyWrapper, algorithm.name());
 
-        if (!RSAProvider.verify(dpop, publicKey)) {
+        if (!PushSignatureVerifier.verify(dpop, keyWrapper)) {
             throw new ForbiddenException("Invalid DPoP proof signature");
         }
 
@@ -548,15 +553,24 @@ public class PushMfaResource {
         try {
             JsonNode jwk = JsonSerialization.mapper.readTree(jwkJson);
             String kty = require(jwk.path("kty").asText(null), "kty");
-            if (!"RSA".equalsIgnoreCase(kty)) {
+            var canonical = JsonSerialization.mapper.createObjectNode();
+            if ("RSA".equalsIgnoreCase(kty)) {
+                String n = require(jwk.path("n").asText(null), "n");
+                String e = require(jwk.path("e").asText(null), "e");
+                canonical.put("e", e);
+                canonical.put("kty", "RSA");
+                canonical.put("n", n);
+            } else if ("EC".equalsIgnoreCase(kty)) {
+                String crv = require(jwk.path("crv").asText(null), "crv");
+                String x = require(jwk.path("x").asText(null), "x");
+                String y = require(jwk.path("y").asText(null), "y");
+                canonical.put("crv", crv);
+                canonical.put("kty", "EC");
+                canonical.put("x", x);
+                canonical.put("y", y);
+            } else {
                 throw new BadRequestException("Unsupported key type for DPoP binding");
             }
-            String n = require(jwk.path("n").asText(null), "n");
-            String e = require(jwk.path("e").asText(null), "e");
-            var canonical = JsonSerialization.mapper.createObjectNode();
-            canonical.put("e", e);
-            canonical.put("kty", "RSA");
-            canonical.put("n", n);
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] hash = digest.digest(JsonSerialization.mapper.writeValueAsBytes(canonical));
             return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
@@ -566,6 +580,99 @@ public class PushMfaResource {
             throw new BadRequestException("Unable to compute JWK thumbprint", ex);
         }
     }
+
+    private static boolean isSupportedAlgorithmName(String algName) {
+        if (algName == null || algName.isBlank()) {
+            return false;
+        }
+        String normalized = algName.toUpperCase();
+        return normalized.startsWith("RS") || normalized.startsWith("ES");
+    }
+
+    private static void requireSupportedAlgorithm(Algorithm algorithm, String context) {
+        if (algorithm == null || !isSupportedAlgorithmName(algorithm.name())) {
+            throw new BadRequestException("Unsupported " + context + " algorithm: " + algorithm);
+        }
+    }
+
+    private static void requireSupportedAlgorithm(String algName, String context) {
+        if (!isSupportedAlgorithmName(algName)) {
+            throw new BadRequestException("Unsupported " + context + " algorithm: " + algName);
+        }
+    }
+
+    private void ensureKeyMatchesAlgorithm(KeyWrapper keyWrapper, String algorithm) {
+        String normalizedAlg = algorithm == null ? null : algorithm.toUpperCase();
+        if (normalizedAlg == null || normalizedAlg.isBlank()) {
+            throw new BadRequestException("Missing algorithm");
+        }
+        if (keyWrapper == null) {
+            throw new BadRequestException("JWK is required");
+        }
+        if (keyWrapper.getAlgorithm() != null
+            && !normalizedAlg.equalsIgnoreCase(keyWrapper.getAlgorithm())) {
+            throw new BadRequestException("JWK algorithm mismatch");
+        }
+        if (KeyType.RSA.equals(keyWrapper.getType())) {
+            if (!normalizedAlg.startsWith("RS")) {
+                throw new BadRequestException("RSA keys require RS* algorithms");
+            }
+        } else if (KeyType.EC.equals(keyWrapper.getType())) {
+            if (!normalizedAlg.startsWith("ES")) {
+                throw new BadRequestException("EC keys require ES* algorithms");
+            }
+            String curve = keyWrapper.getCurve();
+            String expectedCurve = curveForAlgorithm(normalizedAlg);
+            if (curve != null && expectedCurve != null && !expectedCurve.equalsIgnoreCase(curve)) {
+                throw new BadRequestException("EC curve " + curve + " incompatible with " + normalizedAlg);
+            }
+        } else {
+            throw new BadRequestException("Unsupported key type: " + keyWrapper.getType());
+        }
+        keyWrapper.setAlgorithm(normalizedAlg);
+    }
+
+    private String curveForAlgorithm(String algorithm) {
+        return switch (algorithm) {
+            case "ES256" -> "P-256";
+            case "ES384" -> "P-384";
+            case "ES512" -> "P-521";
+            default -> null;
+        };
+    }
+
+    private KeyWrapper keyWrapperFromNode(JsonNode jwkNode) {
+        if (jwkNode == null) {
+            throw new BadRequestException("JWK is required");
+        }
+        try {
+            JWK jwk = JsonSerialization.mapper.treeToValue(jwkNode, JWK.class);
+            KeyWrapper wrapper = JWKSUtils.getKeyWrapper(jwk);
+            if (wrapper == null) {
+                throw new BadRequestException("Unsupported JWK");
+            }
+            return wrapper;
+        } catch (BadRequestException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new BadRequestException("Unable to parse JWK", ex);
+        }
+    }
+
+    private KeyWrapper keyWrapperFromString(String jwkJson) {
+        if (jwkJson == null || jwkJson.isBlank()) {
+            throw new BadRequestException("Stored credential missing JWK");
+        }
+        try {
+            JsonNode node = JsonSerialization.mapper.readTree(jwkJson);
+            return keyWrapperFromNode(node);
+        } catch (BadRequestException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new BadRequestException("Stored credential contains invalid JWK", ex);
+        }
+    }
+
 
     private boolean ensureAuthenticationSessionActive(PushChallenge challenge) {
         String rootSessionId = challenge.getRootSessionId();
@@ -579,6 +686,64 @@ public class PushMfaResource {
         LOG.infof("Cleaning up stale challenge %s because auth session %s is gone", challenge.getId(), rootSessionId);
         challengeStore.remove(challenge.getId());
         return false;
+    }
+
+    private void emitLoginChallengeEvents(String challengeId,
+                                          String secret,
+                                          SseEventSink sink,
+                                          Sse sse) {
+        try (SseEventSink eventSink = sink) {
+            LOG.infof("Starting login SSE stream for challenge %s", challengeId);
+            if (secret == null || secret.isBlank()) {
+                LOG.infof("Login SSE rejected for %s due to missing secret", challengeId);
+                sendLoginStatusEvent(eventSink, sse, "INVALID", null);
+                return;
+            }
+
+            PushChallengeStatus lastStatus = null;
+            while (!eventSink.isClosed()) {
+                Optional<PushChallenge> challengeOpt = challengeStore.get(challengeId);
+                if (challengeOpt.isEmpty()) {
+                    LOG.infof("Login SSE challenge %s not found", challengeId);
+                    sendLoginStatusEvent(eventSink, sse, "NOT_FOUND", null);
+                    break;
+                }
+                PushChallenge challenge = challengeOpt.get();
+                if (challenge.getType() != PushChallenge.Type.AUTHENTICATION) {
+                    LOG.infof("Login SSE rejected for %s because challenge type is %s", challengeId, challenge.getType());
+                    sendLoginStatusEvent(eventSink, sse, "BAD_TYPE", null);
+                    break;
+                }
+                if (!Objects.equals(secret, challenge.getWatchSecret())) {
+                    LOG.infof("Login SSE forbidden for %s due to secret mismatch", challengeId);
+                    sendLoginStatusEvent(eventSink, sse, "FORBIDDEN", null);
+                    break;
+                }
+
+                PushChallengeStatus currentStatus = challenge.getStatus();
+                if (lastStatus != currentStatus) {
+                    sendLoginStatusEvent(eventSink, sse, currentStatus.name(), challenge);
+                    lastStatus = currentStatus;
+                }
+
+                if (currentStatus != PushChallengeStatus.PENDING) {
+                    LOG.infof("Login SSE exiting for %s after reaching status %s", challengeId, currentStatus);
+                    break;
+                }
+
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    sendLoginStatusEvent(eventSink, sse, "INTERRUPTED", null);
+                    LOG.infof("Login SSE interrupted for %s", challengeId);
+                    break;
+                }
+            }
+            LOG.infof("Login SSE stream closed for challenge %s", challengeId);
+        } catch (Exception ex) {
+            LOG.infof(ex, "Failed to stream login events for %s", challengeId);
+        }
     }
 
     private void emitEnrollmentEvents(String challengeId,
@@ -634,6 +799,36 @@ public class PushMfaResource {
         }
     }
 
+    private void sendLoginStatusEvent(SseEventSink sink,
+                                      Sse sse,
+                                      String status,
+                                      PushChallenge challenge) {
+        if (sink.isClosed()) {
+            return;
+        }
+        try {
+            String targetChallengeId = challenge != null ? challenge.getId() : "n/a";
+            LOG.infof("Emitting login SSE status %s for challenge %s", status, targetChallengeId);
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("status", status);
+            if (challenge != null) {
+                payload.put("challengeId", challenge.getId());
+                payload.put("expiresAt", challenge.getExpiresAt().toString());
+                payload.put("clientId", challenge.getClientId());
+                if (challenge.getResolvedAt() != null) {
+                    payload.put("resolvedAt", challenge.getResolvedAt().toString());
+                }
+            }
+            String data = JsonSerialization.writeValueAsString(payload);
+            sink.send(sse.newEventBuilder()
+                .name("status")
+                .data(String.class, data)
+                .build());
+        } catch (Exception ex) {
+            LOG.infof(ex, "Unable to send login SSE status %s for %s", status, challenge != null ? challenge.getId() : "n/a");
+        }
+    }
+
     private void sendEnrollmentStatusEvent(SseEventSink sink,
                                            Sse sse,
                                            String status,
@@ -668,7 +863,7 @@ public class PushMfaResource {
 
     record LoginChallenge(@JsonProperty("userId") String userId,
                           @JsonProperty("cid") String cid,
-                          @JsonProperty("expiresAt") Instant expiresAt,
+                          @JsonProperty("expiresAt") String expiresAt,
                           @JsonProperty("clientId") String clientId) {
     }
 

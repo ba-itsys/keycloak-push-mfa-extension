@@ -28,6 +28,9 @@
       "directAccessGrantsEnabled": false,
       "standardFlowEnabled": false,
       "secret": "device-client-secret",
+      "attributes": {
+        "dpopBoundAccessTokens": "true"
+      },
       "authorizationServicesEnabled": false
     }
   ],

@@ -25,6 +25,8 @@ if [[ ${1:-} == "-h" || ${1:-} == "--help" || $# -ne 1 ]]; then
 fi
 
 ENROLL_TOKEN=$1
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SIGN_JWS="$SCRIPT_DIR/sign_jws.py"
 
 if ! python3 - <<'PY' >/dev/null 2>&1; then
 import importlib.util
@@ -44,6 +46,41 @@ b64urldecode() {
 s = sys.stdin.read().strip()
 s += "=" * (-len(s) % 4)  # fix missing padding
 sys.stdout.buffer.write(base64.urlsafe_b64decode(s))'
+}
+
+to_upper() {
+  printf '%s' "${1:-}" | tr '[:lower:]' '[:upper:]'
+}
+
+sign_compact_jws() {
+  local alg=$1
+  local key_file=$2
+  local signing_input=$3
+  python3 "$SIGN_JWS" "$alg" "$key_file" "$signing_input"
+}
+
+validate_signing_alg() {
+  local alg="$1"
+  case "$DEVICE_KEY_TYPE_UPPER" in
+    RSA)
+      case "$alg" in
+        RS256|RS384|RS512) ;;
+        *) echo "error: unsupported DEVICE_SIGNING_ALG '$alg' for RSA (use RS256/RS384/RS512)" >&2; exit 1 ;;
+      esac
+      ;;
+    EC)
+      case "$alg" in
+        ES256) [[ "$DEVICE_EC_CURVE" == "P-256" ]] || { echo "error: ES256 requires DEVICE_EC_CURVE=P-256" >&2; exit 1; } ;;
+        ES384) [[ "$DEVICE_EC_CURVE" == "P-384" ]] || { echo "error: ES384 requires DEVICE_EC_CURVE=P-384" >&2; exit 1; } ;;
+        ES512) [[ "$DEVICE_EC_CURVE" == "P-521" ]] || { echo "error: ES512 requires DEVICE_EC_CURVE=P-521" >&2; exit 1; } ;;
+        *) echo "error: unsupported DEVICE_SIGNING_ALG '$alg' for EC (use ES256/ES384/ES512)" >&2; exit 1 ;;
+      esac
+      ;;
+    *)
+      echo "error: unsupported DEVICE_KEY_TYPE '$DEVICE_KEY_TYPE_UPPER'" >&2
+      exit 1
+      ;;
+  esac
 }
 
 
@@ -70,12 +107,40 @@ print(f"device-key-{uuid.uuid4()}")
 PY
 )}
 DEVICE_LABEL=${DEVICE_LABEL:-Demo Phone}
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DEVICE_STATE_DIR=${DEVICE_STATE_DIR:-"$REPO_ROOT/scripts/device-state"}
 mkdir -p "$DEVICE_STATE_DIR"
 DEVICE_PRIVATE_KEY_PATH="$DEVICE_STATE_DIR/${PSEUDONYMOUS_ID}.key"
 DEVICE_PUBLIC_KEY_PATH="$DEVICE_STATE_DIR/${PSEUDONYMOUS_ID}.pub"
+DEVICE_KEY_TYPE=${DEVICE_KEY_TYPE:-RSA}
+DEVICE_KEY_TYPE_UPPER=$(to_upper "$DEVICE_KEY_TYPE")
+DEVICE_EC_CURVE=${DEVICE_EC_CURVE:-P-256}
+DEVICE_EC_CURVE=$(to_upper "$DEVICE_EC_CURVE")
+
+case "$DEVICE_KEY_TYPE_UPPER" in
+  RSA)
+    DEVICE_SIGNING_ALG=${DEVICE_SIGNING_ALG:-RS256}
+    ;;
+  EC)
+    case "$DEVICE_EC_CURVE" in
+      P-256) OPENSSL_EC_CURVE=prime256v1; DEFAULT_EC_ALG=ES256 ;;
+      P-384) OPENSSL_EC_CURVE=secp384r1;  DEFAULT_EC_ALG=ES384 ;;
+      P-521) OPENSSL_EC_CURVE=secp521r1;  DEFAULT_EC_ALG=ES512 ;;
+      *) echo "error: unsupported DEVICE_EC_CURVE '$DEVICE_EC_CURVE' (use P-256, P-384, or P-521)" >&2; exit 1 ;;
+    esac
+    DEVICE_SIGNING_ALG=${DEVICE_SIGNING_ALG:-$DEFAULT_EC_ALG}
+    ;;
+  *)
+    echo "error: unsupported DEVICE_KEY_TYPE '$DEVICE_KEY_TYPE' (use RSA or EC)" >&2
+    exit 1
+    ;;
+esac
+DEVICE_SIGNING_ALG=$(to_upper "$DEVICE_SIGNING_ALG")
+validate_signing_alg "$DEVICE_SIGNING_ALG"
+
+if [[ "$DEVICE_KEY_TYPE_UPPER" != "EC" ]]; then
+  DEVICE_EC_CURVE=""
+fi
 
 WORKDIR=$(mktemp -d)
 cleanup() {
@@ -99,33 +164,57 @@ fi
 echo "   enrollmentId: $ENROLLMENT_ID"
 echo "   userId      : $USER_ID"
 
-echo ">> Generating device key pair"
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$DEVICE_PRIVATE_KEY_PATH" >/dev/null 2>&1
-openssl rsa -pubout -in "$DEVICE_PRIVATE_KEY_PATH" -out "$DEVICE_PUBLIC_KEY_PATH" >/dev/null 2>&1
+echo ">> Generating device key pair ($DEVICE_KEY_TYPE_UPPER)"
+if [[ "$DEVICE_KEY_TYPE_UPPER" == "EC" ]]; then
+  openssl ecparam -name "$OPENSSL_EC_CURVE" -genkey -noout -out "$DEVICE_PRIVATE_KEY_PATH" >/dev/null 2>&1
+  openssl ec -in "$DEVICE_PRIVATE_KEY_PATH" -pubout -out "$DEVICE_PUBLIC_KEY_PATH" >/dev/null 2>&1
+else
+  openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$DEVICE_PRIVATE_KEY_PATH" >/dev/null 2>&1
+  openssl rsa -pubout -in "$DEVICE_PRIVATE_KEY_PATH" -out "$DEVICE_PUBLIC_KEY_PATH" >/dev/null 2>&1
+fi
 
 echo ">> Building JWK from public key"
-DEVICE_PUBLIC_KEY_PATH="$DEVICE_PUBLIC_KEY_PATH" DEVICE_KEY_ID="$DEVICE_KEY_ID" python3 - <<'PY' > device-jwk.json
+DEVICE_PUBLIC_KEY_PATH="$DEVICE_PUBLIC_KEY_PATH" DEVICE_KEY_ID="$DEVICE_KEY_ID" DEVICE_KEY_TYPE="$DEVICE_KEY_TYPE_UPPER" DEVICE_EC_CURVE="$DEVICE_EC_CURVE" DEVICE_SIGNING_ALG="$DEVICE_SIGNING_ALG" python3 - <<'PY' > device-jwk.json
 import json, base64, os
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
 
+key_type = os.environ.get("DEVICE_KEY_TYPE", "RSA").upper()
+
 with open(os.environ['DEVICE_PUBLIC_KEY_PATH'], 'rb') as f:
     key = serialization.load_pem_public_key(f.read(), backend=default_backend())
 
-numbers = key.public_numbers()
-
-def b64(value: int) -> str:
+def b64_int(value: int) -> str:
     raw = value.to_bytes((value.bit_length() + 7) // 8, 'big')
     return base64.urlsafe_b64encode(raw).rstrip(b'=').decode('ascii')
 
-jwk = {
-    "kty": "RSA",
-    "n": b64(numbers.n),
-    "e": b64(numbers.e),
-    "alg": "RS256",
-    "use": "sig",
-    "kid": os.environ.get("DEVICE_KEY_ID", "push-device-client-key")
-}
+def b64_bytes(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b'=').decode('ascii')
+
+if key_type == "RSA":
+    numbers = key.public_numbers()
+    jwk = {
+        "kty": "RSA",
+        "n": b64_int(numbers.n),
+        "e": b64_int(numbers.e),
+        "alg": os.environ.get("DEVICE_SIGNING_ALG", "RS256"),
+        "use": "sig",
+        "kid": os.environ.get("DEVICE_KEY_ID", "push-device-client-key")
+    }
+elif key_type == "EC":
+    numbers = key.public_numbers()
+    curve = os.environ.get("DEVICE_EC_CURVE", "P-256")
+    jwk = {
+        "kty": "EC",
+        "crv": curve,
+        "x": b64_int(numbers.x),
+        "y": b64_int(numbers.y),
+        "alg": os.environ.get("DEVICE_SIGNING_ALG", "ES256"),
+        "use": "sig",
+        "kid": os.environ.get("DEVICE_KEY_ID", "push-device-client-key")
+    }
+else:
+    raise SystemExit(f"Unsupported DEVICE_KEY_TYPE: {key_type}")
 
 print(json.dumps(jwk))
 PY
@@ -145,9 +234,13 @@ ENROLL_PAYLOAD_JSON=$(jq -n \
   --argjson cnf "$(jq -c '{"jwk": .}' device-jwk.json)" \
   '{"enrollmentId": $enrollmentId, "nonce": $nonce, "sub": $sub, "deviceType": $deviceType, "firebaseId": $firebaseId, "pseudonymousUserId": $pseudonymousUserId, "deviceId": $deviceId, "deviceLabel": $deviceLabel, "exp": ($exp|tonumber), "cnf": $cnf}')
 
-ENROLL_HEADER_B64=$(printf '{"alg":"RS256","kid":"%s","typ":"JWT"}' "$DEVICE_KEY_ID" | b64urlencode)
+ENROLL_HEADER_JSON=$(jq -nc \
+  --arg alg "$DEVICE_SIGNING_ALG" \
+  --arg kid "$DEVICE_KEY_ID" \
+  '{alg:$alg,typ:"JWT",kid:$kid}')
+ENROLL_HEADER_B64=$(printf '%s' "$ENROLL_HEADER_JSON" | b64urlencode)
 ENROLL_PAYLOAD_B64=$(printf '%s' "$ENROLL_PAYLOAD_JSON" | b64urlencode)
-ENROLL_SIGNATURE_B64=$(printf '%s' "$ENROLL_HEADER_B64.$ENROLL_PAYLOAD_B64" | openssl dgst -binary -sha256 -sign "$DEVICE_PRIVATE_KEY_PATH" | b64urlencode)
+ENROLL_SIGNATURE_B64=$(sign_compact_jws "$DEVICE_SIGNING_ALG" "$DEVICE_PRIVATE_KEY_PATH" "$ENROLL_HEADER_B64.$ENROLL_PAYLOAD_B64")
 DEVICE_ENROLL_TOKEN="$ENROLL_HEADER_B64.$ENROLL_PAYLOAD_B64.$ENROLL_SIGNATURE_B64"
 
 echo ">> Submitting enrollment reply"
@@ -180,7 +273,26 @@ jq -n \
   --arg keyId "$DEVICE_KEY_ID" \
   --arg deviceLabel "$DEVICE_LABEL" \
   --argjson publicJwk "$PUBLIC_JWK" \
-  '{userId:$userId, pseudonymousUserId:$pseudonymousUserId, deviceId:$deviceId, realmBase:$realmBase, tokenEndpoint:$tokenEndpoint, clientId:$clientId, clientSecret:$clientSecret, privateKey:$privateKey, publicKey:$publicKey, deviceType:$deviceType, firebaseId:$firebaseId, keyId:$keyId, deviceLabel:$deviceLabel, publicJwk:$publicJwk}' > "$STATE_FILE"
+  --arg signingAlg "$DEVICE_SIGNING_ALG" \
+  --arg keyType "$DEVICE_KEY_TYPE_UPPER" \
+  --arg ecCurve "$DEVICE_EC_CURVE" \
+  '{userId:$userId,
+    pseudonymousUserId:$pseudonymousUserId,
+    deviceId:$deviceId,
+    realmBase:$realmBase,
+    tokenEndpoint:$tokenEndpoint,
+    clientId:$clientId,
+    clientSecret:$clientSecret,
+    privateKey:$privateKey,
+    publicKey:$publicKey,
+    deviceType:$deviceType,
+    firebaseId:$firebaseId,
+    keyId:$keyId,
+    deviceLabel:$deviceLabel,
+    publicJwk:$publicJwk,
+    signingAlg:$signingAlg,
+    keyType:$keyType,
+    ecCurve: (if $keyType == "EC" then $ecCurve else null end)}' > "$STATE_FILE"
 
 echo ">> Device state stored in $STATE_FILE"
 popd >/dev/null

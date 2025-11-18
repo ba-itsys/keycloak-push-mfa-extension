@@ -67,7 +67,13 @@
             }
         </style>
 
-        <div class="${properties.kcContentWrapperClass!}">
+        <div id="kc-push-register-root"
+             class="${properties.kcContentWrapperClass!}"
+             data-push-mfa-page="register"
+             data-push-events-url="${enrollEventsUrl!""}"
+             data-push-poll-form-id="kc-push-register-poll"
+             data-push-qr-id="kc-push-qr"
+             data-push-qr-value="${pushQrUri!""}">
             <div class="${properties.kcFormGroupClass!}">
                 <p class="kc-push-register__hint">${msg("push-mfa-register-instructions", pushUsername!"")}</p>
                 <p class="kc-push-register__hint">${msg("push-mfa-register-help")}</p>
@@ -111,111 +117,56 @@
         </div>
 
         <script src="${url.resourcesPath}/js/qrcode.min.js"></script>
+        <script src="${url.resourcesPath}/js/push-mfa.js"></script>
         <script>
-            (function() {
-                var copyButton = document.getElementById('kc-push-copy-token');
+            (function () {
+                var button = document.getElementById('kc-push-copy-token');
                 var tokenElement = document.getElementById('kc-push-token');
-                var qrContainer = document.getElementById('kc-push-qr');
-                if (qrContainer && tokenElement && typeof QRCode !== 'undefined') {
-                    var tokenValue = 'push-mfa-login-app://?token=' + tokenElement.textContent.trim();
-                    if (tokenValue) {
-                        qrContainer.innerHTML = "";
-                        new QRCode(qrContainer, {
-                            text: tokenValue,
-                            width: 240,
-                            height: 240,
-                            correctLevel: QRCode.CorrectLevel.M
-                        });
-                    }
+                if (!button || !tokenElement) {
+                    return;
                 }
-                if (copyButton && tokenElement) {
-                    var defaultLabel = copyButton.dataset.defaultLabel || copyButton.textContent;
-                    var successLabel = copyButton.dataset.successLabel || 'Copied';
-                    copyButton.addEventListener('click', function () {
-                        var button = copyButton;
-                        if (!button) {
-                            return;
-                        }
-                        var textToCopy = tokenElement.textContent.trim();
-                        var secureCopy = function () {
-                            return (navigator.clipboard && window.isSecureContext)
-                                ? navigator.clipboard.writeText(textToCopy)
-                                : Promise.reject(new Error('Clipboard API unavailable'));
-                        };
-                        var fallbackCopy = function () {
-                            return new Promise(function (resolve, reject) {
-                                try {
-                                    var temp = document.createElement('textarea');
-                                    temp.value = textToCopy;
-                                    temp.style.position = 'fixed';
-                                    temp.style.opacity = '0';
-                                    document.body.appendChild(temp);
-                                    temp.focus();
-                                    temp.select();
-                                    var ok = document.execCommand && document.execCommand('copy');
-                                    document.body.removeChild(temp);
-                                    if (!ok) {
-                                        throw new Error('execCommand failed');
-                                    }
-                                    resolve();
-                                } catch (err) {
-                                    reject(err);
-                                }
-                            });
-                        };
-
-                        secureCopy().catch(fallbackCopy).then(function () {
-                            button.classList.add('copied');
-                            button.textContent = successLabel;
-                            setTimeout(function () {
-                                button.classList.remove('copied');
-                                button.textContent = defaultLabel;
-                            }, 2000);
-                        }).catch(function (error) {
-                            console.error('Failed to copy token', error);
-                            button.classList.remove('copied');
-                            button.textContent = defaultLabel;
-                        });
-                    });
-                }
-            })();
-            (function() {
-                var pollForm = document.getElementById('kc-push-register-poll');
-                var eventsUrl = '${(enrollEventsUrl!"")?js_string}';
-
-                function submitPoll() {
-                    if (!pollForm) {
+                var defaultLabel = button.dataset.defaultLabel || button.textContent || '';
+                var successLabel = button.dataset.successLabel || defaultLabel;
+                button.addEventListener('click', function () {
+                    var value = (tokenElement.textContent || '').trim();
+                    if (!value) {
                         return;
                     }
-                    (pollForm.requestSubmit ? pollForm.requestSubmit() : pollForm.submit());
-                }
-
-                if (!eventsUrl) {
-                    console.warn('push-mfa enrollment SSE unavailable: missing eventsUrl');
-                    return;
-                }
-                if (typeof EventSource === 'undefined') {
-                    console.warn('push-mfa enrollment SSE unavailable: EventSource unsupported in this browser');
-                    return;
-                }
-
-                var source = new EventSource(eventsUrl);
-
-                source.addEventListener('status', function (event) {
-                    try {
-                        var data = event && event.data ? JSON.parse(event.data) : null;
-                        if (data && data.status && data.status !== 'PENDING') {
-                            source.close();
-                            submitPoll();
-                        }
-                    } catch (err) {
-                        console.warn('push-mfa enrollment SSE parse error', err);
+                    function fallbackCopy() {
+                        return new Promise(function (resolve, reject) {
+                            try {
+                                var textarea = document.createElement('textarea');
+                                textarea.value = value;
+                                textarea.style.position = 'fixed';
+                                textarea.style.opacity = '0';
+                                document.body.appendChild(textarea);
+                                textarea.focus();
+                                textarea.select();
+                                var ok = document.execCommand && document.execCommand('copy');
+                                document.body.removeChild(textarea);
+                                if (!ok) {
+                                    throw new Error('execCommand failed');
+                                }
+                                resolve();
+                            } catch (err) {
+                                reject(err);
+                            }
+                        });
                     }
-                });
-
-                source.addEventListener('error', function (event) {
-                    // Let EventSource handle reconnect; we only log for visibility.
-                    console.warn('push-mfa enrollment SSE error (auto-retry handled by browser)', event);
+                    var copyPromise = (navigator.clipboard && window.isSecureContext)
+                        ? navigator.clipboard.writeText(value)
+                        : fallbackCopy();
+                    copyPromise.then(function () {
+                        button.classList.add('copied');
+                        button.textContent = successLabel;
+                        setTimeout(function () {
+                            button.classList.remove('copied');
+                            button.textContent = defaultLabel;
+                        }, 2000);
+                    }).catch(function () {
+                        button.classList.remove('copied');
+                        button.textContent = defaultLabel;
+                    });
                 });
             })();
         </script>

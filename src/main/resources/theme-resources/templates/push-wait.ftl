@@ -61,7 +61,19 @@
             }
         </style>
 
-        <div class="${properties.kcContentWrapperClass!}">
+        <#if pollingIntervalSeconds??>
+            <#assign waitSeconds = pollingIntervalSeconds?number>
+        <#else>
+            <#assign waitSeconds = 5>
+        </#if>
+        <#assign waitFallbackMs = waitSeconds * 1000>
+
+        <div id="kc-push-wait-root"
+             class="${properties.kcContentWrapperClass!}"
+             data-push-mfa-page="login-wait"
+             data-push-events-url="${pushChallengeWatchUrl!""}"
+             data-push-form-id="kc-push-form"
+             data-push-fallback-ms="${waitFallbackMs?c}">
             <div class="kc-push-card">
                 <p class="kc-push-hint">${msg("push-mfa-wait-details")!"Approve the notification on your device to continue."}</p>
 
@@ -77,7 +89,9 @@
                         <div class="kc-push-actions">
                             <button id="kc-copy-confirm-token"
                                     type="button"
-                                    class="${properties.kcButtonClass!} ${properties.kcButtonSecondaryClass!}">
+                                    class="${properties.kcButtonClass!} ${properties.kcButtonSecondaryClass!}"
+                                    data-default-label="${msg("push-mfa-message-copy")!"Copy confirm token"}"
+                                    data-success-label="${msg("push-mfa-message-copied")!"Copied!"}">
                                 ${msg("push-mfa-message-copy")!"Copy confirm token"}
                             </button>
                         </div>
@@ -93,44 +107,53 @@
             </div>
         </div>
 
+        <script src="${url.resourcesPath}/js/push-mfa.js"></script>
         <script>
-            setTimeout(function () {
-                document.getElementById('kc-push-form').submit();
-            }, ${(pollingIntervalSeconds?c)!3} * 1000);
-
             (function () {
-                var copyButton = document.getElementById('kc-copy-confirm-token');
+                var button = document.getElementById('kc-copy-confirm-token');
                 var tokenBlock = document.getElementById('kc-push-confirm-token');
-                if (!copyButton || !tokenBlock) {
+                if (!button || !tokenBlock) {
                     return;
                 }
-
-                copyButton.addEventListener('click', function () {
-                    var text = (tokenBlock.textContent || '').trim();
-                    if (!text) {
+                var defaultLabel = button.dataset.defaultLabel || button.textContent || '';
+                var successLabel = button.dataset.successLabel || defaultLabel;
+                button.addEventListener('click', function () {
+                    var value = (tokenBlock.textContent || '').trim();
+                    if (!value) {
                         return;
                     }
-                    if (navigator.clipboard && window.isSecureContext) {
-                        navigator.clipboard.writeText(text).then(function () {
-                            copyButton.textContent = '${(msg("push-mfa-message-copied")!"Copied!")?js_string}';
-                            setTimeout(function () {
-                                copyButton.textContent = '${(msg("push-mfa-message-copy")!"Copy confirm token")?js_string}';
-                            }, 2000);
-                        }).catch(function (err) {
-                            console.warn('Clipboard write failed', err);
+                    function fallbackCopy() {
+                        return new Promise(function (resolve, reject) {
+                            try {
+                                var textarea = document.createElement('textarea');
+                                textarea.value = value;
+                                textarea.style.position = 'fixed';
+                                textarea.style.opacity = '0';
+                                document.body.appendChild(textarea);
+                                textarea.focus();
+                                textarea.select();
+                                var ok = document.execCommand && document.execCommand('copy');
+                                document.body.removeChild(textarea);
+                                if (!ok) {
+                                    throw new Error('execCommand failed');
+                                }
+                                resolve();
+                            } catch (err) {
+                                reject(err);
+                            }
                         });
-                    } else {
-                        var textarea = document.createElement('textarea');
-                        textarea.value = text;
-                        document.body.appendChild(textarea);
-                        textarea.select();
-                        document.execCommand('copy');
-                        document.body.removeChild(textarea);
-                        copyButton.textContent = '${(msg("push-mfa-message-copied")!"Copied!")?js_string}';
-                        setTimeout(function () {
-                            copyButton.textContent = '${(msg("push-mfa-message-copy")!"Copy confirm token")?js_string}';
-                        }, 2000);
                     }
+                    var copyPromise = (navigator.clipboard && window.isSecureContext)
+                        ? navigator.clipboard.writeText(value)
+                        : fallbackCopy();
+                    copyPromise.then(function () {
+                        button.textContent = successLabel;
+                        setTimeout(function () {
+                            button.textContent = defaultLabel;
+                        }, 2000);
+                    }).catch(function () {
+                        button.textContent = defaultLabel;
+                    });
                 });
             })();
         </script>

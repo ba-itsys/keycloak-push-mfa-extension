@@ -17,5 +17,5 @@ services:
       - "8080:8080"
       - "8787:8787"
     volumes:
-      - ./target/keycloak-push-mfa-extension-1.0.0-SNAPSHOT.jar:/opt/keycloak/providers/keycloak-push-mfa.jar:ro
+      - ./target/keycloak-push-mfa-extension.jar:/opt/keycloak/providers/keycloak-push-mfa.jar:ro
       - ./config:/opt/keycloak/data/import:ro

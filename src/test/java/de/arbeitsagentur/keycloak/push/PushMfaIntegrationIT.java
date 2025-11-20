@@ -157,14 +157,11 @@ public class PushMfaIntegrationIT {
         if (!Files.isDirectory(targetDir)) {
             throw new IllegalStateException("target directory not found. Run mvn package before integration tests.");
         }
-        try (var files = Files.list(targetDir)) {
-            return files.filter(path -> path.getFileName().toString().startsWith("keycloak-push-mfa")
-                            && path.getFileName().toString().endsWith(".jar"))
-                    .findFirst()
-                    .orElseThrow(() -> new IllegalStateException(
-                            "Provider JAR not found. Run mvn package before integration tests."));
-        } catch (Exception ex) {
-            throw new IllegalStateException("Unable to inspect target directory", ex);
+        Path candidate = targetDir.resolve("keycloak-push-mfa-extension.jar");
+        if (Files.isRegularFile(candidate)) {
+            return candidate;
         }
+        throw new IllegalStateException(
+                "Provider JAR not found at " + candidate + ". Run mvn package before integration tests.");
     }
 }

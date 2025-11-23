@@ -5,7 +5,7 @@
 :warning: This project extends Keycloak with a push-style second factor that mimics passkey primitives. After initial enrollment, the mobile app never receives the real user identifier from Keycloak; instead, it works with a pseudonymous id that only the app can map back to the real user. Everything is implemented with standard Keycloak SPIs plus a small JAX-RS resource exposed under `/realms/<realm>/push-mfa`.
 
 - Build the provider: `mvn -DskipTests package`
-- Run Keycloak locally (imports realm + loads provider): `docker compose up --build keycloak`
+- Run Keycloak locally (imports realm + loads provider): `docker compose up`
 - Keycloak admin UI: <http://localhost:8080> (`admin` / `admin`)
 - Test realm: `demo` with the user `test / test`
 

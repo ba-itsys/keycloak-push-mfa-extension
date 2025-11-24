@@ -171,7 +171,7 @@ public class PushMfaResource {
                 pushProviderType,
                 pseudonymousUserId,
                 deviceId);
-        CredentialModel credentialModel = PushCredentialService.createCredential(user, label, data);
+        PushCredentialService.createCredential(user, label, data);
         challengeStore.resolve(challenge.getId(), PushChallengeStatus.APPROVED);
 
         return Response.ok(Map.of("status", "enrolled")).build();
@@ -437,10 +437,10 @@ public class PushMfaResource {
             throw new NotAuthorizedException("DPoP access token required");
         }
         String token;
-        if (authorization.regionMatches(true, 0, "DPoP ", 0, "DPoP ".length())) {
-            token = authorization.substring("DPoP ".length()).trim();
-        } else if (authorization.regionMatches(true, 0, "Bearer ", 0, "Bearer ".length())) {
-            token = authorization.substring("Bearer ".length()).trim();
+        if (authorization.startsWith("DPoP ")) {
+            token = authorization.replaceFirst("DPoP ", "").trim();
+        } else if (authorization.startsWith("Bearer ")) {
+            token = authorization.replaceFirst("Bearer ", "").trim();
         } else {
             throw new NotAuthorizedException("DPoP access token required");
         }
@@ -632,13 +632,14 @@ public class PushMfaResource {
     }
 
     public static void ensureKeyMatchesAlgorithm(KeyWrapper keyWrapper, String algorithm) {
-        String normalizedAlg = algorithm == null ? null : algorithm.toUpperCase();
-        if (normalizedAlg == null || normalizedAlg.isBlank()) {
-            throw new BadRequestException("Missing algorithm");
-        }
         if (keyWrapper == null) {
             throw new BadRequestException("JWK is required");
         }
+        if (algorithm == null || algorithm.isBlank()) {
+            throw new BadRequestException("Missing algorithm");
+        }
+
+        String normalizedAlg = algorithm.toUpperCase();
         if (keyWrapper.getAlgorithm() != null && !normalizedAlg.equalsIgnoreCase(keyWrapper.getAlgorithm())) {
             throw new BadRequestException("JWK algorithm mismatch");
         }

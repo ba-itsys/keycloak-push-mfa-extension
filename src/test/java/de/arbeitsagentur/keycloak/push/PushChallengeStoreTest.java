@@ -20,12 +20,11 @@ class PushChallengeStoreTest {
     private static final String REALM_ID = "realm-id";
     private static final String USER_ID = "user-id";
 
-    private InMemorySingleUseObjectProvider singleUseObjects;
     private PushChallengeStore store;
 
     @BeforeEach
     void setUp() {
-        singleUseObjects = new InMemorySingleUseObjectProvider();
+        InMemorySingleUseObjectProvider singleUseObjects = new InMemorySingleUseObjectProvider();
         KeycloakSession session = Mockito.mock(KeycloakSession.class);
         Mockito.when(session.singleUseObjects()).thenReturn(singleUseObjects);
         store = new PushChallengeStore(session);

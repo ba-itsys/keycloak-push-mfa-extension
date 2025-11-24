@@ -103,7 +103,7 @@ public final class AdminClient {
         HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
         assertEquals(200, response.statusCode(), () -> "User lookup failed: " + response.body());
         JsonNode users = MAPPER.readTree(response.body());
-        if (users.isArray() && users.size() > 0) {
+        if (users.isArray() && !users.isEmpty()) {
             return users.get(0).path("id").asText(null);
         }
         return null;

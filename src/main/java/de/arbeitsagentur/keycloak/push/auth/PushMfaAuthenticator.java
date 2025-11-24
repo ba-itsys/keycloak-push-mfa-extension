@@ -224,8 +224,7 @@ public class PushMfaAuthenticator implements Authenticator {
             return;
         }
 
-        boolean alreadyRequired =
-                user.getRequiredActionsStream().anyMatch(action -> PushMfaConstants.REQUIRED_ACTION_ID.equals(action));
+        boolean alreadyRequired = user.getRequiredActionsStream().anyMatch(PushMfaConstants.REQUIRED_ACTION_ID::equals);
         if (!alreadyRequired) {
             user.addRequiredAction(PushMfaConstants.REQUIRED_ACTION_ID);
         }

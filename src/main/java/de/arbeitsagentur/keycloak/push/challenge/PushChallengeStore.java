@@ -20,11 +20,9 @@ public class PushChallengeStore {
     private static final String USER_INDEX_PREFIX = "push-mfa:user-index:";
     private static final String INDEX_CHALLENGE_IDS = "challengeIds";
 
-    private final KeycloakSession session;
     private final SingleUseObjectProvider singleUse;
 
     public PushChallengeStore(KeycloakSession session) {
-        this.session = Objects.requireNonNull(session);
         this.singleUse = Objects.requireNonNull(session.singleUseObjects());
     }
 

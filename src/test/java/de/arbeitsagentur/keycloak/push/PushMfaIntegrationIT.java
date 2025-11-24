@@ -28,7 +28,7 @@ import org.testcontainers.utility.MountableFile;
 
 @Testcontainers
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-public class PushMfaIntegrationIT {
+class PushMfaIntegrationIT {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final Path EXTENSION_JAR = locateProviderJar();

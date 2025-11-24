@@ -1,5 +1,6 @@
 package de.arbeitsagentur.keycloak.push.util;
 
+import java.io.IOException;
 import java.util.Base64;
 import org.jboss.logging.Logger;
 import org.keycloak.util.JsonSerialization;
@@ -34,7 +35,7 @@ public final class TokenLogHelper {
         }
     }
 
-    private static String decodePart(String segment) throws Exception {
+    private static String decodePart(String segment) throws IOException {
         String normalized = segment + "=".repeat((4 - segment.length() % 4) % 4);
         byte[] decoded = Base64.getUrlDecoder().decode(normalized);
         Object json = JsonSerialization.mapper.readTree(decoded);

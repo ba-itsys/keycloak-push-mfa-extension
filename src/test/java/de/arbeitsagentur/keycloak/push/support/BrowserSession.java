@@ -221,7 +221,7 @@ public final class BrowserSession {
     private String cookieHeader() {
         StringBuilder builder = new StringBuilder();
         for (HttpCookie cookie : cookieManager.getCookieStore().getCookies()) {
-            if (builder.length() > 0) {
+            if (!builder.isEmpty()) {
                 builder.append("; ");
             }
             builder.append(cookie.getName()).append('=').append(cookie.getValue());

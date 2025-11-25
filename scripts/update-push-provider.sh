@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: scripts/update-push-provider.sh <pseudonymous-user-id> <new-push-provider-id> [push-provider-type]
+Usage: scripts/update-push-provider.sh <credential-id> <new-push-provider-id> [push-provider-type]
 
 Environment overrides:
   REALM_BASE            Realm base URL (default: stored value, fallback http://localhost:8080/realms/demo)
@@ -19,7 +19,7 @@ if [[ ${1:-} == "-h" || ${1:-} == "--help" || $# -lt 2 || $# -gt 3 ]]; then
   exit $([[ $# -ge 2 && $# -le 3 ]] && [[ ${1:-} != "-h" && ${1:-} != "--help" ]] && echo 1 || echo 0)
 fi
 
-PSEUDONYMOUS_ID=$1
+CREDENTIAL_ID=$1
 NEW_PUSH_PROVIDER_ID=$2
 NEW_PUSH_PROVIDER_TYPE=${3:-${PUSH_PROVIDER_TYPE:-}}
 
@@ -30,7 +30,7 @@ common::ensure_crypto
 
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DEVICE_STATE_DIR=${DEVICE_STATE_DIR:-"$REPO_ROOT/scripts/device-state"}
-STATE_FILE="$DEVICE_STATE_DIR/${PSEUDONYMOUS_ID}.json"
+STATE_FILE="$DEVICE_STATE_DIR/${CREDENTIAL_ID}.json"
 
 if [[ ! -f "$STATE_FILE" ]]; then
   echo "error: device state file not found: $STATE_FILE" >&2
@@ -68,7 +68,7 @@ if [[ -z ${TOKEN_ENDPOINT:-} || -z ${CLIENT_ID:-} || -z ${CLIENT_SECRET:-} ]]; t
   exit 1
 fi
 
-KEY_FILE="$DEVICE_STATE_DIR/${PSEUDONYMOUS_ID}.key"
+KEY_FILE="$DEVICE_STATE_DIR/${CREDENTIAL_ID}.key"
 printf '%s' "$PRIVATE_KEY_B64" | common::write_private_key "$KEY_FILE"
 
 TOKEN_RESPONSE=$(common::fetch_access_token "$TOKEN_ENDPOINT" "$CLIENT_ID" "$CLIENT_SECRET" "$KEY_FILE" "$PUBLIC_JWK" "$KEY_ID" "$USER_ID" "$DEVICE_ID" "$SIGNING_ALG")
@@ -81,7 +81,7 @@ fi
 
 UPDATE_URL="$REALM_BASE/push-mfa/device/push-provider"
 UPDATE_DPOP=$(common::create_dpop_proof "PUT" "$UPDATE_URL" "$KEY_FILE" "$PUBLIC_JWK" "$KEY_ID" "$USER_ID" "$DEVICE_ID" "$SIGNING_ALG")
-echo ">> Updating push provider ($NEW_PUSH_PROVIDER_TYPE) for $PSEUDONYMOUS_ID"
+echo ">> Updating push provider ($NEW_PUSH_PROVIDER_TYPE) for $CREDENTIAL_ID"
 curl -s -X PUT \
   -H "Authorization: DPoP $ACCESS_TOKEN" \
   -H "DPoP: $UPDATE_DPOP" \

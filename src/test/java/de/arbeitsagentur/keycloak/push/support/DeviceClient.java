@@ -54,7 +54,7 @@ public final class DeviceClient {
                 .claim("deviceType", "ios")
                 .claim("pushProviderId", state.pushProviderId())
                 .claim("pushProviderType", state.pushProviderType())
-                .claim("pseudonymousUserId", state.pseudonymousId())
+                .claim("credentialId", state.credentialId())
                 .claim("deviceId", state.deviceId())
                 .claim("deviceLabel", state.deviceLabel())
                 .expirationTime(java.util.Date.from(Instant.now().plusSeconds(300)))
@@ -78,7 +78,7 @@ public final class DeviceClient {
         String cid = Objects.requireNonNullElse(confirm.getJWTClaimsSet().getStringClaim("cid"), challengeId);
         JWTClaimsSet loginClaims = new JWTClaimsSet.Builder()
                 .claim("cid", cid)
-                .claim("sub", state.userId())
+                .claim("credId", state.credentialId())
                 .claim("deviceId", state.deviceId())
                 .claim("action", "approve")
                 .expirationTime(java.util.Date.from(Instant.now().plusSeconds(120)))

@@ -54,8 +54,8 @@ public class PushMfaAuthenticator implements Authenticator {
 
         CredentialModel credential = credentials.get(0);
         PushCredentialData credentialData = PushCredentialService.readCredentialData(credential);
-        if (credentialData == null || credentialData.getPseudonymousUserId() == null) {
-            LOG.warn("Push credential missing pseudonymous user id; skipping push MFA");
+        if (credentialData == null || credentialData.getCredentialId() == null) {
+            LOG.warn("Push credential missing credential id; skipping push MFA");
             context.success();
             return;
         }
@@ -102,7 +102,7 @@ public class PushMfaAuthenticator implements Authenticator {
         String confirmToken = PushConfirmTokenBuilder.build(
                 context.getSession(),
                 context.getRealm(),
-                credentialData.getPseudonymousUserId(),
+                credentialData.getCredentialId(),
                 pushChallenge.getId(),
                 pushChallenge.getExpiresAt(),
                 context.getUriInfo().getBaseUri(),
@@ -110,10 +110,10 @@ public class PushMfaAuthenticator implements Authenticator {
                 clientDisplayName);
 
         LOG.debugf(
-                "Push message prepared {version=%d,type=%d,pseudonymousUserId=%s}",
+                "Push message prepared {version=%d,type=%d,credentialId=%s}",
                 PushMfaConstants.PUSH_MESSAGE_VERSION,
                 PushMfaConstants.PUSH_MESSAGE_TYPE,
-                credentialData.getPseudonymousUserId());
+                credentialData.getCredentialId());
 
         PushNotificationService.notifyDevice(
                 context.getSession(),
@@ -121,7 +121,7 @@ public class PushMfaAuthenticator implements Authenticator {
                 context.getUser(),
                 clientId,
                 confirmToken,
-                credentialData.getPseudonymousUserId(),
+                credentialData.getCredentialId(),
                 pushChallenge.getId(),
                 credentialData.getPushProviderType(),
                 credentialData.getPushProviderId());
@@ -188,19 +188,18 @@ public class PushMfaAuthenticator implements Authenticator {
                         credentialModel == null ? null : PushCredentialService.readCredentialData(credentialModel);
                 String clientId = current.getClientId();
                 String clientDisplayName = resolveClientDisplayName(context, clientId);
-                String confirmToken = (credentialModel == null
-                                || credentialData == null
-                                || credentialData.getPseudonymousUserId() == null)
-                        ? null
-                        : PushConfirmTokenBuilder.build(
-                                context.getSession(),
-                                context.getRealm(),
-                                credentialData.getPseudonymousUserId(),
-                                current.getId(),
-                                current.getExpiresAt(),
-                                context.getUriInfo().getBaseUri(),
-                                clientId,
-                                clientDisplayName);
+                String confirmToken =
+                        (credentialModel == null || credentialData == null || credentialData.getCredentialId() == null)
+                                ? null
+                                : PushConfirmTokenBuilder.build(
+                                        context.getSession(),
+                                        context.getRealm(),
+                                        credentialData.getCredentialId(),
+                                        current.getId(),
+                                        current.getExpiresAt(),
+                                        context.getUriInfo().getBaseUri(),
+                                        clientId,
+                                        clientDisplayName);
 
                 showWaitingForm(context, current, credentialData, confirmToken);
             }
@@ -266,8 +265,7 @@ public class PushMfaAuthenticator implements Authenticator {
                 .setAttribute("pollingIntervalSeconds", 5)
                 .setAttribute("pushUsername", context.getUser().getUsername())
                 .setAttribute("pushConfirmToken", confirmToken)
-                .setAttribute(
-                        "pushPseudonymousId", credentialData != null ? credentialData.getPseudonymousUserId() : null)
+                .setAttribute("pushCredentialId", credentialData != null ? credentialData.getCredentialId() : null)
                 .setAttribute("pushMessageVersion", String.valueOf(PushMfaConstants.PUSH_MESSAGE_VERSION))
                 .setAttribute("pushMessageType", String.valueOf(PushMfaConstants.PUSH_MESSAGE_TYPE));
 

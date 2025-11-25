@@ -42,10 +42,10 @@ if [[ -z $CONFIRM_PAYLOAD ]]; then
   exit 1
 fi
 
-PSEUDONYMOUS_ID=$(echo "$CONFIRM_PAYLOAD" | jq -r '.sub')
+CREDENTIAL_ID=$(echo "$CONFIRM_PAYLOAD" | jq -r '.sub')
 CHALLENGE_ID=$(echo "$CONFIRM_PAYLOAD" | jq -r '.cid // empty')
-if [[ -z $PSEUDONYMOUS_ID || $PSEUDONYMOUS_ID == "null" ]]; then
-  echo "error: confirm token missing pseudonymous user id" >&2
+if [[ -z $CREDENTIAL_ID || $CREDENTIAL_ID == "null" ]]; then
+  echo "error: confirm token missing credential id" >&2
   exit 1
 fi
 if [[ -z $CHALLENGE_ID || $CHALLENGE_ID == "null" ]]; then
@@ -53,9 +53,9 @@ if [[ -z $CHALLENGE_ID || $CHALLENGE_ID == "null" ]]; then
   exit 1
 fi
 
-STATE_FILE="$DEVICE_STATE_DIR/${PSEUDONYMOUS_ID}.json"
+STATE_FILE="$DEVICE_STATE_DIR/${CREDENTIAL_ID}.json"
 if [[ ! -f "$STATE_FILE" ]]; then
-  echo "error: no device state found for pseudonymous id '$PSEUDONYMOUS_ID'" >&2
+  echo "error: no device state found for credential id '$CREDENTIAL_ID'" >&2
   exit 1
 fi
 
@@ -82,7 +82,7 @@ if [[ -z $USER_ID || -z $DEVICE_ID || -z $PRIVATE_KEY_B64 || -z $PUBLIC_JWK || -
   exit 1
 fi
 
-KEY_FILE="$DEVICE_STATE_DIR/${PSEUDONYMOUS_ID}.key"
+KEY_FILE="$DEVICE_STATE_DIR/${CREDENTIAL_ID}.key"
 printf '%s' "$PRIVATE_KEY_B64" | common::write_private_key "$KEY_FILE"
 
 TOKEN_RESPONSE=$(common::fetch_access_token "$TOKEN_ENDPOINT" "$CLIENT_ID" "$CLIENT_SECRET" "$KEY_FILE" "$PUBLIC_JWK" "$KID" "$USER_ID" "$DEVICE_ID" "$SIGNING_ALG")
@@ -107,11 +107,11 @@ EXPIRY=$(($(date +%s) + 120))
 LOGIN_ACTION=${LOGIN_ACTION:-approve}
 LOGIN_PAYLOAD=$(jq -n \
   --arg cid "$CHALLENGE_ID" \
-  --arg sub "$USER_ID" \
+  --arg credId "$CREDENTIAL_ID" \
   --arg deviceId "$DEVICE_ID" \
   --arg exp "$EXPIRY" \
   --arg action "$LOGIN_ACTION" \
-  '{"cid": $cid, "sub": $sub, "deviceId": $deviceId, "exp": ($exp|tonumber), "action": ($action|ascii_downcase)}')
+  '{"cid": $cid, "credId": $credId, "deviceId": $deviceId, "exp": ($exp|tonumber), "action": ($action|ascii_downcase)}')
 LOGIN_HEADER_JSON=$(jq -nc --arg alg "$SIGNING_ALG" --arg kid "$KID" '{alg:$alg,typ:"JWT",kid:$kid}')
 LOGIN_HEADER_B64=$(printf '%s' "$LOGIN_HEADER_JSON" | common::b64urlencode)
 LOGIN_PAYLOAD_B64=$(printf '%s' "$LOGIN_PAYLOAD" | common::b64urlencode)

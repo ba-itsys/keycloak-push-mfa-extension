@@ -66,14 +66,14 @@
             <div class="kc-push-card">
                 <p class="kc-push-hint">${msg("push-mfa-wait-details")!"Approve the notification on your device to continue."}</p>
 
-                <#if pushConfirmToken?? && pushPseudonymousId??>
+                <#if pushConfirmToken?? && pushCredentialId??>
                     <div class="kc-push-token-card">
                         <h4>${msg("push-mfa-message-title")!"Simulated Firebase payload"}</h4>
                         <p class="kc-push-hint">
                             ${msg("push-mfa-message-hint")!"This token travels via Firebase. Use it with scripts/confirm-login.sh \"<token>\"."}
                             <br/>
-                            ${msg("push-mfa-message-user")!"Pseudonymous user id:"}
-                            <strong>${pushPseudonymousId!""}</strong>
+                            ${msg("push-mfa-message-user")!"Credential id:"}
+                            <strong>${pushCredentialId!""}</strong>
                         </p>
                         <pre class="kc-push-token" id="kc-push-confirm-token">${pushConfirmToken!""}</pre>
                         <div class="kc-push-actions">

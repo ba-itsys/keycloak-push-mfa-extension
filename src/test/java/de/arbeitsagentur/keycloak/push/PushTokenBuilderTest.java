@@ -54,7 +54,7 @@ class PushTokenBuilderTest {
         String token = PushConfirmTokenBuilder.build(
                 session,
                 realm,
-                "device-alias",
+                "credential-alias",
                 "challenge-123",
                 Instant.ofEpochSecond(1700000100),
                 URI.create("http://localhost:8080/"),
@@ -63,7 +63,7 @@ class PushTokenBuilderTest {
 
         SignedJWT jwt = SignedJWT.parse(token);
         JWTClaimsSet claims = jwt.getJWTClaimsSet();
-        assertEquals("device-alias", claims.getSubject());
+        assertEquals("credential-alias", claims.getSubject());
         assertEquals("challenge-123", claims.getStringClaim("cid"));
         assertEquals("test-client", claims.getStringClaim("client_id"));
         assertEquals("Test Client", claims.getStringClaim("client_name"));
@@ -80,7 +80,7 @@ class PushTokenBuilderTest {
         String token = PushConfirmTokenBuilder.build(
                 session,
                 realm,
-                "device-alias",
+                "credential-alias",
                 "challenge-123",
                 Instant.ofEpochSecond(1700000100),
                 URI.create("http://localhost:8080/"),

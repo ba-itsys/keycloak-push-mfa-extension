@@ -12,7 +12,7 @@ public class PushCredentialData {
     private final String deviceType;
     private final String pushProviderId;
     private final String pushProviderType;
-    private final String pseudonymousUserId;
+    private final String credentialId;
     private final String deviceId;
 
     @JsonCreator
@@ -23,7 +23,7 @@ public class PushCredentialData {
             @JsonProperty("deviceType") String deviceType,
             @JsonProperty("pushProviderId") String pushProviderId,
             @JsonProperty("pushProviderType") String pushProviderType,
-            @JsonProperty("pseudonymousUserId") String pseudonymousUserId,
+            @JsonProperty("credentialId") String credentialId,
             @JsonProperty("deviceId") String deviceId) {
         this.publicKeyJwk = publicKeyJwk;
         this.algorithm = algorithm;
@@ -33,7 +33,7 @@ public class PushCredentialData {
         this.pushProviderType = (pushProviderType == null || pushProviderType.isBlank())
                 ? PushMfaConstants.DEFAULT_PUSH_PROVIDER_TYPE
                 : pushProviderType;
-        this.pseudonymousUserId = pseudonymousUserId;
+        this.credentialId = credentialId;
         this.deviceId = deviceId;
     }
 
@@ -61,8 +61,8 @@ public class PushCredentialData {
         return pushProviderType;
     }
 
-    public String getPseudonymousUserId() {
-        return pseudonymousUserId;
+    public String getCredentialId() {
+        return credentialId;
     }
 
     public String getDeviceId() {

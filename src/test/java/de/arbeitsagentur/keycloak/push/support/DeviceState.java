@@ -6,7 +6,7 @@ public final class DeviceState {
 
     private DeviceSigningKey key;
     private final String deviceId = "device-" + UUID.randomUUID();
-    private final String pseudonymousId = "device-alias-" + UUID.randomUUID();
+    private final String credentialId = "credential-" + UUID.randomUUID();
     private String pushProviderId = "mock-push-provider";
     private String pushProviderType = "log";
     private final String deviceLabel = "Integration Test Device";
@@ -32,8 +32,8 @@ public final class DeviceState {
         return deviceId;
     }
 
-    public String pseudonymousId() {
-        return pseudonymousId;
+    public String credentialId() {
+        return credentialId;
     }
 
     public String pushProviderId() {

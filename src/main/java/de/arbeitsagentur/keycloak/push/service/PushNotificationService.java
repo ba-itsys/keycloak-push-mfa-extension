@@ -19,7 +19,7 @@ public final class PushNotificationService {
             UserModel user,
             String clientId,
             String confirmToken,
-            String pseudonymousUserId,
+            String credentialId,
             String challengeId,
             String pushProviderType,
             String pushProviderId) {
@@ -34,6 +34,6 @@ public final class PushNotificationService {
             LOG.warnf("No PushNotificationSender provider available for type %s", providerType);
             return;
         }
-        sender.send(session, realm, user, confirmToken, pseudonymousUserId, challengeId, pushProviderId, clientId);
+        sender.send(session, realm, user, confirmToken, credentialId, challengeId, pushProviderId, clientId);
     }
 }

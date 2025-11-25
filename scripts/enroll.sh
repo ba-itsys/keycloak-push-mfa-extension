@@ -14,7 +14,7 @@ Environment overrides:
   DEVICE_TYPE              Device type stored with the credential (default: ios)
   PUSH_PROVIDER_ID         Push provider identifier/token (default: demo-push-provider-token)
   PUSH_PROVIDER_TYPE       Push provider type / Keycloak SPI id (default: log)
-  PSEUDONYMOUS_ID          Pseudonymous user identifier (default: generated UUID)
+  CREDENTIAL_ID            Credential identifier stored with the user (default: generated UUID)
   DEVICE_ID                Unique device id stored with the credential (default: generated UUID)
   DEVICE_LABEL             Display label stored with the credential (default: "Demo Phone")
 EOF
@@ -64,9 +64,9 @@ DEVICE_CLIENT_SECRET=${DEVICE_CLIENT_SECRET:-device-client-secret}
 DEVICE_TYPE=${DEVICE_TYPE:-ios}
 PUSH_PROVIDER_ID=${PUSH_PROVIDER_ID:-demo-push-provider-token}
 PUSH_PROVIDER_TYPE=${PUSH_PROVIDER_TYPE:-log}
-PSEUDONYMOUS_ID=${PSEUDONYMOUS_ID:-$(python3 - <<'PY'
+CREDENTIAL_ID=${CREDENTIAL_ID:-$(python3 - <<'PY'
 import uuid
-print(f"device-alias-{uuid.uuid4()}")
+print(f"credential-{uuid.uuid4()}")
 PY
 )}
 DEVICE_ID=${DEVICE_ID:-$(python3 - <<'PY'
@@ -76,15 +76,15 @@ PY
 )}
 DEVICE_KEY_ID=${DEVICE_KEY_ID:-$(python3 - <<'PY'
 import uuid
-print(f"device-key-{uuid.uuid4()}")
+print(f"user-key-{uuid.uuid4()}")
 PY
 )}
 DEVICE_LABEL=${DEVICE_LABEL:-Demo Phone}
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DEVICE_STATE_DIR=${DEVICE_STATE_DIR:-"$REPO_ROOT/scripts/device-state"}
 mkdir -p "$DEVICE_STATE_DIR"
-DEVICE_PRIVATE_KEY_PATH="$DEVICE_STATE_DIR/${PSEUDONYMOUS_ID}.key"
-DEVICE_PUBLIC_KEY_PATH="$DEVICE_STATE_DIR/${PSEUDONYMOUS_ID}.pub"
+DEVICE_PRIVATE_KEY_PATH="$DEVICE_STATE_DIR/${CREDENTIAL_ID}.key"
+DEVICE_PUBLIC_KEY_PATH="$DEVICE_STATE_DIR/${CREDENTIAL_ID}.pub"
 DEVICE_KEY_TYPE=${DEVICE_KEY_TYPE:-RSA}
 DEVICE_KEY_TYPE_UPPER=$(common::to_upper "$DEVICE_KEY_TYPE")
 DEVICE_EC_CURVE=${DEVICE_EC_CURVE:-P-256}
@@ -137,7 +137,7 @@ fi
 echo "   enrollmentId: $ENROLLMENT_ID"
 echo "   userId      : $USER_ID"
 
-echo ">> Generating device key pair ($DEVICE_KEY_TYPE_UPPER)"
+echo ">> Generating user key pair ($DEVICE_KEY_TYPE_UPPER)"
 if [[ "$DEVICE_KEY_TYPE_UPPER" == "EC" ]]; then
   openssl ecparam -name "$OPENSSL_EC_CURVE" -genkey -noout -out "$DEVICE_PRIVATE_KEY_PATH" >/dev/null 2>&1
   openssl ec -in "$DEVICE_PRIVATE_KEY_PATH" -pubout -out "$DEVICE_PUBLIC_KEY_PATH" >/dev/null 2>&1
@@ -201,12 +201,12 @@ ENROLL_PAYLOAD_JSON=$(jq -n \
   --arg deviceType "$DEVICE_TYPE" \
   --arg pushProviderId "$PUSH_PROVIDER_ID" \
   --arg pushProviderType "$PUSH_PROVIDER_TYPE" \
-  --arg pseudonymousUserId "$PSEUDONYMOUS_ID" \
+  --arg credentialId "$CREDENTIAL_ID" \
   --arg deviceId "$DEVICE_ID" \
   --arg deviceLabel "$DEVICE_LABEL" \
   --arg exp "$EXPIRY" \
   --argjson cnf "$(jq -c '{"jwk": .}' device-jwk.json)" \
-  '{"enrollmentId": $enrollmentId, "nonce": $nonce, "sub": $sub, "deviceType": $deviceType, "pushProviderId": $pushProviderId, "pushProviderType": $pushProviderType, "pseudonymousUserId": $pseudonymousUserId, "deviceId": $deviceId, "deviceLabel": $deviceLabel, "exp": ($exp|tonumber), "cnf": $cnf}')
+  '{"enrollmentId": $enrollmentId, "nonce": $nonce, "sub": $sub, "deviceType": $deviceType, "pushProviderId": $pushProviderId, "pushProviderType": $pushProviderType, "credentialId": $credentialId, "deviceId": $deviceId, "deviceLabel": $deviceLabel, "exp": ($exp|tonumber), "cnf": $cnf}')
 
 ENROLL_HEADER_JSON=$(jq -nc \
   --arg alg "$DEVICE_SIGNING_ALG" \
@@ -228,13 +228,13 @@ echo "$ENROLL_RESPONSE" | jq
 
 PRIVATE_KEY_B64=$(base64 < "$DEVICE_PRIVATE_KEY_PATH" | tr -d '\n')
 PUBLIC_KEY_B64=$(base64 < "$DEVICE_PUBLIC_KEY_PATH" | tr -d '\n')
-STATE_FILE="$DEVICE_STATE_DIR/${PSEUDONYMOUS_ID}.json"
+STATE_FILE="$DEVICE_STATE_DIR/${CREDENTIAL_ID}.json"
 
 PUBLIC_JWK=$(cat device-jwk.json)
 
 jq -n \
   --arg userId "$USER_ID" \
-  --arg pseudonymousUserId "$PSEUDONYMOUS_ID" \
+  --arg credentialId "$CREDENTIAL_ID" \
   --arg deviceId "$DEVICE_ID" \
   --arg realmBase "$REALM_BASE" \
   --arg tokenEndpoint "$TOKEN_ENDPOINT" \
@@ -252,7 +252,7 @@ jq -n \
   --arg keyType "$DEVICE_KEY_TYPE_UPPER" \
   --arg ecCurve "$DEVICE_EC_CURVE" \
   '{userId:$userId,
-    pseudonymousUserId:$pseudonymousUserId,
+    credentialId:$credentialId,
     deviceId:$deviceId,
     realmBase:$realmBase,
     tokenEndpoint:$tokenEndpoint,

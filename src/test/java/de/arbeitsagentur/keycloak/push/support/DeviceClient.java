@@ -54,7 +54,7 @@ public final class DeviceClient {
                 .claim("deviceType", "ios")
                 .claim("pushProviderId", state.pushProviderId())
                 .claim("pushProviderType", state.pushProviderType())
-                .claim("pseudonymousUserId", state.pseudonymousId())
+                .claim("credentialId", state.credentialId())
                 .claim("deviceId", state.deviceId())
                 .claim("deviceLabel", state.deviceLabel())
                 .expirationTime(java.util.Date.from(Instant.now().plusSeconds(300)))
@@ -75,10 +75,13 @@ public final class DeviceClient {
     public void respondToChallenge(String confirmToken, String challengeId) throws Exception {
         ensureAccessToken();
         SignedJWT confirm = SignedJWT.parse(confirmToken);
-        String cid = Objects.requireNonNullElse(confirm.getJWTClaimsSet().getStringClaim("cid"), challengeId);
+        var confirmClaims = confirm.getJWTClaimsSet();
+        String cid = Objects.requireNonNullElse(confirmClaims.getStringClaim("cid"), challengeId);
+        String credId = Objects.requireNonNull(confirmClaims.getStringClaim("credId"), "Confirm token missing credId");
+        assertEquals(state.credentialId(), credId, "Confirm token carried unexpected credential id");
         JWTClaimsSet loginClaims = new JWTClaimsSet.Builder()
                 .claim("cid", cid)
-                .claim("sub", state.userId())
+                .claim("credId", credId)
                 .claim("deviceId", state.deviceId())
                 .claim("action", "approve")
                 .expirationTime(java.util.Date.from(Instant.now().plusSeconds(120)))

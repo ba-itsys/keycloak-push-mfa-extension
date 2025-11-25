@@ -15,7 +15,7 @@ public interface PushNotificationSender extends Provider {
             RealmModel realm,
             UserModel user,
             String confirmToken,
-            String pseudonymousUserId,
+            String credentialId,
             String challengeId,
             String pushProviderId,
             String clientId);

@@ -34,7 +34,7 @@ public final class DeviceSigningKey {
 
     public static DeviceSigningKey generateRsa() throws Exception {
         RSAKey rsaKey = new RSAKeyGenerator(2048)
-                .keyID("device-key-" + UUID.randomUUID())
+                .keyID("user-key-" + UUID.randomUUID())
                 .algorithm(JWSAlgorithm.RS256)
                 .keyUse(KeyUse.SIGNATURE)
                 .generate();
@@ -43,7 +43,7 @@ public final class DeviceSigningKey {
 
     public static DeviceSigningKey generateEcdsa() throws Exception {
         ECKey ecKey = new ECKeyGenerator(Curve.P_256)
-                .keyID("device-key-" + UUID.randomUUID())
+                .keyID("user-key-" + UUID.randomUUID())
                 .algorithm(JWSAlgorithm.ES256)
                 .keyUse(KeyUse.SIGNATURE)
                 .generate();

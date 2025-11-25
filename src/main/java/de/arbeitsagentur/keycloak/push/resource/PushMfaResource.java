@@ -155,7 +155,7 @@ public class PushMfaResource {
         String deviceType = require(jsonText(payload, "deviceType"), "deviceType");
         String pushProviderId = require(jsonText(payload, "pushProviderId"), "pushProviderId");
         String pushProviderType = require(jsonText(payload, "pushProviderType"), "pushProviderType");
-        String pseudonymousUserId = require(jsonText(payload, "pseudonymousUserId"), "pseudonymousUserId");
+        String credentialId = require(jsonText(payload, "credentialId"), "credentialId");
         String deviceId = require(jsonText(payload, "deviceId"), "deviceId");
 
         String labelClaim = jsonText(payload, "deviceLabel");
@@ -169,7 +169,7 @@ public class PushMfaResource {
                 deviceType,
                 pushProviderId,
                 pushProviderType,
-                pseudonymousUserId,
+                credentialId,
                 deviceId);
         PushCredentialService.createCredential(user, label, data);
         challengeStore.resolve(challenge.getId(), PushChallengeStatus.APPROVED);
@@ -269,6 +269,9 @@ public class PushMfaResource {
         if (data.getAlgorithm() != null && !algorithm.toString().equalsIgnoreCase(data.getAlgorithm())) {
             throw new BadRequestException("Authentication token algorithm mismatch");
         }
+        if (data.getCredentialId() == null || data.getCredentialId().isBlank()) {
+            throw new BadRequestException("Stored credential missing credentialId");
+        }
 
         KeyWrapper publicKey = keyWrapperFromString(data.getPublicKeyJwk());
         ensureKeyMatchesAlgorithm(publicKey, algorithm.name());
@@ -279,9 +282,9 @@ public class PushMfaResource {
 
         verifyTokenExpiration(payload.get("exp"), "authentication token");
 
-        String tokenSubject = require(jsonText(payload, "sub"), "sub");
-        if (!Objects.equals(tokenSubject, challengeUserId)) {
-            throw new ForbiddenException("Authentication token subject mismatch");
+        String tokenCredentialId = require(jsonText(payload, "credId"), "credId");
+        if (!Objects.equals(tokenCredentialId, data.getCredentialId())) {
+            throw new ForbiddenException("Authentication token credential mismatch");
         }
 
         if (PushMfaConstants.CHALLENGE_DENY.equals(tokenAction)) {
@@ -335,7 +338,7 @@ public class PushMfaResource {
                 current.getDeviceType(),
                 pushProviderId,
                 pushProviderType,
-                current.getPseudonymousUserId(),
+                current.getCredentialId(),
                 current.getDeviceId());
         PushCredentialService.updateCredential(device.user(), device.credential(), updated);
         LOG.infof(
@@ -367,7 +370,7 @@ public class PushMfaResource {
                 current.getDeviceType(),
                 current.getPushProviderId(),
                 current.getPushProviderType(),
-                current.getPseudonymousUserId(),
+                current.getCredentialId(),
                 current.getDeviceId());
         PushCredentialService.updateCredential(device.user(), device.credential(), updated);
         LOG.infof(

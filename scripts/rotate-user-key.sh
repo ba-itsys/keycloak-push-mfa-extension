@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: scripts/rotate-device-key.sh <pseudonymous-user-id>
+Usage: scripts/rotate-user-key.sh <credential-id>
 
 Environment overrides:
   REALM_BASE          Realm base URL (default: value stored during enrollment, fallback http://localhost:8080/realms/demo)
@@ -24,7 +24,7 @@ if [[ ${1:-} == "-h" || ${1:-} == "--help" || $# -ne 1 ]]; then
   exit $([[ $# -eq 1 ]] && [[ ${1:-} != "-h" && ${1:-} != "--help" ]] && echo 1 || echo 0)
 fi
 
-PSEUDONYMOUS_ID=$1
+CREDENTIAL_ID=$1
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMMON_SIGN_JWS="${COMMON_SIGN_JWS:-"$SCRIPT_DIR/sign_jws.py"}"
@@ -32,7 +32,7 @@ source "$SCRIPT_DIR/common.sh"
 common::ensure_crypto
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DEVICE_STATE_DIR=${DEVICE_STATE_DIR:-"$REPO_ROOT/scripts/device-state"}
-STATE_FILE="$DEVICE_STATE_DIR/${PSEUDONYMOUS_ID}.json"
+STATE_FILE="$DEVICE_STATE_DIR/${CREDENTIAL_ID}.json"
 
 if [[ ! -f "$STATE_FILE" ]]; then
   echo "error: device state file not found: $STATE_FILE" >&2
@@ -41,7 +41,7 @@ fi
 NEW_DEVICE_KEY_BITS=${NEW_DEVICE_KEY_BITS:-2048}
 NEW_DEVICE_KEY_ID=${NEW_DEVICE_KEY_ID:-$(python3 - <<'PY'
 import uuid
-print(f"device-key-{uuid.uuid4()}")
+print(f"user-key-{uuid.uuid4()}")
 PY
 )}
 
@@ -135,12 +135,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-KEY_FILE="$DEVICE_STATE_DIR/${PSEUDONYMOUS_ID}.key"
+KEY_FILE="$DEVICE_STATE_DIR/${CREDENTIAL_ID}.key"
 printf '%s' "$PRIVATE_KEY_B64" | common::write_private_key "$KEY_FILE"
 
 NEW_PRIV_PATH="$WORKDIR/new-device.key"
 NEW_PUB_PATH="$WORKDIR/new-device.pub"
-echo ">> Generating new device key pair ($NEW_DEVICE_KEY_TYPE_UPPER)"
+echo ">> Generating new user key pair ($NEW_DEVICE_KEY_TYPE_UPPER)"
 if [[ "$NEW_DEVICE_KEY_TYPE_UPPER" == "EC" ]]; then
   case "$NEW_DEVICE_EC_CURVE" in
     P-256) OPENSSL_NEW_CURVE=prime256v1 ;;
@@ -211,7 +211,7 @@ fi
 
 ROTATE_URL="$REALM_BASE/push-mfa/device/rotate-key"
 ROTATE_DPOP=$(common::create_dpop_proof "PUT" "$ROTATE_URL" "$KEY_FILE" "$PUBLIC_JWK" "$KEY_ID" "$USER_ID" "$DEVICE_ID" "$SIGNING_ALG")
-echo ">> Rotating device key for $PSEUDONYMOUS_ID"
+echo ">> Rotating user key for $CREDENTIAL_ID"
 RESPONSE=$(curl -s -X PUT \
   -H "Authorization: DPoP $ACCESS_TOKEN" \
   -H "DPoP: $ROTATE_DPOP" \

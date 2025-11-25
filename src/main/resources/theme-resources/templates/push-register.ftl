@@ -64,6 +64,10 @@
                 border-radius: 4px;
             }
 
+            .kc-push-register-open-app {
+                margin-top: 1rem;
+            }
+
             @media (max-width: 680px) {
                 .kc-push-register-card {
                     flex-basis: 100%;
@@ -88,6 +92,14 @@
                     <h3>${msg("push-mfa-register-qr-title")!"Scan to enroll"}</h3>
                     <div id="kc-push-qr" class="kc-push-register-qr" aria-live="polite"></div>
                     <p class="kc-push-register__hint">${msg("push-mfa-register-qr-hint")!"Scan with your companion app to autofill the enrollment token."}</p>
+                    <div class="kc-push-register-open-app">
+                        <button id="kc-push-open-app"
+                                type="button"
+                                class="${properties.kcButtonClass!} ${properties.kcButtonSecondaryClass!}"
+                                onclick="openApp('${pushQrUri!''}')">
+                            ${msg("push-mfa-open-app")!"Open App"}
+                        </button>
+                    </div>
                 </div>
                 <div class="kc-push-register-card">
                     <h3>${msg("push-mfa-register-token-label")}</h3>
@@ -155,6 +167,10 @@
                     });
                 });
             })();
+
+            function openApp(url) {
+                window.open(url);
+            }
         </script>
     </#if>
 </@layout.registrationLayout>

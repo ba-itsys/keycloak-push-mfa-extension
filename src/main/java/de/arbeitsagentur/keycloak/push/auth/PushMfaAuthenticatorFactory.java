@@ -37,7 +37,14 @@ public class PushMfaAuthenticatorFactory implements AuthenticatorFactory {
         maxPending.setHelpText("Maximum number of open login challenges per user.");
         maxPending.setDefaultValue(String.valueOf(PushMfaConstants.DEFAULT_MAX_PENDING_AUTH_CHALLENGES));
 
-        CONFIG_PROPERTIES = List.of(loginTtl, maxPending);
+        ProviderConfigProperty appUniversalLink = new ProviderConfigProperty();
+        appUniversalLink.setName(PushMfaConstants.APP_UNIVERSAL_LINK_CONFIG);
+        appUniversalLink.setLabel("Companion app/universal link");
+        appUniversalLink.setType(ProviderConfigProperty.STRING_TYPE);
+        appUniversalLink.setHelpText("App link (android) or universal link (iOS) to launch companion app on the same device, e.g., https://push-mfa-app.com/");
+        appUniversalLink.setDefaultValue(PushMfaConstants.DEFAULT_APP_UNIVERSAL_LINK + "confirm");
+
+        CONFIG_PROPERTIES = List.of(loginTtl, maxPending, appUniversalLink);
     }
 
     @Override

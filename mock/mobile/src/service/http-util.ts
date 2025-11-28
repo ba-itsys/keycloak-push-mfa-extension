@@ -1,9 +1,9 @@
 import {DEVICE_CLIENT_ID, DEVICE_CLIENT_SECRET} from "../server";
+import {ENROLL_COMPLETE_URL, TOKEN_ENDPOINT} from "./urls";
 
 
 export async function postEnrollComplete(enrollReplyToken: string) {
-    const url = 'http://localhost:8080/realms/demo/push-mfa/enroll/complete';
-    const res = await post(url, {'Content-Type': 'application/json'}, JSON.stringify({token: enrollReplyToken}));
+    const res = await post(ENROLL_COMPLETE_URL, {'Content-Type': 'application/json'}, JSON.stringify({token: enrollReplyToken}));
     if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${await res.text()}`);
     }
@@ -11,7 +11,6 @@ export async function postEnrollComplete(enrollReplyToken: string) {
 }
 
 export async function postConfirmLoginAccessToken(dPop : string) {
-    const url = 'http://localhost:8080/realms/demo/protocol/openid-connect/token';
     const header = {
         'Content-Type': 'application/x-www-form-urlencoded',
         DPoP: dPop
@@ -21,13 +20,12 @@ export async function postConfirmLoginAccessToken(dPop : string) {
         client_id: DEVICE_CLIENT_ID,
         client_secret: DEVICE_CLIENT_SECRET,
     });
-    const res = await post(url, header, body);
+    const res = await post(TOKEN_ENDPOINT, header, body);
     if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${await res.text()}`);
     }
     return res.json();
 }
-
 
 async function post(url: string, headers?: HeadersInit, body?: BodyInit): Promise<Response> {
     return await fetch(url, {

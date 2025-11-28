@@ -1,8 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
 import bodyParser from 'body-parser';
-import fs from 'fs';
-import path from 'path';
 // @ts-ignore
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -34,7 +32,7 @@ const PUSH_PROVIDER_TYPE = process.env.PUSH_PROVIDER_TYPE ?? 'log';
 const DEVICE_KEY_TYPE = (process.env.DEVICE_KEY_TYPE ?? 'RSA').toUpperCase();
 const DEVICE_EC_CURVE = (process.env.DEVICE_EC_CURVE ?? 'P-256').toUpperCase();
 const DEVICE_LABEL = process.env.DEVICE_LABEL ?? 'Demo Phone';
-const PORT = Number(process.env.PORT ?? 3000);
+const PORT = Number(process.env.PORT ?? 3001);
 
 type DpopPayload = {
     htm?: string;

@@ -14,6 +14,7 @@ import jakarta.ws.rs.core.UriBuilder;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+
 import org.jboss.logging.Logger;
 import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.authentication.AuthenticationFlowError;
@@ -27,6 +28,7 @@ import org.keycloak.models.UserModel;
 import org.keycloak.models.utils.FormMessage;
 import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.sessions.AuthenticationSessionModel;
+
 
 public class PushMfaAuthenticator implements Authenticator {
 
@@ -267,7 +269,8 @@ public class PushMfaAuthenticator implements Authenticator {
                 .setAttribute("pushConfirmToken", confirmToken)
                 .setAttribute("pushCredentialId", credentialData != null ? credentialData.getCredentialId() : null)
                 .setAttribute("pushMessageVersion", String.valueOf(PushMfaConstants.PUSH_MESSAGE_VERSION))
-                .setAttribute("pushMessageType", String.valueOf(PushMfaConstants.PUSH_MESSAGE_TYPE));
+                .setAttribute("pushMessageType", String.valueOf(PushMfaConstants.PUSH_MESSAGE_TYPE))
+                .setAttribute("appUniversalLink", resolveAppUniversalLink(context));
 
         String watchUrl = buildChallengeWatchUrl(context, challengeId, watchSecret);
         if (watchUrl != null) {
@@ -351,5 +354,17 @@ public class PushMfaAuthenticator implements Authenticator {
         } catch (NumberFormatException ex) {
             return defaultValue;
         }
+    }
+
+    private String resolveAppUniversalLink(AuthenticationFlowContext context) {
+        AuthenticatorConfigModel config = context.getAuthenticatorConfig();
+        if (config == null || config.getConfig() == null) {
+            return PushMfaConstants.DEFAULT_APP_UNIVERSAL_LINK;
+        }
+        String value = config.getConfig().get(PushMfaConstants.APP_UNIVERSAL_LINK_CONFIG);
+        if (value == null || value.isBlank()) {
+            return PushMfaConstants.DEFAULT_APP_UNIVERSAL_LINK;
+        }
+        return value;
     }
 }

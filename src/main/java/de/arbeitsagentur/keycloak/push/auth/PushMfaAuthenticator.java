@@ -1,20 +1,8 @@
 package de.arbeitsagentur.keycloak.push.auth;
 
-import de.arbeitsagentur.keycloak.push.challenge.PushChallenge;
-import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStatus;
-import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStore;
-import de.arbeitsagentur.keycloak.push.credential.PushCredentialData;
-import de.arbeitsagentur.keycloak.push.credential.PushCredentialService;
-import de.arbeitsagentur.keycloak.push.service.PushNotificationService;
-import de.arbeitsagentur.keycloak.push.token.PushConfirmTokenBuilder;
-import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
-import jakarta.ws.rs.core.MultivaluedMap;
-import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.core.UriBuilder;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
-
 import org.jboss.logging.Logger;
 import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.authentication.AuthenticationFlowError;
@@ -28,7 +16,6 @@ import org.keycloak.models.UserModel;
 import org.keycloak.models.utils.FormMessage;
 import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.sessions.AuthenticationSessionModel;
-
 
 public class PushMfaAuthenticator implements Authenticator {
 

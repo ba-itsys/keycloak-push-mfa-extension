@@ -1,14 +1,8 @@
 package de.arbeitsagentur.keycloak.push.requiredaction;
 
-import de.arbeitsagentur.keycloak.push.challenge.PushChallenge;
-import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStatus;
-import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStore;
-import de.arbeitsagentur.keycloak.push.credential.PushCredentialService;
-import de.arbeitsagentur.keycloak.push.token.PushEnrollmentTokenBuilder;
-import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
-import jakarta.ws.rs.core.MultivaluedMap;
 import java.security.SecureRandom;
 import java.time.Duration;
+
 import org.keycloak.authentication.InitiatedActionSupport;
 import org.keycloak.authentication.RequiredActionContext;
 import org.keycloak.authentication.RequiredActionProvider;
@@ -16,6 +10,14 @@ import org.keycloak.forms.login.LoginFormsProvider;
 import org.keycloak.models.RequiredActionConfigModel;
 import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.sessions.AuthenticationSessionModel;
+
+import de.arbeitsagentur.keycloak.push.challenge.PushChallenge;
+import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStatus;
+import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStore;
+import de.arbeitsagentur.keycloak.push.credential.PushCredentialService;
+import de.arbeitsagentur.keycloak.push.token.PushEnrollmentTokenBuilder;
+import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
+import jakarta.ws.rs.core.MultivaluedMap;
 
 public class PushMfaRegisterRequiredAction implements RequiredActionProvider {
 
@@ -50,6 +52,7 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider {
         form.setAttribute("enrollmentToken", enrollmentToken);
         form.setAttribute("qrPayload", enrollmentToken);
         form.setAttribute("pushQrUri", buildPushUri(resolveAppUriPrefix(context), enrollmentToken));
+        form.setAttribute("appUniversalLink", resolveAppUniversalLink(context));
         form.setAttribute("enrollChallengeId", challenge.getId());
         form.setAttribute("pollingIntervalSeconds", 3);
         String eventsUrl = buildEnrollmentEventsUrl(context, challenge);
@@ -96,6 +99,7 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider {
             form.setAttribute("enrollmentToken", enrollmentToken);
             form.setAttribute("qrPayload", enrollmentToken);
             form.setAttribute("pushQrUri", buildPushUri(resolveAppUriPrefix(context), enrollmentToken));
+            form.setAttribute("appUniversalLink", resolveAppUniversalLink(context));
             form.setAttribute("enrollChallengeId", challenge.getId());
             form.setAttribute("pollingIntervalSeconds", 5);
             String eventsUrl = buildEnrollmentEventsUrl(context, challenge);
@@ -233,6 +237,18 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider {
         String value = config.getConfig().get(PushMfaRegisterRequiredActionFactory.CONFIG_APP_URI_PREFIX);
         if (value == null || value.isBlank()) {
             return PushMfaConstants.PUSH_APP_URI_PREFIX;
+        }
+        return value;
+    }
+
+    private String resolveAppUniversalLink(RequiredActionContext context) {
+        RequiredActionConfigModel config = context.getConfig();
+        if (config == null || config.getConfig() == null) {
+            return PushMfaConstants.DEFAULT_APP_UNIVERSAL_LINK;
+        }
+        String value = config.getConfig().get(PushMfaConstants.APP_UNIVERSAL_LINK_CONFIG);
+        if (value == null || value.isBlank()) {
+            return PushMfaConstants.DEFAULT_APP_UNIVERSAL_LINK;
         }
         return value;
     }

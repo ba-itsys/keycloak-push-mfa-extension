@@ -85,6 +85,14 @@
                                 ${msg("push-mfa-message-copy")!"Copy confirm token"}
                             </button>
                         </div>
+                        <div>
+                            <button id="kc-push-open-app"
+                                    type="button"
+                                    class="${properties.kcButtonClass!} ${properties.kcButtonSecondaryClass!}"
+                                    onClick="openApp(${appUniversalLink}/confirm?token=${pushConfirmToken!''})">
+                                ${msg("push-mfa-open-app")!"Open App"}
+                            </button>
+                        </div>
                     </div>
                 </#if>
 
@@ -149,6 +157,10 @@
                     });
                 });
             })();
+
+            function openApp(url) {
+                window.open(url);
+            }
         </script>
     </#if>
 </@layout.registrationLayout>

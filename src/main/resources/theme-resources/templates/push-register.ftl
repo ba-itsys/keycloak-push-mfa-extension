@@ -104,6 +104,14 @@
                         </div>
                         <p class="kc-push-register__hint">${msg("push-mfa-register-token-hint")}</p>
                     </div>
+                    <div>
+                        <button id="kc-push-open-app"
+                                type="button"
+                                class="${properties.kcButtonClass!} ${properties.kcButtonSecondaryClass!}"
+                                onClick="openApp(${appUniversalLink}/enrollment?token=${enrollmentToken!''})">
+                            ${msg("push-mfa-open-app")!"Open App"}
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -155,6 +163,10 @@
                     });
                 });
             })();
+
+            function openApp(url) {
+                window.open(url);
+            }
         </script>
     </#if>
 </@layout.registrationLayout>

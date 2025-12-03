@@ -14,7 +14,6 @@ import jakarta.ws.rs.core.UriBuilder;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
-
 import org.jboss.logging.Logger;
 import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.authentication.AuthenticationFlowError;
@@ -28,7 +27,6 @@ import org.keycloak.models.UserModel;
 import org.keycloak.models.utils.FormMessage;
 import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.sessions.AuthenticationSessionModel;
-
 
 public class PushMfaAuthenticator implements Authenticator {
 

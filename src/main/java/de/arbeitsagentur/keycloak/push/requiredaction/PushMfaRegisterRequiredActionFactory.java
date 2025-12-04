@@ -1,5 +1,6 @@
 package de.arbeitsagentur.keycloak.push.requiredaction;
 
+import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import java.util.List;
 
 import org.keycloak.Config;
@@ -8,8 +9,6 @@ import org.keycloak.authentication.RequiredActionProvider;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.provider.ProviderConfigProperty;
-
-import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 
 public class PushMfaRegisterRequiredActionFactory implements RequiredActionFactory {
 

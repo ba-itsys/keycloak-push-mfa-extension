@@ -96,7 +96,7 @@
                         <button id="kc-push-open-app"
                                 type="button"
                                 class="${properties.kcButtonClass!} ${properties.kcButtonSecondaryClass!}"
-                                onclick="openApp('${appUniversalLink!''}enrollment?token=${enrollmentToken!''}')">
+                                onclick="openApp('${appUniversalLink!''}?token=${enrollmentToken!''}')">
                             ${msg("push-mfa-open-app")!"Open App"}
                         </button>
                     </div>

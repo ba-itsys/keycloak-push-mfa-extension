@@ -1,13 +1,15 @@
 package de.arbeitsagentur.keycloak.push.requiredaction;
 
-import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import java.util.List;
+
 import org.keycloak.Config;
 import org.keycloak.authentication.RequiredActionFactory;
 import org.keycloak.authentication.RequiredActionProvider;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.provider.ProviderConfigProperty;
+
+import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 
 public class PushMfaRegisterRequiredActionFactory implements RequiredActionFactory {
 
@@ -36,7 +38,7 @@ public class PushMfaRegisterRequiredActionFactory implements RequiredActionFacto
         appUniversalLink.setLabel("Companion app/universal link");
         appUniversalLink.setType(ProviderConfigProperty.STRING_TYPE);
         appUniversalLink.setHelpText("App link (android) or universal link (iOS) to launch companion app on the same device, e.g., https://push-mfa-app.com/");
-        appUniversalLink.setDefaultValue(PushMfaConstants.DEFAULT_APP_UNIVERSAL_LINK);
+        appUniversalLink.setDefaultValue(PushMfaConstants.DEFAULT_APP_UNIVERSAL_LINK + "enroll");
 
         CONFIG_PROPERTIES = List.of(challengeTtl, appUriPrefix, appUniversalLink);
     }

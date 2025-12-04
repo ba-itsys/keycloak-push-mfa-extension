@@ -1,14 +1,8 @@
 package de.arbeitsagentur.keycloak.push.requiredaction;
 
-import de.arbeitsagentur.keycloak.push.challenge.PushChallenge;
-import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStatus;
-import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStore;
-import de.arbeitsagentur.keycloak.push.credential.PushCredentialService;
-import de.arbeitsagentur.keycloak.push.token.PushEnrollmentTokenBuilder;
-import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
-import jakarta.ws.rs.core.MultivaluedMap;
 import java.security.SecureRandom;
 import java.time.Duration;
+
 import org.keycloak.authentication.InitiatedActionSupport;
 import org.keycloak.authentication.RequiredActionContext;
 import org.keycloak.authentication.RequiredActionProvider;
@@ -16,6 +10,14 @@ import org.keycloak.forms.login.LoginFormsProvider;
 import org.keycloak.models.RequiredActionConfigModel;
 import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.sessions.AuthenticationSessionModel;
+
+import de.arbeitsagentur.keycloak.push.challenge.PushChallenge;
+import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStatus;
+import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStore;
+import de.arbeitsagentur.keycloak.push.credential.PushCredentialService;
+import de.arbeitsagentur.keycloak.push.token.PushEnrollmentTokenBuilder;
+import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
+import jakarta.ws.rs.core.MultivaluedMap;
 
 public class PushMfaRegisterRequiredAction implements RequiredActionProvider {
 
@@ -242,11 +244,11 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider {
     private String resolveAppUniversalLink(RequiredActionContext context) {
         RequiredActionConfigModel config = context.getConfig();
         if (config == null || config.getConfig() == null) {
-            return PushMfaConstants.DEFAULT_APP_UNIVERSAL_LINK;
+            return PushMfaConstants.DEFAULT_APP_UNIVERSAL_LINK + "enroll";
         }
         String value = config.getConfig().get(PushMfaConstants.APP_UNIVERSAL_LINK_CONFIG);
         if (value == null || value.isBlank()) {
-            return PushMfaConstants.DEFAULT_APP_UNIVERSAL_LINK;
+            return PushMfaConstants.DEFAULT_APP_UNIVERSAL_LINK + "enroll";
         }
         return value;
     }

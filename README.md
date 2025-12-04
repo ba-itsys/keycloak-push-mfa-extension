@@ -519,3 +519,56 @@ All shared browser behavior (SSE handling, QR rendering, clipboard helpers) live
 - **Secure transport:** Call the Keycloak endpoints only over TLS, validate certificates (no user-controlled CA overrides), and pin if your threat model requires it.
 - **Harden local state:** Keep the credential id ↔ real user mapping, push provider identifiers/types, and enrollment metadata in encrypted storage with OS-level protection.
 - **Surface errors to users:** Treat 4xx responses (expired, invalid signature, nonce mismatch) as security events, notifying the user and requiring a fresh enrollment or login attempt rather than silently retrying.
+
+
+# Mobile Mock for push-mfa enrollment and login
+
+## Overview
+
+The `mock/mobile` folder contains a mock implementation simulating the behavior of a mobile application for testing the Keycloak Push MFA Extension. This mock is particularly useful for development and integration testing without requiring a real mobile device or app. It mimics the enrollment and login confirmation flows described in the project's high-level documentation, allowing developers to verify the server-side logic (e.g., Keycloak SPIs and JAX-RS endpoints) in isolation.
+
+This mock is built using TypeScript and Node.js, leveraging packages like Express for creating a simple HTTP server that handles push notifications, token processing, and user interactions. It does not represent a production-ready mobile app but serves as a testing utility.
+
+### Purpose
+- **Testing Login & Enrollment Flow**: Simulates scanning a QR code, generating key pairs, and completing enrollment and login via API calls.
+
+This folder is not part of the core Keycloak provider but is included for developer convenience. It can be run locally alongside the Keycloak Docker setup.
+
+## Setup and Usage
+
+### Prerequisites
+- Node.js (compatible with @types/node 22.7.5).
+- npm for package management.
+- Install dependencies: Run `npm install` in the `mock/mobile` folder.
+
+### Running the Mock
+1. Build the app:
+```
+npm run build
+```
+2. Start the server:
+```
+npm run start
+```
+
+2. The mock server listens on a port (e.g., 3000) and exposes endpoints like:
+    - `/enroll`: POST endpoint to mimic QR code scanning and enrollment completion.
+    - `/login-confirm`: POST endpoint to receive and process login request from keyclaok for login approval.
+
+### Example Integration with Keycloak Flow
+
+#### Simulating Enrollment
+- The mock can "scan" a QR code by receiving the `enrollmentToken` (a JWT from Keycloak).
+- It generates a device key pair and sends a signed payload to Keycloak's `/enroll/complete` endpoint.
+
+#### Simulating Login Approval
+- Receives a mock push notification with `ConfirmToken`.
+- Prompts for approval (via console or UI) and sends a signed `LoginToken` to Keycloak's `/login/challenges/{cid}/respond`.
+
+For full flow details, refer to the project's high-level sequence diagram.
+
+## Key Concepts in the Mock
+- **Token Handling**: Uses jose for JWT signing/verification, ensuring compatibility with Keycloak's realm keys.
+- **DPoP (Demonstration of Proof-of-Possession)**: Mocked in headers for secure API calls.
+- **Push Simulation**: Instead of real FCM/APNs, the mock can be triggered directly via API for testing.
+- **Security Notes**: This is a mock; do not use real keys or expose it in production. Placeholders are used for any sensitive info (e.g., `<MOCK_DEVICE_ID>` instead of real UUIDs).

@@ -1,16 +1,5 @@
 package de.arbeitsagentur.keycloak.push.requiredaction;
 
-import java.security.SecureRandom;
-import java.time.Duration;
-
-import org.keycloak.authentication.InitiatedActionSupport;
-import org.keycloak.authentication.RequiredActionContext;
-import org.keycloak.authentication.RequiredActionProvider;
-import org.keycloak.forms.login.LoginFormsProvider;
-import org.keycloak.models.RequiredActionConfigModel;
-import org.keycloak.models.utils.KeycloakModelUtils;
-import org.keycloak.sessions.AuthenticationSessionModel;
-
 import de.arbeitsagentur.keycloak.push.challenge.PushChallenge;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStatus;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStore;
@@ -18,6 +7,15 @@ import de.arbeitsagentur.keycloak.push.credential.PushCredentialService;
 import de.arbeitsagentur.keycloak.push.token.PushEnrollmentTokenBuilder;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import jakarta.ws.rs.core.MultivaluedMap;
+import java.security.SecureRandom;
+import java.time.Duration;
+import org.keycloak.authentication.InitiatedActionSupport;
+import org.keycloak.authentication.RequiredActionContext;
+import org.keycloak.authentication.RequiredActionProvider;
+import org.keycloak.forms.login.LoginFormsProvider;
+import org.keycloak.models.RequiredActionConfigModel;
+import org.keycloak.models.utils.KeycloakModelUtils;
+import org.keycloak.sessions.AuthenticationSessionModel;
 
 public class PushMfaRegisterRequiredAction implements RequiredActionProvider {
 

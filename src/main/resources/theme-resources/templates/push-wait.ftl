@@ -56,6 +56,10 @@
                 overflow-y: auto;
                 word-break: break-all;
             }
+
+            .kc-push-open-app {
+                margin-top: 1rem;
+            }
         </style>
 
         <div id="kc-push-wait-root"
@@ -69,6 +73,14 @@
                 <#if pushConfirmToken?? && pushCredentialId??>
                     <div class="kc-push-token-card">
                         <h4>${msg("push-mfa-message-title")!"Simulated Firebase payload"}</h4>
+                        <div class="kc-push-open-app">
+                            <button id="kc-push-open-app"
+                                    type="button"
+                                    class="${properties.kcButtonClass!} ${properties.kcButtonSecondaryClass!}"
+                                    onClick="openApp('${appUniversalLink!''}?token=${pushConfirmToken!''}')">
+                                ${msg("push-mfa-open-app")!"Open App"}
+                            </button>
+                        </div>
                         <p class="kc-push-hint">
                             ${msg("push-mfa-message-hint")!"This token travels via Firebase. Use it with scripts/confirm-login.sh \"<token>\"."}
                             <br/>
@@ -149,6 +161,10 @@
                     });
                 });
             })();
+
+            function openApp(url) {
+                window.open(url);
+            }
         </script>
     </#if>
 </@layout.registrationLayout>

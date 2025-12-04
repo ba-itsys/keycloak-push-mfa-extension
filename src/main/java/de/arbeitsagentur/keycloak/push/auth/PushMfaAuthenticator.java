@@ -267,7 +267,8 @@ public class PushMfaAuthenticator implements Authenticator {
                 .setAttribute("pushConfirmToken", confirmToken)
                 .setAttribute("pushCredentialId", credentialData != null ? credentialData.getCredentialId() : null)
                 .setAttribute("pushMessageVersion", String.valueOf(PushMfaConstants.PUSH_MESSAGE_VERSION))
-                .setAttribute("pushMessageType", String.valueOf(PushMfaConstants.PUSH_MESSAGE_TYPE));
+                .setAttribute("pushMessageType", String.valueOf(PushMfaConstants.PUSH_MESSAGE_TYPE))
+                .setAttribute("appUniversalLink", resolveAppUniversalLink(context));
 
         String watchUrl = buildChallengeWatchUrl(context, challengeId, watchSecret);
         if (watchUrl != null) {
@@ -351,5 +352,17 @@ public class PushMfaAuthenticator implements Authenticator {
         } catch (NumberFormatException ex) {
             return defaultValue;
         }
+    }
+
+    private String resolveAppUniversalLink(AuthenticationFlowContext context) {
+        AuthenticatorConfigModel config = context.getAuthenticatorConfig();
+        if (config == null || config.getConfig() == null) {
+            return PushMfaConstants.DEFAULT_APP_UNIVERSAL_LINK + "confirm";
+        }
+        String value = config.getConfig().get(PushMfaConstants.APP_UNIVERSAL_LINK_CONFIG);
+        if (value == null || value.isBlank()) {
+            return PushMfaConstants.DEFAULT_APP_UNIVERSAL_LINK + "confirm";
+        }
+        return value;
     }
 }

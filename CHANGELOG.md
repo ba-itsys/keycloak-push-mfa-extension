@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.0.0...v1.0.1) (2025-12-05)
+
+
+### Bug Fixes
+
+* **ci:** update sortPom configuration to disable expanding empty elements ([890dd03](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/890dd03b2314c660f7de861c5d8c3f3db2abb823))
+
 ## 1.0.0 (2025-12-05)
 
 

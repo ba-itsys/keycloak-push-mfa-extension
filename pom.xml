@@ -4,7 +4,7 @@
 
   <groupId>de.arbeitsagentur.opdt</groupId>
   <artifactId>keycloak-push-mfa-extension</artifactId>
-  <version>0.1.0</version>
+  <version>1.0.0</version>
   <packaging>jar</packaging>
 
   <name>Keycloak Push MFA Extension</name>
@@ -195,8 +195,8 @@
                 <include>.gitattributes</include>
                 <include>.gitignore</include>
               </includes>
-              <trimTrailingWhitespace></trimTrailingWhitespace>
-              <endWithNewline></endWithNewline>
+              <trimTrailingWhitespace/>
+              <endWithNewline/>
               <indent>
                 <spaces>true</spaces>
                 <spacesPerTab>4</spacesPerTab>
@@ -205,13 +205,13 @@
           </formats>
           <!-- define a language-specific format -->
           <java>
-            <palantirJavaFormat></palantirJavaFormat>
-            <importOrder></importOrder>
-            <removeUnusedImports></removeUnusedImports>
-            <formatAnnotations></formatAnnotations>
+            <palantirJavaFormat/>
+            <importOrder/>
+            <removeUnusedImports/>
+            <formatAnnotations/>
           </java>
           <pom>
-            <sortPom></sortPom>
+            <sortPom/>
           </pom>
         </configuration>
       </plugin>

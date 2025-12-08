@@ -72,13 +72,6 @@ Examples:
 
 Releases and changelogs are managed by release-please via GitHub Actions. Do not bump versions or edit CHANGELOG manually; use proper Conventional Commits and the bot will propose release PRs.
 
-## Signed commits (Developer Certificate of Origins)
-
-Each commit must be signed-off.
-
-
-https://github.com/dcoapp/app
-
 ## Developer Certificate of Origin
 
 We have adopted a Developers Certificate of Origin (DCO).

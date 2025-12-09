@@ -64,7 +64,7 @@ sequenceDiagram
     Browser->>Keycloak: Auto-Submit Form (Login Success)
 ```
 
-1. **Enrollment challenge (RequiredAction):** Keycloak renders a QR code that encodes the realm-signed `enrollmentToken` (the default theme emits `push-mfa-login-app://?token=<enrollmentToken>`, but you can change the URI scheme/payload in your own theme or override the server-side prefix via `--spi-required-action-push-mfa-register-app-uri-prefix=...`). The token is a JWT signed with the realm key and contains user id (`sub`), username, `enrollmentId`, and a Base64URL nonce.
+1. **Enrollment challenge (RequiredAction):** Keycloak renders a QR code that encodes the realm-signed `enrollmentToken` (the default theme emits `my-secure://enroll?token=<enrollmentToken>`, but you can change the URI scheme/payload in your own theme or override the server-side prefix via `--spi-required-action-push-mfa-register-app-uri-prefix=...`). The token is a JWT signed with the realm key and contains user id (`sub`), username, `enrollmentId`, and a Base64URL nonce.
 
    ```json
    {
@@ -422,7 +422,7 @@ All scripts source `scripts/common.sh`, which centralizes base64 helpers, compac
 
 **Where to configure**
 - Admin UI: `Authentication → Flows` (open your flow → execution `Config` for the authenticator) and `Authentication → Required Actions` (select `push-mfa-register` → `Configure`).
-- CLI: use `kcadm.sh` against the realm DB. Example: `kcadm.sh update authentication/executions/${EXEC_ID} -r demo -s "config.loginChallengeTtlSeconds=180" -s "config.maxPendingChallenges=2"` for the authenticator, or `kcadm.sh update authentication/required-actions/push-mfa-register -r demo -s "config.enrollmentChallengeTtlSeconds=300" -s "config.appUriPrefix=push-mfa-login-app://?token="`.
+- CLI: use `kcadm.sh` against the realm DB. Example: `kcadm.sh update authentication/executions/${EXEC_ID} -r demo -s "config.loginChallengeTtlSeconds=180" -s "config.maxPendingChallenges=2"` for the authenticator, or `kcadm.sh update authentication/required-actions/push-mfa-register -r demo -s "config.enrollmentChallengeTtlSeconds=300" -s "config.appUriPrefix=my-secure://enroll?token="`.
 - Environment variables: none; these values live in realm config, so set them via Admin UI or `kcadm.sh`.
 
 **Authenticator (`push-mfa-authenticator`)**
@@ -431,7 +431,7 @@ All scripts source `scripts/common.sh`, which centralizes base64 helpers, compac
 
 **Required Action (`push-mfa-register`)**
 - `enrollmentChallengeTtlSeconds` (default: `120`) – TTL for enrollment challenges/tokens.
-- `appUriPrefix` (default: `push-mfa-login-app://?token=`) – prefix prepended to the enrollment token for companion-app deep links.
+- `appUriPrefix` (default: `my-secure://enroll?token=`) – prefix prepended to the enrollment token for companion-app deep links.
 
 ## App Implementation Notes
 

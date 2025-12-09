@@ -23,7 +23,7 @@ public final class PushMfaConstants {
     public static final int PUSH_MESSAGE_VERSION = 1;
     public static final int PUSH_MESSAGE_TYPE = 1;
     public static final String APP_UNIVERSAL_LINK_CONFIG = "appUniversalLink";
-    public static final String DEFAULT_APP_UNIVERSAL_LINK = "https://push-mfa-app.com/";
+    public static final String DEFAULT_APP_UNIVERSAL_LINK = "my-secure://";
 
     public static final int NONCE_BYTES_SIZE = 32;
     public static final Duration DEFAULT_LOGIN_CHALLENGE_TTL = Duration.ofSeconds(120);

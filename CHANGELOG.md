@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.1.0](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.0.2...v1.1.0) (2025-12-10)
+
+
+### Features
+
+* add username to pending-response, remove client-id/name from push token ([ccb9ce2](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/ccb9ce2f0f6f6e71758cbe1e30028245aa91ca4e))
+
+
+### Bug Fixes
+
+* **docs:** README & Deeplink in übereinstimmung bringen ([#35](https://github.com/ba-itsys/keycloak-push-mfa-extension/issues/35)) ([7ad8ae3](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/7ad8ae33ad21162557fc299d9c6eabbb908d5e85))
+* remove dedicated algorithm field from credential and rotation endpoint (is part of jwk itself) ([dd19c1b](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/dd19c1bfcdedbcbb7951f71c35fd3473a9b34639))
+
 ## [1.0.2](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.0.1...v1.0.2) (2025-12-09)
 
 

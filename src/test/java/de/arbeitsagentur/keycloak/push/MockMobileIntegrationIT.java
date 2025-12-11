@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.push.support.AdminClient;
 import de.arbeitsagentur.keycloak.push.support.BrowserSession;
+import de.arbeitsagentur.keycloak.push.support.ContainerLogWatcher;
 import de.arbeitsagentur.keycloak.push.support.HtmlPage;
 import de.arbeitsagentur.keycloak.push.support.MockMobileClient;
 import java.net.URI;
@@ -18,6 +19,7 @@ import java.time.Duration;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
 import org.testcontainers.containers.wait.strategy.Wait;
@@ -26,6 +28,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.MountableFile;
 
 @Testcontainers
+@ExtendWith(ContainerLogWatcher.class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class MockMobileIntegrationIT {
 
@@ -52,7 +55,7 @@ class MockMobileIntegrationIT {
             .withStartupTimeout(Duration.ofMinutes(4));
 
     @Container
-    private static final GenericContainer<?> MOBILE = new GenericContainer<>("node:22-bullseye")
+    private static final GenericContainer<?> MOBILE = new GenericContainer<>("node:24-bullseye")
             .withNetwork(NETWORK)
             .withExposedPorts(3001)
             .withCopyFileToContainer(MountableFile.forHostPath(MOCK_APP_DIR), "/app")
@@ -79,84 +82,67 @@ class MockMobileIntegrationIT {
 
     @Test
     void mockEnrollsDeviceSuccessfully() throws Exception {
-        try {
-            adminClient.resetUserState(TEST_USERNAME);
-            EnrollmentFlow enrollment = startEnrollmentFlow();
+        adminClient.resetUserState(TEST_USERNAME);
+        EnrollmentFlow enrollment = startEnrollmentFlow();
 
-            MockMobileClient.Response response = mockMobileClient.enroll(enrollment.enrollmentToken());
-            assertEquals(200, response.httpStatus(), () -> describe(response));
-            assertEquals(200, response.responseStatus(), () -> describe(response));
+        MockMobileClient.Response response = mockMobileClient.enroll(enrollment.enrollmentToken());
+        assertEquals(200, response.httpStatus(), () -> describe(response));
+        assertEquals(200, response.responseStatus(), () -> describe(response));
 
-            enrollment.session().submitEnrollmentCheck(enrollment.enrollmentPage());
+        enrollment.session().submitEnrollmentCheck(enrollment.enrollmentPage());
 
-            String userId = subjectFromToken(enrollment.enrollmentToken());
-            JsonNode credential = adminClient.fetchPushCredential(userId);
-            assertEquals(
-                    "demo-push-provider-token",
-                    credential.path("pushProviderId").asText());
-            assertEquals("log", credential.path("pushProviderType").asText());
-            assertEquals(
-                    "-device-alias-" + userId, credential.path("credentialId").asText());
-        } catch (Exception ex) {
-            dumpContainerLogs();
-            throw ex;
-        }
+        String userId = subjectFromToken(enrollment.enrollmentToken());
+        JsonNode credential = adminClient.fetchPushCredential(userId);
+        assertEquals(
+                "demo-push-provider-token", credential.path("pushProviderId").asText());
+        assertEquals("log", credential.path("pushProviderType").asText());
+        assertEquals("-device-alias-" + userId, credential.path("credentialId").asText());
     }
 
     @Test
     void mockApprovesLoginChallenge() throws Exception {
-        try {
-            adminClient.resetUserState(TEST_USERNAME);
-            enrollWithMockDevice();
+        adminClient.resetUserState(TEST_USERNAME);
+        enrollWithMockDevice();
 
-            BrowserSession pushSession = new BrowserSession(baseUri);
-            HtmlPage loginPage = pushSession.startAuthorization("test-app");
-            HtmlPage waitingPage = pushSession.submitLogin(loginPage, TEST_USERNAME, TEST_USERNAME);
-            BrowserSession.DeviceChallenge challenge = pushSession.extractDeviceChallenge(waitingPage);
+        BrowserSession pushSession = new BrowserSession(baseUri);
+        HtmlPage loginPage = pushSession.startAuthorization("test-app");
+        HtmlPage waitingPage = pushSession.submitLogin(loginPage, TEST_USERNAME, TEST_USERNAME);
+        BrowserSession.DeviceChallenge challenge = pushSession.extractDeviceChallenge(waitingPage);
 
-            MockMobileClient.Response approval = mockMobileClient.approveLogin(challenge.confirmToken());
-            assertEquals(200, approval.httpStatus(), () -> describe(approval));
-            assertEquals(200, approval.responseStatus(), () -> describe(approval));
+        MockMobileClient.Response approval = mockMobileClient.approveLogin(challenge.confirmToken());
+        assertEquals(200, approval.httpStatus(), () -> describe(approval));
+        assertEquals(200, approval.responseStatus(), () -> describe(approval));
 
-            pushSession.completePushChallenge(challenge.formAction());
-        } catch (Exception ex) {
-            dumpContainerLogs();
-            throw ex;
-        }
+        pushSession.completePushChallenge(challenge.formAction());
     }
 
     @Test
     void mockHandlesRefreshedChallenge() throws Exception {
-        try {
-            adminClient.resetUserState(TEST_USERNAME);
-            enrollWithMockDevice();
+        adminClient.resetUserState(TEST_USERNAME);
+        enrollWithMockDevice();
 
-            BrowserSession pushSession = new BrowserSession(baseUri);
-            HtmlPage loginPage = pushSession.startAuthorization("test-app");
-            HtmlPage waitingPage = pushSession.submitLogin(loginPage, TEST_USERNAME, TEST_USERNAME);
-            BrowserSession.DeviceChallenge firstChallenge = pushSession.extractDeviceChallenge(waitingPage);
+        BrowserSession pushSession = new BrowserSession(baseUri);
+        HtmlPage loginPage = pushSession.startAuthorization("test-app");
+        HtmlPage waitingPage = pushSession.submitLogin(loginPage, TEST_USERNAME, TEST_USERNAME);
+        BrowserSession.DeviceChallenge firstChallenge = pushSession.extractDeviceChallenge(waitingPage);
 
-            HtmlPage refreshedPage = pushSession.refreshPushChallenge(waitingPage);
-            BrowserSession.DeviceChallenge refreshedChallenge = pushSession.extractDeviceChallenge(refreshedPage);
-            assertNotEquals(
-                    firstChallenge.challengeId(),
-                    refreshedChallenge.challengeId(),
-                    "Refreshing should rotate the pending challenge");
+        HtmlPage refreshedPage = pushSession.refreshPushChallenge(waitingPage);
+        BrowserSession.DeviceChallenge refreshedChallenge = pushSession.extractDeviceChallenge(refreshedPage);
+        assertNotEquals(
+                firstChallenge.challengeId(),
+                refreshedChallenge.challengeId(),
+                "Refreshing should rotate the pending challenge");
 
-            MockMobileClient.Response stale = mockMobileClient.approveLogin(firstChallenge.confirmToken());
-            assertTrue(
-                    stale.responseStatus() >= 400 || stale.httpStatus() >= 400,
-                    () -> "Stale challenge should fail but got " + describe(stale));
+        MockMobileClient.Response stale = mockMobileClient.approveLogin(firstChallenge.confirmToken());
+        assertTrue(
+                stale.responseStatus() >= 400 || stale.httpStatus() >= 400,
+                () -> "Stale challenge should fail but got " + describe(stale));
 
-            MockMobileClient.Response refreshed = mockMobileClient.approveLogin(refreshedChallenge.confirmToken());
-            assertEquals(200, refreshed.httpStatus(), () -> describe(refreshed));
-            assertEquals(200, refreshed.responseStatus(), () -> describe(refreshed));
+        MockMobileClient.Response refreshed = mockMobileClient.approveLogin(refreshedChallenge.confirmToken());
+        assertEquals(200, refreshed.httpStatus(), () -> describe(refreshed));
+        assertEquals(200, refreshed.responseStatus(), () -> describe(refreshed));
 
-            pushSession.completePushChallenge(refreshedChallenge.formAction());
-        } catch (Exception ex) {
-            dumpContainerLogs();
-            throw ex;
-        }
+        pushSession.completePushChallenge(refreshedChallenge.formAction());
     }
 
     private void enrollWithMockDevice() throws Exception {
@@ -177,11 +163,6 @@ class MockMobileIntegrationIT {
 
     private String describe(MockMobileClient.Response response) {
         return "HTTP " + response.httpStatus() + " body=" + response.payload();
-    }
-
-    private void dumpContainerLogs() {
-        System.err.println("Keycloak container logs:\n" + KEYCLOAK.getLogs());
-        System.err.println("Mobile mock logs:\n" + MOBILE.getLogs());
     }
 
     private String subjectFromToken(String token) throws Exception {

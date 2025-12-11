@@ -11,6 +11,7 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.push.support.AdminClient;
 import de.arbeitsagentur.keycloak.push.support.BrowserSession;
+import de.arbeitsagentur.keycloak.push.support.ContainerLogWatcher;
 import de.arbeitsagentur.keycloak.push.support.DeviceClient;
 import de.arbeitsagentur.keycloak.push.support.DeviceKeyType;
 import de.arbeitsagentur.keycloak.push.support.DeviceSigningKey;
@@ -26,6 +27,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
@@ -33,6 +35,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.MountableFile;
 
 @Testcontainers
+@ExtendWith(ContainerLogWatcher.class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class PushMfaIntegrationIT {
 
@@ -66,265 +69,212 @@ class PushMfaIntegrationIT {
 
     @Test
     void deviceEnrollsAndApprovesLogin() throws Exception {
-        try {
-            DeviceClient deviceClient = enrollDevice();
-            completeLoginFlow(deviceClient);
-        } catch (Exception ex) {
-            System.err.println("Keycloak container logs:\n" + KEYCLOAK.getLogs());
-            throw ex;
-        }
+        DeviceClient deviceClient = enrollDevice();
+        completeLoginFlow(deviceClient);
     }
 
     @Test
     void ecdsaDeviceEnrollsAndApprovesLogin() throws Exception {
-        try {
-            DeviceClient deviceClient = enrollDevice(DeviceKeyType.ECDSA);
-            completeLoginFlow(deviceClient);
-        } catch (Exception ex) {
-            System.err.println("Keycloak container logs:\n" + KEYCLOAK.getLogs());
-            throw ex;
-        }
+        DeviceClient deviceClient = enrollDevice(DeviceKeyType.ECDSA);
+        completeLoginFlow(deviceClient);
     }
 
     @Test
     void deviceDeniesLoginChallenge() throws Exception {
-        try {
-            DeviceClient deviceClient = enrollDevice();
-            BrowserSession pushSession = new BrowserSession(baseUri);
-            HtmlPage pushLogin = pushSession.startAuthorization("test-app");
-            HtmlPage waitingPage = pushSession.submitLogin(pushLogin, "test", "test");
-            BrowserSession.DeviceChallenge confirm = pushSession.extractDeviceChallenge(waitingPage);
+        DeviceClient deviceClient = enrollDevice();
+        BrowserSession pushSession = new BrowserSession(baseUri);
+        HtmlPage pushLogin = pushSession.startAuthorization("test-app");
+        HtmlPage waitingPage = pushSession.submitLogin(pushLogin, "test", "test");
+        BrowserSession.DeviceChallenge confirm = pushSession.extractDeviceChallenge(waitingPage);
 
-            String status = deviceClient.respondToChallenge(
-                    confirm.confirmToken(), confirm.challengeId(), PushMfaConstants.CHALLENGE_DENY);
-            assertEquals("denied", status);
+        String status = deviceClient.respondToChallenge(
+                confirm.confirmToken(), confirm.challengeId(), PushMfaConstants.CHALLENGE_DENY);
+        assertEquals("denied", status);
 
-            HtmlPage deniedPage = pushSession.submitPushChallengeForPage(confirm.formAction());
-            String pageText = deniedPage.document().text().toLowerCase();
-            assertTrue(
-                    pageText.contains("push approval denied") || pageText.contains("push request was denied"),
-                    "Denied page should explain the rejected push login");
-        } catch (Exception ex) {
-            System.err.println("Keycloak container logs:\n" + KEYCLOAK.getLogs());
-            throw ex;
-        }
+        HtmlPage deniedPage = pushSession.submitPushChallengeForPage(confirm.formAction());
+        String pageText = deniedPage.document().text().toLowerCase();
+        assertTrue(
+                pageText.contains("push approval denied") || pageText.contains("push request was denied"),
+                "Denied page should explain the rejected push login");
     }
 
     @Test
     void userRefreshesEnrollmentChallengeAndEnrolls() throws Exception {
-        try {
-            adminClient.resetUserState(TEST_USERNAME);
-            DeviceState deviceState = DeviceState.create(DeviceKeyType.RSA);
-            DeviceClient deviceClient = new DeviceClient(baseUri, deviceState);
+        adminClient.resetUserState(TEST_USERNAME);
+        DeviceState deviceState = DeviceState.create(DeviceKeyType.RSA);
+        DeviceClient deviceClient = new DeviceClient(baseUri, deviceState);
 
-            BrowserSession enrollmentSession = new BrowserSession(baseUri);
-            HtmlPage loginPage = enrollmentSession.startAuthorization("test-app");
-            HtmlPage enrollmentPage = enrollmentSession.submitLogin(loginPage, "test", "test");
-            String originalToken = enrollmentSession.extractEnrollmentToken(enrollmentPage);
-            String originalChallenge = enrollmentSession.extractEnrollmentChallengeId(enrollmentPage);
+        BrowserSession enrollmentSession = new BrowserSession(baseUri);
+        HtmlPage loginPage = enrollmentSession.startAuthorization("test-app");
+        HtmlPage enrollmentPage = enrollmentSession.submitLogin(loginPage, "test", "test");
+        String originalToken = enrollmentSession.extractEnrollmentToken(enrollmentPage);
+        String originalChallenge = enrollmentSession.extractEnrollmentChallengeId(enrollmentPage);
 
-            HtmlPage refreshedPage = enrollmentSession.refreshEnrollmentChallenge(enrollmentPage);
-            String refreshedToken = enrollmentSession.extractEnrollmentToken(refreshedPage);
-            String refreshedChallenge = enrollmentSession.extractEnrollmentChallengeId(refreshedPage);
+        HtmlPage refreshedPage = enrollmentSession.refreshEnrollmentChallenge(enrollmentPage);
+        String refreshedToken = enrollmentSession.extractEnrollmentToken(refreshedPage);
+        String refreshedChallenge = enrollmentSession.extractEnrollmentChallengeId(refreshedPage);
 
-            assertNotEquals(originalToken, refreshedToken, "Refresh should issue a new enrollment token");
-            assertNotEquals(originalChallenge, refreshedChallenge, "Refresh should create a new enrollment challenge");
+        assertNotEquals(originalToken, refreshedToken, "Refresh should issue a new enrollment token");
+        assertNotEquals(originalChallenge, refreshedChallenge, "Refresh should create a new enrollment challenge");
 
-            deviceClient.completeEnrollment(refreshedToken);
-            enrollmentSession.submitEnrollmentCheck(refreshedPage);
-            completeLoginFlow(deviceClient);
-        } catch (Exception ex) {
-            System.err.println("Keycloak container logs:\n" + KEYCLOAK.getLogs());
-            throw ex;
-        }
+        deviceClient.completeEnrollment(refreshedToken);
+        enrollmentSession.submitEnrollmentCheck(refreshedPage);
+        completeLoginFlow(deviceClient);
     }
 
     @Test
     void userRefreshesLoginChallengeAndAuthenticates() throws Exception {
+        DeviceClient deviceClient = enrollDevice();
+        BrowserSession pushSession = new BrowserSession(baseUri);
+
+        HtmlPage loginPage = pushSession.startAuthorization("test-app");
+        HtmlPage waitingPage = pushSession.submitLogin(loginPage, "test", "test");
+        BrowserSession.DeviceChallenge initialChallenge = pushSession.extractDeviceChallenge(waitingPage);
+
+        HtmlPage refreshedWaiting = pushSession.refreshPushChallenge(waitingPage);
+        BrowserSession.DeviceChallenge refreshedChallenge = pushSession.extractDeviceChallenge(refreshedWaiting);
+
+        assertNotEquals(
+                initialChallenge.challengeId(),
+                refreshedChallenge.challengeId(),
+                "Refreshing should rotate the pending challenge");
+
+        String status = deviceClient.respondToChallenge(
+                refreshedChallenge.confirmToken(),
+                refreshedChallenge.challengeId(),
+                PushMfaConstants.CHALLENGE_APPROVE);
+        assertEquals("approved", status);
         try {
-            DeviceClient deviceClient = enrollDevice();
-            BrowserSession pushSession = new BrowserSession(baseUri);
-
-            HtmlPage loginPage = pushSession.startAuthorization("test-app");
-            HtmlPage waitingPage = pushSession.submitLogin(loginPage, "test", "test");
-            BrowserSession.DeviceChallenge initialChallenge = pushSession.extractDeviceChallenge(waitingPage);
-
-            HtmlPage refreshedWaiting = pushSession.refreshPushChallenge(waitingPage);
-            BrowserSession.DeviceChallenge refreshedChallenge = pushSession.extractDeviceChallenge(refreshedWaiting);
-
-            assertNotEquals(
-                    initialChallenge.challengeId(),
-                    refreshedChallenge.challengeId(),
-                    "Refreshing should rotate the pending challenge");
-
-            String status = deviceClient.respondToChallenge(
-                    refreshedChallenge.confirmToken(),
-                    refreshedChallenge.challengeId(),
-                    PushMfaConstants.CHALLENGE_APPROVE);
-            assertEquals("approved", status);
-            try {
-                pushSession.completePushChallenge(refreshedChallenge.formAction());
-            } catch (AssertionError | IllegalStateException ignored) {
-                // The refreshed browser request may already be past the login step; it's enough that the challenge was
-                // approved and no error was returned.
-            }
-        } catch (Exception ex) {
-            System.err.println("Keycloak container logs:\n" + KEYCLOAK.getLogs());
-            throw ex;
+            pushSession.completePushChallenge(refreshedChallenge.formAction());
+        } catch (AssertionError | IllegalStateException ignored) {
+            // The refreshed browser request may already be past the login step; it's enough that the challenge was
+            // approved and no error was returned.
         }
     }
 
     @Test
     void refreshCreatesNewChallengeForSameSession() throws Exception {
-        try {
-            DeviceClient deviceClient = enrollDevice();
-            BrowserSession pushSession = new BrowserSession(baseUri);
+        DeviceClient deviceClient = enrollDevice();
+        BrowserSession pushSession = new BrowserSession(baseUri);
 
-            HtmlPage firstLogin = pushSession.startAuthorization("test-app");
-            HtmlPage waitingPage = pushSession.submitLogin(firstLogin, "test", "test");
-            BrowserSession.DeviceChallenge firstChallenge = pushSession.extractDeviceChallenge(waitingPage);
-            JWTClaimsSet firstClaims =
-                    SignedJWT.parse(firstChallenge.confirmToken()).getJWTClaimsSet();
+        HtmlPage firstLogin = pushSession.startAuthorization("test-app");
+        HtmlPage waitingPage = pushSession.submitLogin(firstLogin, "test", "test");
+        BrowserSession.DeviceChallenge firstChallenge = pushSession.extractDeviceChallenge(waitingPage);
+        JWTClaimsSet firstClaims =
+                SignedJWT.parse(firstChallenge.confirmToken()).getJWTClaimsSet();
 
-            HtmlPage refreshed;
-            refreshed = pushSession.refreshPushChallenge(waitingPage);
-            BrowserSession.DeviceChallenge refreshedChallenge = pushSession.extractDeviceChallenge(refreshed);
-            JWTClaimsSet refreshedClaims =
-                    SignedJWT.parse(refreshedChallenge.confirmToken()).getJWTClaimsSet();
-            JsonNode pending = deviceClient.fetchPendingChallenges();
-            long pendingExpires = pending.get(0).path("expiresAt").asLong();
-            String pendingCid = pending.get(0).path("cid").asText();
-            assertEquals("test", pending.get(0).path("username").asText());
-            assertEquals(refreshedChallenge.challengeId(), pendingCid);
+        HtmlPage refreshed = pushSession.refreshPushChallenge(waitingPage);
+        BrowserSession.DeviceChallenge refreshedChallenge = pushSession.extractDeviceChallenge(refreshed);
+        JWTClaimsSet refreshedClaims =
+                SignedJWT.parse(refreshedChallenge.confirmToken()).getJWTClaimsSet();
+        JsonNode pending = deviceClient.fetchPendingChallenges();
+        long pendingExpires = pending.get(0).path("expiresAt").asLong();
+        String pendingCid = pending.get(0).path("cid").asText();
+        assertEquals("test", pending.get(0).path("username").asText());
+        assertEquals(refreshedChallenge.challengeId(), pendingCid);
 
-            assertNotEquals(
-                    firstChallenge.challengeId(),
-                    refreshedChallenge.challengeId(),
-                    "Challenge should rotate for the same session");
-            assertNotEquals(firstChallenge.confirmToken(), refreshedChallenge.confirmToken());
-            long refreshedTtlSeconds =
-                    refreshedClaims.getExpirationTime().toInstant().getEpochSecond()
-                            - refreshedClaims.getIssueTime().toInstant().getEpochSecond();
-            assertTrue(
-                    refreshedTtlSeconds >= 100 && refreshedTtlSeconds <= 140,
-                    "Refreshed challenge should use the standard TTL");
-            assertEquals(
-                    refreshedClaims.getExpirationTime().toInstant().getEpochSecond(),
-                    pendingExpires,
-                    "Pending challenge expiry should align with the refreshed challenge");
+        assertNotEquals(
+                firstChallenge.challengeId(),
+                refreshedChallenge.challengeId(),
+                "Challenge should rotate for the same session");
+        assertNotEquals(firstChallenge.confirmToken(), refreshedChallenge.confirmToken());
+        long refreshedTtlSeconds =
+                refreshedClaims.getExpirationTime().toInstant().getEpochSecond()
+                        - refreshedClaims.getIssueTime().toInstant().getEpochSecond();
+        assertTrue(
+                refreshedTtlSeconds >= 100 && refreshedTtlSeconds <= 140,
+                "Refreshed challenge should use the standard TTL");
+        assertEquals(
+                refreshedClaims.getExpirationTime().toInstant().getEpochSecond(),
+                pendingExpires,
+                "Pending challenge expiry should align with the refreshed challenge");
 
-            deviceClient.respondToChallenge(
-                    refreshedChallenge.confirmToken(),
-                    refreshedChallenge.challengeId(),
-                    PushMfaConstants.CHALLENGE_APPROVE);
-            pushSession.completePushChallenge(refreshedChallenge.formAction());
-        } catch (Exception ex) {
-            System.err.println("Keycloak container logs:\n" + KEYCLOAK.getLogs());
-            throw ex;
-        }
+        deviceClient.respondToChallenge(
+                refreshedChallenge.confirmToken(),
+                refreshedChallenge.challengeId(),
+                PushMfaConstants.CHALLENGE_APPROVE);
+        pushSession.completePushChallenge(refreshedChallenge.formAction());
     }
 
     @Test
     void refreshInvalidatesOldChallenge() throws Exception {
-        try {
-            DeviceClient deviceClient = enrollDevice();
-            BrowserSession pushSession = new BrowserSession(baseUri);
+        DeviceClient deviceClient = enrollDevice();
+        BrowserSession pushSession = new BrowserSession(baseUri);
 
-            HtmlPage loginPage = pushSession.startAuthorization("test-app");
-            HtmlPage waitingPage = pushSession.submitLogin(loginPage, "test", "test");
-            BrowserSession.DeviceChallenge firstChallenge = pushSession.extractDeviceChallenge(waitingPage);
+        HtmlPage loginPage = pushSession.startAuthorization("test-app");
+        HtmlPage waitingPage = pushSession.submitLogin(loginPage, "test", "test");
+        BrowserSession.DeviceChallenge firstChallenge = pushSession.extractDeviceChallenge(waitingPage);
 
-            HtmlPage refreshedPage = pushSession.refreshPushChallenge(waitingPage);
-            BrowserSession.DeviceChallenge refreshedChallenge = pushSession.extractDeviceChallenge(refreshedPage);
+        HtmlPage refreshedPage = pushSession.refreshPushChallenge(waitingPage);
+        BrowserSession.DeviceChallenge refreshedChallenge = pushSession.extractDeviceChallenge(refreshedPage);
 
-            var staleResponse = deviceClient.respondToChallengeRaw(
-                    firstChallenge.confirmToken(), firstChallenge.challengeId(), PushMfaConstants.CHALLENGE_APPROVE);
-            assertEquals(404, staleResponse.statusCode(), "Stale challenge should not be accepted");
+        var staleResponse = deviceClient.respondToChallengeRaw(
+                firstChallenge.confirmToken(), firstChallenge.challengeId(), PushMfaConstants.CHALLENGE_APPROVE);
+        assertEquals(404, staleResponse.statusCode(), "Stale challenge should not be accepted");
 
-            deviceClient.respondToChallenge(
-                    refreshedChallenge.confirmToken(),
-                    refreshedChallenge.challengeId(),
-                    PushMfaConstants.CHALLENGE_APPROVE);
-            pushSession.completePushChallenge(refreshedChallenge.formAction());
-        } catch (Exception ex) {
-            System.err.println("Keycloak container logs:\n" + KEYCLOAK.getLogs());
-            throw ex;
-        }
+        deviceClient.respondToChallenge(
+                refreshedChallenge.confirmToken(),
+                refreshedChallenge.challengeId(),
+                PushMfaConstants.CHALLENGE_APPROVE);
+        pushSession.completePushChallenge(refreshedChallenge.formAction());
     }
 
     @Test
     void pendingChallengeBlocksOtherSession() throws Exception {
-        try {
-            DeviceClient deviceClient = enrollDevice();
-            BrowserSession firstSession = new BrowserSession(baseUri);
+        DeviceClient deviceClient = enrollDevice();
+        BrowserSession firstSession = new BrowserSession(baseUri);
 
-            HtmlPage loginPage = firstSession.startAuthorization("test-app");
-            HtmlPage waitingPage = firstSession.submitLogin(loginPage, "test", "test");
-            BrowserSession.DeviceChallenge firstChallenge = firstSession.extractDeviceChallenge(waitingPage);
+        HtmlPage loginPage = firstSession.startAuthorization("test-app");
+        HtmlPage waitingPage = firstSession.submitLogin(loginPage, "test", "test");
+        BrowserSession.DeviceChallenge firstChallenge = firstSession.extractDeviceChallenge(waitingPage);
 
-            BrowserSession secondSession = new BrowserSession(baseUri);
-            HtmlPage secondLogin = secondSession.startAuthorization("test-app");
-            IllegalStateException error = assertThrows(
-                    IllegalStateException.class,
-                    () -> secondSession.submitLogin(secondLogin, "test", "test"),
-                    "Second session should be blocked while a challenge is pending");
-            String message = error.getMessage().toLowerCase();
-            assertTrue(
-                    message.contains("pending push approval")
-                            || message.contains("too many requests")
-                            || message.contains("429"),
-                    "Error message should mention the pending approval");
+        BrowserSession secondSession = new BrowserSession(baseUri);
+        HtmlPage secondLogin = secondSession.startAuthorization("test-app");
+        IllegalStateException error = assertThrows(
+                IllegalStateException.class,
+                () -> secondSession.submitLogin(secondLogin, "test", "test"),
+                "Second session should be blocked while a challenge is pending");
+        String message = error.getMessage().toLowerCase();
+        assertTrue(
+                message.contains("pending push approval")
+                        || message.contains("too many requests")
+                        || message.contains("429"),
+                "Error message should mention the pending approval");
 
-            deviceClient.respondToChallenge(
-                    firstChallenge.confirmToken(), firstChallenge.challengeId(), PushMfaConstants.CHALLENGE_DENY);
-        } catch (Exception ex) {
-            System.err.println("Keycloak container logs:\n" + KEYCLOAK.getLogs());
-            throw ex;
-        }
+        deviceClient.respondToChallenge(
+                firstChallenge.confirmToken(), firstChallenge.challengeId(), PushMfaConstants.CHALLENGE_DENY);
     }
 
     @Test
     void deviceRotatesKeyAndAuthenticates() throws Exception {
-        try {
-            DeviceClient deviceClient = enrollDevice();
-            DeviceSigningKey rotatedKey = DeviceSigningKey.generateRsa();
-            String status = deviceClient.rotateDeviceKey(rotatedKey);
-            assertEquals("rotated", status);
+        DeviceClient deviceClient = enrollDevice();
+        DeviceSigningKey rotatedKey = DeviceSigningKey.generateRsa();
+        String status = deviceClient.rotateDeviceKey(rotatedKey);
+        assertEquals("rotated", status);
 
-            JsonNode credentialData =
-                    adminClient.fetchPushCredential(deviceClient.state().userId());
-            JsonNode storedKey =
-                    MAPPER.readTree(credentialData.path("publicKeyJwk").asText());
-            assertEquals(MAPPER.readTree(rotatedKey.publicJwk().toJSONString()), storedKey);
+        JsonNode credentialData =
+                adminClient.fetchPushCredential(deviceClient.state().userId());
+        JsonNode storedKey = MAPPER.readTree(credentialData.path("publicKeyJwk").asText());
+        assertEquals(MAPPER.readTree(rotatedKey.publicJwk().toJSONString()), storedKey);
 
-            completeLoginFlow(deviceClient);
-        } catch (Exception ex) {
-            System.err.println("Keycloak container logs:\n" + KEYCLOAK.getLogs());
-            throw ex;
-        }
+        completeLoginFlow(deviceClient);
     }
 
     @Test
     void deviceUpdatesPushProvider() throws Exception {
-        try {
-            DeviceClient deviceClient = enrollDevice();
-            String newProviderId = "integration-provider-" + UUID.randomUUID();
-            String newProviderType = "log-updated";
-            String status = deviceClient.updatePushProvider(newProviderId, newProviderType);
-            assertEquals("updated", status);
+        DeviceClient deviceClient = enrollDevice();
+        String newProviderId = "integration-provider-" + UUID.randomUUID();
+        String newProviderType = "log-updated";
+        String status = deviceClient.updatePushProvider(newProviderId, newProviderType);
+        assertEquals("updated", status);
 
-            JsonNode credentialData =
-                    adminClient.fetchPushCredential(deviceClient.state().userId());
-            assertEquals(newProviderId, credentialData.path("pushProviderId").asText());
-            assertEquals(
-                    newProviderType, credentialData.path("pushProviderType").asText());
+        JsonNode credentialData =
+                adminClient.fetchPushCredential(deviceClient.state().userId());
+        assertEquals(newProviderId, credentialData.path("pushProviderId").asText());
+        assertEquals(newProviderType, credentialData.path("pushProviderType").asText());
 
-            String secondStatus = deviceClient.updatePushProvider(newProviderId, newProviderType);
-            assertEquals("unchanged", secondStatus);
-        } catch (Exception ex) {
-            System.err.println("Keycloak container logs:\n" + KEYCLOAK.getLogs());
-            throw ex;
-        }
+        String secondStatus = deviceClient.updatePushProvider(newProviderId, newProviderType);
+        assertEquals("unchanged", secondStatus);
     }
 
     private void completeLoginFlow(DeviceClient deviceClient) throws Exception {

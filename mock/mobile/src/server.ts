@@ -60,7 +60,9 @@ app.post('/confirm-login', async (req, res) => {
     );
 
     if (!challangeResponse.ok) {
-      res.status(challangeResponse.status).json({ error: `${await challangeResponse.text()}` });
+      return res
+        .status(challangeResponse.status)
+        .json({ error: `${await challangeResponse.text()}` });
     }
 
     res.json({

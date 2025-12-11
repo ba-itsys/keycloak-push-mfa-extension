@@ -81,9 +81,7 @@ public class PushChallengeStore {
                 null);
 
         if (type == PushChallenge.Type.AUTHENTICATION) {
-            List<PushChallenge> pending = new ArrayList<>(findPendingForUser(realmId, userId));
-            pending.add(challenge);
-            storeAuthenticationIndex(realmId, userId, pending);
+            storeAuthenticationIndex(realmId, userId, List.of(challenge));
         }
 
         return challenge;
@@ -136,6 +134,10 @@ public class PushChallengeStore {
         }
     }
 
+    public void removeWithoutIndex(String challengeId) {
+        singleUse.remove(challengeKey(challengeId));
+    }
+
     public List<PushChallenge> findPendingForUser(String realmId, String userId) {
         Map<String, String> index = singleUse.get(userIndexKey(realmId, userId));
         if (index == null) {
@@ -148,6 +150,8 @@ public class PushChallengeStore {
             return List.of();
         }
 
+        List<String> originalIds = new ArrayList<>(challengeIds);
+        boolean changed = false;
         List<PushChallenge> pending = new ArrayList<>();
         for (String challengeId : challengeIds) {
             Optional<PushChallenge> challenge = get(challengeId);
@@ -156,17 +160,38 @@ public class PushChallengeStore {
                 if (current.getType() == PushChallenge.Type.AUTHENTICATION
                         && current.getStatus() == PushChallengeStatus.PENDING) {
                     pending.add(current);
+                } else {
+                    changed = true;
                 }
+            } else {
+                changed = true;
             }
         }
 
-        storeAuthenticationIndex(realmId, userId, pending);
+        if (pending.isEmpty()) {
+            singleUse.remove(userIndexKey(realmId, userId));
+            return List.of();
+        }
+
+        if (changed
+                || !originalIds.equals(
+                        pending.stream().map(PushChallenge::getId).toList())) {
+            storeAuthenticationIndex(realmId, userId, pending);
+        }
 
         return pending;
     }
 
     public int countPendingAuthentication(String realmId, String userId) {
         return findPendingForUser(realmId, userId).size();
+    }
+
+    public void removeAllAuthentication(String realmId, String userId) {
+        List<PushChallenge> pending = new ArrayList<>(findPendingForUser(realmId, userId));
+        for (PushChallenge challenge : pending) {
+            remove(challenge.getId());
+        }
+        singleUse.remove(userIndexKey(realmId, userId));
     }
 
     private PushChallenge updateStatus(String challengeId, Map<String, String> data, PushChallengeStatus status) {

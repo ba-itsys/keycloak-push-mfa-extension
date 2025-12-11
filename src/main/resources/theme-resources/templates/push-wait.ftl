@@ -102,6 +102,10 @@
 
                 <form id="kc-push-form" class="kc-push-actions" action="${url.loginAction}" method="post">
                     <input type="hidden" name="challengeId" value="${challengeId}"/>
+                    <button class="${properties.kcButtonClass!} ${properties.kcButtonPrimaryClass!}" name="refresh"
+                            value="true" type="submit">
+                        ${msg("push-mfa-refresh")!"Resend push"}
+                    </button>
                     <button class="${properties.kcButtonClass!} ${properties.kcButtonSecondaryClass!}" name="cancel"
                             value="true" type="submit">
                         ${msg("push-mfa-cancel")!"Cancel push"}

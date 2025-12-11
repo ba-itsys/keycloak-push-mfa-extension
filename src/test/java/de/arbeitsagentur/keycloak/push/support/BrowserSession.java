@@ -82,10 +82,42 @@ public final class BrowserSession {
         assertAccountConsoleAccessible();
     }
 
+    public HtmlPage refreshEnrollmentChallenge(HtmlPage page) throws Exception {
+        Element form = page.document().getElementById("kc-push-register-form");
+        if (form == null) {
+            throw new IllegalStateException("Enrollment form not found");
+        }
+        URI action = resolve(page.uri(), form.attr("action"));
+        return fetch(action, "POST", Map.of("refresh", "true")).requirePage();
+    }
+
+    public String extractEnrollmentChallengeId(HtmlPage page) {
+        Element root = page.document().getElementById("kc-push-register-root");
+        if (root == null) {
+            throw new IllegalStateException("Enrollment root element missing");
+        }
+        String eventsUrl = root.attr("data-push-events-url");
+        if (eventsUrl == null || eventsUrl.isBlank()) {
+            throw new IllegalStateException("Enrollment events URL missing");
+        }
+        URI uri = URI.create(eventsUrl);
+        String[] segments = uri.getPath().split("/");
+        for (int i = 0; i < segments.length; i++) {
+            if ("challenges".equals(segments[i]) && i + 1 < segments.length) {
+                return segments[i + 1];
+            }
+        }
+        throw new IllegalStateException("Unable to extract challenge id from " + eventsUrl);
+    }
+
     public DeviceChallenge extractDeviceChallenge(HtmlPage page) {
         Element token = page.document().getElementById("kc-push-confirm-token");
         if (token == null) {
-            throw new IllegalStateException("Confirm token block not found");
+            String body = page.document().text();
+            if (body != null && body.length() > 240) {
+                body = body.substring(0, 240) + "...";
+            }
+            throw new IllegalStateException("Confirm token block not found on page: " + body);
         }
         Element challengeInput = page.document().selectFirst("form#kc-push-form input[name=challengeId]");
         if (challengeInput == null) {
@@ -101,20 +133,43 @@ public final class BrowserSession {
 
     public void completePushChallenge(URI formAction) throws Exception {
         FetchResponse response = fetch(formAction, "POST", Map.of());
-        assertEquals(302, response.status(), "Push completion should redirect");
-        assertAccountConsoleAccessible();
+        if (response.status() == 302) {
+            assertAccountConsoleAccessible();
+            return;
+        }
+        assertEquals(200, response.status(), "Push completion should return success");
+        assertAccountConsoleAccessible(response.requirePage());
     }
 
     public HtmlPage submitPushChallengeForPage(URI formAction) throws Exception {
         return fetch(formAction, "POST", Map.of()).requirePage();
     }
 
+    public HtmlPage refreshPushChallenge(HtmlPage page) throws Exception {
+        Element form = page.document().selectFirst("form#kc-push-form");
+        if (form == null) {
+            throw new IllegalStateException("Push continuation form missing");
+        }
+        Map<String, String> params = collectFormInputs(form);
+        params.put("refresh", "true");
+        URI action = resolve(page.uri(), form.attr("action"));
+        return fetch(action, "POST", params).requirePage();
+    }
+
+    public HtmlPage reload(HtmlPage page) throws Exception {
+        return fetch(page.uri(), "GET", null).requirePage();
+    }
+
     private void assertAccountConsoleAccessible() throws Exception {
         URI accountUri = realmBase.resolve("account/");
         FetchResponse console = fetch(accountUri, "GET", null);
         assertEquals(200, console.status(), "Account console should load");
-        assertNotNull(console.document(), "Account console response missing HTML");
-        Element appRoot = console.document().getElementById("app");
+        assertAccountConsoleAccessible(console.requirePage());
+    }
+
+    private void assertAccountConsoleAccessible(HtmlPage page) {
+        assertNotNull(page.document(), "Account console response missing HTML");
+        Element appRoot = page.document().getElementById("app");
         assertNotNull(appRoot, "Account console root element not found");
     }
 

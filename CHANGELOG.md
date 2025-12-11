@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.1.0...v1.1.1) (2025-12-11)
+
+
+### Bug Fixes
+
+* cleanup jwk/alg and fix concurrent challenges / refresh bug ([0522ed1](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/0522ed1df8e31c18b976916005d02fa4c9c0f4c8))
+
 ## [1.1.0](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.0.2...v1.1.0) (2025-12-10)
 
 

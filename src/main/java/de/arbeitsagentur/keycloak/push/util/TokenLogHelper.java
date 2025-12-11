@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.util.Base64;
 import org.jboss.logging.Logger;
 import org.keycloak.util.JsonSerialization;
+import org.keycloak.utils.StringUtil;
 
 public final class TokenLogHelper {
 
@@ -15,7 +16,7 @@ public final class TokenLogHelper {
         if (!LOG.isDebugEnabled()) {
             return;
         }
-        if (token == null || token.isBlank()) {
+        if (StringUtil.isBlank(token)) {
             LOG.debugf("%s token: <empty>", label);
             return;
         }

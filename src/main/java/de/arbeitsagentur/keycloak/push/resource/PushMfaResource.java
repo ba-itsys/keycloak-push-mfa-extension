@@ -61,6 +61,7 @@ import org.keycloak.services.Urls;
 import org.keycloak.util.JWKSUtils;
 import org.keycloak.util.JsonSerialization;
 import org.keycloak.util.TokenUtil;
+import org.keycloak.utils.StringUtil;
 
 @Path("/")
 @Produces(MediaType.APPLICATION_JSON)
@@ -160,8 +161,7 @@ public class PushMfaResource {
         String deviceId = require(jsonText(payload, "deviceId"), "deviceId");
 
         String labelClaim = jsonText(payload, "deviceLabel");
-        String label =
-                labelClaim == null || labelClaim.isBlank() ? PushMfaConstants.USER_CREDENTIAL_DISPLAY_NAME : labelClaim;
+        String label = StringUtil.isBlank(labelClaim) ? PushMfaConstants.USER_CREDENTIAL_DISPLAY_NAME : labelClaim;
 
         PushCredentialData data = new PushCredentialData(
                 jwkNode.toString(),
@@ -267,7 +267,7 @@ public class PushMfaResource {
 
         PushCredentialData data = assertion.credentialData();
 
-        if (data.getCredentialId() == null || data.getCredentialId().isBlank()) {
+        if (StringUtil.isBlank(data.getCredentialId())) {
             throw new BadRequestException("Stored credential missing credentialId");
         }
 
@@ -322,7 +322,7 @@ public class PushMfaResource {
         String pushProviderId = require(request.pushProviderId(), "pushProviderId");
         String pushProviderType = request.pushProviderType();
         PushCredentialData current = device.credentialData();
-        if (pushProviderType == null || pushProviderType.isBlank()) {
+        if (StringUtil.isBlank(pushProviderType)) {
             pushProviderType = current.getPushProviderType();
         }
         if (pushProviderId.equals(current.getPushProviderId())
@@ -388,7 +388,7 @@ public class PushMfaResource {
     }
 
     private String resolveClientDisplayName(String clientId) {
-        if (clientId == null || clientId.isBlank()) {
+        if (StringUtil.isBlank(clientId)) {
             return null;
         }
         ClientModel client = session.clients().getClientByClientId(realm(), clientId);
@@ -396,7 +396,7 @@ public class PushMfaResource {
             return null;
         }
         String name = client.getName();
-        if (name == null || name.isBlank()) {
+        if (StringUtil.isBlank(name)) {
             return null;
         }
         return name;
@@ -411,7 +411,7 @@ public class PushMfaResource {
     }
 
     private static String require(String value, String fieldName) {
-        if (value == null || value.isBlank()) {
+        if (StringUtil.isBlank(value)) {
             throw new BadRequestException("Missing field: " + fieldName);
         }
         return value;
@@ -440,7 +440,7 @@ public class PushMfaResource {
             throw new NotAuthorizedException("DPoP access token required");
         }
         String authorization = headers.getHeaderString(HttpHeaders.AUTHORIZATION);
-        if (authorization == null || authorization.isBlank()) {
+        if (StringUtil.isBlank(authorization)) {
             throw new NotAuthorizedException("DPoP access token required");
         }
         String token;
@@ -451,7 +451,7 @@ public class PushMfaResource {
         } else {
             throw new NotAuthorizedException("DPoP access token required");
         }
-        if (token.isBlank()) {
+        if (StringUtil.isBlank(token)) {
             throw new NotAuthorizedException("DPoP access token required");
         }
         return token;
@@ -530,7 +530,7 @@ public class PushMfaResource {
             throw new NotAuthorizedException("DPoP proof required");
         }
         String value = headers.getHeaderString("DPoP");
-        if (value == null || value.isBlank()) {
+        if (StringUtil.isBlank(value)) {
             throw new NotAuthorizedException("DPoP proof required");
         }
         return value.trim();
@@ -662,7 +662,7 @@ public class PushMfaResource {
     }
 
     private static boolean isSupportedAlgorithmName(String algName) {
-        if (algName == null || algName.isBlank()) {
+        if (StringUtil.isBlank(algName)) {
             return false;
         }
         String normalized = algName.toUpperCase();
@@ -685,7 +685,7 @@ public class PushMfaResource {
         if (keyWrapper == null) {
             throw new BadRequestException("JWK is required");
         }
-        if (algorithm == null || algorithm.isBlank()) {
+        if (StringUtil.isBlank(algorithm)) {
             throw new BadRequestException("Missing algorithm");
         }
 
@@ -717,7 +717,7 @@ public class PushMfaResource {
             throw new BadRequestException("JWK missing alg");
         }
         JsonNode algNode = jwkNode.get("alg");
-        if (algNode == null || !algNode.isTextual() || algNode.asText().isBlank()) {
+        if (algNode == null || !algNode.isTextual() || StringUtil.isBlank(algNode.asText())) {
             throw new BadRequestException("JWK missing alg");
         }
         String algorithm = algNode.asText();
@@ -756,7 +756,7 @@ public class PushMfaResource {
     }
 
     private KeyWrapper keyWrapperFromString(String jwkJson) {
-        if (jwkJson == null || jwkJson.isBlank()) {
+        if (StringUtil.isBlank(jwkJson)) {
             throw new BadRequestException("Stored credential missing JWK");
         }
         try {
@@ -771,7 +771,7 @@ public class PushMfaResource {
 
     private boolean ensureAuthenticationSessionActive(PushChallenge challenge) {
         String rootSessionId = challenge.getRootSessionId();
-        if (rootSessionId == null || rootSessionId.isBlank()) {
+        if (StringUtil.isBlank(rootSessionId)) {
             return true;
         }
         var root = session.authenticationSessions().getRootAuthenticationSession(realm(), rootSessionId);
@@ -786,7 +786,7 @@ public class PushMfaResource {
     private void emitLoginChallengeEvents(String challengeId, String secret, SseEventSink sink, Sse sse) {
         try (SseEventSink eventSink = sink) {
             LOG.infof("Starting login SSE stream for challenge %s", challengeId);
-            if (secret == null || secret.isBlank()) {
+            if (StringUtil.isBlank(secret)) {
                 LOG.infof("Login SSE rejected for %s due to missing secret", challengeId);
                 sendLoginStatusEvent(eventSink, sse, "INVALID", null);
                 return;
@@ -842,7 +842,7 @@ public class PushMfaResource {
     private void emitEnrollmentEvents(String challengeId, String secret, SseEventSink sink, Sse sse) {
         try (SseEventSink eventSink = sink) {
             LOG.infof("Starting enrollment SSE stream for challenge %s", challengeId);
-            if (secret == null || secret.isBlank()) {
+            if (StringUtil.isBlank(secret)) {
                 LOG.infof("Enrollment SSE rejected for %s due to missing secret", challengeId);
                 sendEnrollmentStatusEvent(eventSink, sse, "INVALID", null);
                 return;

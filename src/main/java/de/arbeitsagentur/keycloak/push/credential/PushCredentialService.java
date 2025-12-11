@@ -6,6 +6,7 @@ import java.util.stream.Collectors;
 import org.keycloak.credential.CredentialModel;
 import org.keycloak.models.SubjectCredentialManager;
 import org.keycloak.models.UserModel;
+import org.keycloak.utils.StringUtil;
 
 public final class PushCredentialService {
 
@@ -38,7 +39,7 @@ public final class PushCredentialService {
     }
 
     public static CredentialModel getCredentialById(UserModel user, String credentialId) {
-        if (credentialId == null || credentialId.isBlank()) {
+        if (StringUtil.isBlank(credentialId)) {
             return null;
         }
         CredentialModel model = user.credentialManager().getStoredCredentialById(credentialId);

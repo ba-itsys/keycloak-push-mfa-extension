@@ -2,6 +2,7 @@ package de.arbeitsagentur.keycloak.push.auth;
 
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import org.keycloak.sessions.AuthenticationSessionModel;
+import org.keycloak.utils.StringUtil;
 
 /**
  * Handles storing and reading challenge-related notes.
@@ -16,8 +17,20 @@ public final class ChallengeNoteHelper {
 
     private ChallengeNoteHelper() {}
 
+    public static String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (!StringUtil.isBlank(value)) {
+                return value;
+            }
+        }
+        return null;
+    }
+
     public static void storeChallengeId(AuthenticationSessionModel session, String challengeId) {
-        if (session == null || challengeId == null || challengeId.isBlank()) {
+        if (session == null || StringUtil.isBlank(challengeId)) {
             return;
         }
         session.setAuthNote(PushMfaConstants.CHALLENGE_NOTE, challengeId);
@@ -28,19 +41,13 @@ public final class ChallengeNoteHelper {
         if (session == null) {
             return null;
         }
-        String note = session.getAuthNote(PushMfaConstants.CHALLENGE_NOTE);
-        if (note != null && !note.isBlank()) {
-            return note;
-        }
-        note = session.getClientNote(PushMfaConstants.CHALLENGE_NOTE);
-        if (note != null && !note.isBlank()) {
-            return note;
-        }
-        return null;
+        return firstNonBlank(
+                session.getAuthNote(PushMfaConstants.CHALLENGE_NOTE),
+                session.getClientNote(PushMfaConstants.CHALLENGE_NOTE));
     }
 
     public static void storeWatchSecret(AuthenticationSessionModel session, String watchSecret) {
-        if (session == null || watchSecret == null || watchSecret.isBlank()) {
+        if (session == null || StringUtil.isBlank(watchSecret)) {
             return;
         }
         session.setAuthNote(PushMfaConstants.CHALLENGE_WATCH_SECRET_NOTE, watchSecret);

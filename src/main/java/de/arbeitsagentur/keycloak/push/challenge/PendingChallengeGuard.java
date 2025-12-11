@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Predicate;
+import org.keycloak.utils.StringUtil;
 
 public class PendingChallengeGuard {
 
@@ -51,7 +52,7 @@ public class PendingChallengeGuard {
 
     private boolean isSameOrUnknownRoot(PushChallenge challenge, String rootSessionId) {
         String challengeRoot = challenge.getRootSessionId();
-        if (challengeRoot == null || challengeRoot.isBlank()) {
+        if (StringUtil.isBlank(challengeRoot)) {
             return true;
         }
         return rootSessionId != null && rootSessionId.equals(challengeRoot);

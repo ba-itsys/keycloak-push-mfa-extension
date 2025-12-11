@@ -16,6 +16,7 @@ import org.keycloak.jose.jws.JWSBuilder.EncodingBuilder;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
+import org.keycloak.utils.StringUtil;
 
 public final class PushEnrollmentTokenBuilder {
 
@@ -24,7 +25,7 @@ public final class PushEnrollmentTokenBuilder {
     public static String build(
             KeycloakSession session, RealmModel realm, UserModel user, PushChallenge challenge, URI baseUri) {
         String signatureAlgorithm = realm.getDefaultSignatureAlgorithm();
-        if (signatureAlgorithm == null || signatureAlgorithm.isBlank()) {
+        if (StringUtil.isBlank(signatureAlgorithm)) {
             signatureAlgorithm = Algorithm.RS256.toString();
         }
         KeyWrapper key = session.keys().getActiveKey(realm, KeyUse.SIG, signatureAlgorithm);

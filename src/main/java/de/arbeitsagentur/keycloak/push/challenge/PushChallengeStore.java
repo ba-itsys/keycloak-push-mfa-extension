@@ -13,6 +13,7 @@ import java.util.stream.Collectors;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.SingleUseObjectProvider;
 import org.keycloak.models.utils.KeycloakModelUtils;
+import org.keycloak.utils.StringUtil;
 
 public class PushChallengeStore {
 
@@ -238,12 +239,12 @@ public class PushChallengeStore {
 
     private List<String> parseIndexChallengeIds(Map<String, String> index) {
         String rawIds = index.get(INDEX_CHALLENGE_IDS);
-        if (rawIds == null || rawIds.isBlank()) {
+        if (StringUtil.isBlank(rawIds)) {
             return List.of();
         }
         return java.util.Arrays.stream(rawIds.split(","))
                 .map(String::trim)
-                .filter(id -> !id.isBlank())
+                .filter(StringUtil::isNotBlank)
                 .toList();
     }
 

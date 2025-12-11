@@ -6,6 +6,7 @@ import org.jboss.logging.Logger;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
+import org.keycloak.utils.StringUtil;
 
 public final class PushNotificationService {
 
@@ -23,9 +24,8 @@ public final class PushNotificationService {
             String challengeId,
             String pushProviderType,
             String pushProviderId) {
-        String providerType = (pushProviderType == null || pushProviderType.isBlank())
-                ? PushMfaConstants.DEFAULT_PUSH_PROVIDER_TYPE
-                : pushProviderType;
+        String providerType =
+                StringUtil.isBlank(pushProviderType) ? PushMfaConstants.DEFAULT_PUSH_PROVIDER_TYPE : pushProviderType;
         PushNotificationSender sender = session.getProvider(PushNotificationSender.class, providerType);
         if (sender == null) {
             sender = session.getProvider(PushNotificationSender.class);

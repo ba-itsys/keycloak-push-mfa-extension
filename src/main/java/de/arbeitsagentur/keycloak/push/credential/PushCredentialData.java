@@ -3,6 +3,7 @@ package de.arbeitsagentur.keycloak.push.credential;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
+import org.keycloak.utils.StringUtil;
 
 public class PushCredentialData {
 
@@ -27,9 +28,8 @@ public class PushCredentialData {
         this.createdAt = createdAt;
         this.deviceType = deviceType;
         this.pushProviderId = pushProviderId;
-        this.pushProviderType = (pushProviderType == null || pushProviderType.isBlank())
-                ? PushMfaConstants.DEFAULT_PUSH_PROVIDER_TYPE
-                : pushProviderType;
+        this.pushProviderType =
+                StringUtil.isBlank(pushProviderType) ? PushMfaConstants.DEFAULT_PUSH_PROVIDER_TYPE : pushProviderType;
         this.credentialId = credentialId;
         this.deviceId = deviceId;
     }

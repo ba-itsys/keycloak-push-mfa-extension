@@ -29,6 +29,7 @@ import org.keycloak.models.UserModel;
 import org.keycloak.models.utils.FormMessage;
 import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.sessions.AuthenticationSessionModel;
+import org.keycloak.utils.StringUtil;
 
 public class PushMfaAuthenticator implements Authenticator {
 
@@ -38,14 +39,9 @@ public class PushMfaAuthenticator implements Authenticator {
     public void authenticate(AuthenticationFlowContext context) {
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
         MultivaluedMap<String, String> form = context.getHttpRequest().getDecodedFormParameters();
-        String requestChallengeId = form != null ? form.getFirst("challengeId") : null;
-        if ((requestChallengeId == null || requestChallengeId.isBlank())
-                && context.getUriInfo() != null
-                && context.getUriInfo().getQueryParameters() != null) {
-            requestChallengeId = context.getUriInfo().getQueryParameters().getFirst("challengeId");
-        }
-        boolean isRefresh = form != null && (form.containsKey("refresh") || form.containsKey("cancel"));
-        if (requestChallengeId != null && !requestChallengeId.isBlank()) {
+        String requestChallengeId = ChallengeNoteHelper.firstNonBlank(form.getFirst("challengeId"));
+        boolean isRefresh = form.containsKey("refresh") || form.containsKey("cancel");
+        if (!StringUtil.isBlank(requestChallengeId)) {
             ChallengeNoteHelper.storeChallengeId(authSession, requestChallengeId);
             action(context);
             return;
@@ -132,15 +128,8 @@ public class PushMfaAuthenticator implements Authenticator {
         PushChallengeStore challengeStore = new PushChallengeStore(context.getSession());
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
         MultivaluedMap<String, String> form = context.getHttpRequest().getDecodedFormParameters();
-        String challengeId = ChallengeNoteHelper.readChallengeId(authSession);
-        if ((challengeId == null || challengeId.isBlank()) && form != null) {
-            challengeId = form.getFirst("challengeId");
-        }
-        if ((challengeId == null || challengeId.isBlank())
-                && context.getUriInfo() != null
-                && context.getUriInfo().getQueryParameters() != null) {
-            challengeId = context.getUriInfo().getQueryParameters().getFirst("challengeId");
-        }
+        String challengeId = ChallengeNoteHelper.firstNonBlank(
+                ChallengeNoteHelper.readChallengeId(authSession), form.getFirst("challengeId"));
 
         if (challengeId == null) {
             context.failureChallenge(
@@ -151,8 +140,8 @@ public class PushMfaAuthenticator implements Authenticator {
             return;
         }
 
-        boolean refreshRequested = form != null && form.containsKey("refresh");
-        boolean cancelRequested = form != null && form.containsKey("cancel");
+        boolean refreshRequested = form.containsKey("refresh");
+        boolean cancelRequested = form.containsKey("cancel");
         if (cancelRequested) {
             challengeStore.resolve(challengeId, PushChallengeStatus.DENIED);
             challengeStore.remove(challengeId);
@@ -300,7 +289,7 @@ public class PushMfaAuthenticator implements Authenticator {
 
     private boolean isAuthenticationSessionActive(AuthenticationFlowContext context, PushChallenge challenge) {
         String rootSession = challenge.getRootSessionId();
-        if (rootSession == null || rootSession.isBlank()) {
+        if (StringUtil.isBlank(rootSession)) {
             return true;
         }
         return context.getSession()
@@ -369,7 +358,7 @@ public class PushMfaAuthenticator implements Authenticator {
         String challengeId = challenge != null ? challenge.getId() : null;
         String watchSecret = challenge != null ? challenge.getWatchSecret() : null;
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
-        if ((watchSecret == null || watchSecret.isBlank()) && authSession != null) {
+        if (StringUtil.isBlank(watchSecret) && authSession != null) {
             watchSecret = ChallengeNoteHelper.readWatchSecret(authSession);
         }
 
@@ -392,7 +381,7 @@ public class PushMfaAuthenticator implements Authenticator {
     }
 
     private String buildChallengeWatchUrl(AuthenticationFlowContext context, String challengeId, String watchSecret) {
-        if (challengeId == null || watchSecret == null || watchSecret.isBlank()) {
+        if (StringUtil.isBlank(challengeId) || StringUtil.isBlank(watchSecret)) {
             return null;
         }
         UriBuilder builder = context.getUriInfo()
@@ -421,7 +410,7 @@ public class PushMfaAuthenticator implements Authenticator {
             return null;
         }
         String name = client.getName();
-        if (name == null || name.isBlank()) {
+        if (StringUtil.isBlank(name)) {
             return null;
         }
         return name;
@@ -432,7 +421,7 @@ public class PushMfaAuthenticator implements Authenticator {
             return defaultValue;
         }
         String value = config.getConfig().get(key);
-        if (value == null || value.isBlank()) {
+        if (StringUtil.isBlank(value)) {
             return defaultValue;
         }
         try {
@@ -448,7 +437,7 @@ public class PushMfaAuthenticator implements Authenticator {
             return defaultValue;
         }
         String value = config.getConfig().get(key);
-        if (value == null || value.isBlank()) {
+        if (StringUtil.isBlank(value)) {
             return defaultValue;
         }
         try {
@@ -465,7 +454,7 @@ public class PushMfaAuthenticator implements Authenticator {
             return PushMfaConstants.DEFAULT_APP_UNIVERSAL_LINK + "confirm";
         }
         String value = config.getConfig().get(PushMfaConstants.APP_UNIVERSAL_LINK_CONFIG);
-        if (value == null || value.isBlank()) {
+        if (StringUtil.isBlank(value)) {
             return PushMfaConstants.DEFAULT_APP_UNIVERSAL_LINK + "confirm";
         }
         return value;

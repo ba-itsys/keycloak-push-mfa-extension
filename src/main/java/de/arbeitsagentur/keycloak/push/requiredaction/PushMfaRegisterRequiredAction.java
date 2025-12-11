@@ -18,6 +18,7 @@ import org.keycloak.forms.login.LoginFormsProvider;
 import org.keycloak.models.RequiredActionConfigModel;
 import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.sessions.AuthenticationSessionModel;
+import org.keycloak.utils.StringUtil;
 
 public class PushMfaRegisterRequiredAction implements RequiredActionProvider {
 
@@ -172,20 +173,18 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider {
             PushChallengeStore store,
             PushChallenge challenge) {
         PushChallenge ensured = challenge;
-        if (ensured == null
-                || ensured.getWatchSecret() == null
-                || ensured.getWatchSecret().isBlank()) {
+        if (ensured == null || StringUtil.isBlank(ensured.getWatchSecret())) {
             cleanupChallenge(authSession, store);
             ensured = fetchOrCreateChallenge(context, authSession, store, true);
         }
-        if (ensured.getWatchSecret() != null && !ensured.getWatchSecret().isBlank()) {
+        if (!StringUtil.isBlank(ensured.getWatchSecret())) {
             authSession.setAuthNote(PushMfaConstants.ENROLL_SSE_TOKEN_NOTE, ensured.getWatchSecret());
         }
         return ensured;
     }
 
     private String buildPushUri(String appUniversalLink, String enrollmentToken) {
-        if (appUniversalLink == null || appUniversalLink.isBlank()) {
+        if (StringUtil.isBlank(appUniversalLink)) {
             return enrollmentToken;
         }
         try {
@@ -200,7 +199,7 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider {
 
     private String buildEnrollmentEventsUrl(RequiredActionContext context, PushChallenge challenge) {
         String watchSecret = challenge.getWatchSecret();
-        if (watchSecret == null || watchSecret.isBlank()) {
+        if (StringUtil.isBlank(watchSecret)) {
             return null;
         }
         return context.getUriInfo()
@@ -223,7 +222,7 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider {
             return PushMfaConstants.DEFAULT_ENROLLMENT_CHALLENGE_TTL;
         }
         String value = config.getConfig().get(PushMfaConstants.ENROLLMENT_CHALLENGE_TTL_CONFIG);
-        if (value == null || value.isBlank()) {
+        if (StringUtil.isBlank(value)) {
             return PushMfaConstants.DEFAULT_ENROLLMENT_CHALLENGE_TTL;
         }
         try {
@@ -240,7 +239,7 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider {
             return PushMfaConstants.DEFAULT_APP_UNIVERSAL_LINK + "enroll";
         }
         String value = config.getConfig().get(PushMfaConstants.APP_UNIVERSAL_LINK_CONFIG);
-        if (value == null || value.isBlank()) {
+        if (StringUtil.isBlank(value)) {
             return PushMfaConstants.DEFAULT_APP_UNIVERSAL_LINK + "enroll";
         }
         return value;

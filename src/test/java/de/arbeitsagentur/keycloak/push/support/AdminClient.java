@@ -43,6 +43,8 @@ public final class AdminClient {
         }
         deletePushCredentials(userId);
         logoutUser(userId);
+        clearPendingChallenges(userId);
+        clearRealmCaches();
     }
 
     private void deletePushCredentials(String userId) throws Exception {
@@ -73,6 +75,34 @@ public final class AdminClient {
                 .build();
         HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
         assertEquals(204, response.statusCode(), () -> "Logout failed: " + response.body());
+    }
+
+    private void clearPendingChallenges(String userId) throws Exception {
+        URI deleteUri = baseUri.resolve("/realms/demo/push-mfa/login/challenges?userId=" + urlEncode(userId));
+        HttpRequest request = HttpRequest.newBuilder(deleteUri)
+                .header("Authorization", "Bearer " + accessToken)
+                .DELETE()
+                .build();
+        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+        assertEquals(204, response.statusCode(), () -> "Challenge cleanup failed: " + response.body());
+    }
+
+    private void clearRealmCaches() throws Exception {
+        URI clearRealmCache = baseUri.resolve("/admin/realms/demo/clear-realm-cache");
+        HttpRequest realmCacheRequest = HttpRequest.newBuilder(clearRealmCache)
+                .header("Authorization", "Bearer " + accessToken)
+                .POST(HttpRequest.BodyPublishers.noBody())
+                .build();
+        HttpResponse<String> realmResponse = http.send(realmCacheRequest, HttpResponse.BodyHandlers.ofString());
+        assertEquals(204, realmResponse.statusCode(), () -> "Realm cache clear failed: " + realmResponse.body());
+
+        URI clearUserCache = baseUri.resolve("/admin/realms/demo/clear-user-cache");
+        HttpRequest userCacheRequest = HttpRequest.newBuilder(clearUserCache)
+                .header("Authorization", "Bearer " + accessToken)
+                .POST(HttpRequest.BodyPublishers.noBody())
+                .build();
+        HttpResponse<String> userResponse = http.send(userCacheRequest, HttpResponse.BodyHandlers.ofString());
+        assertEquals(204, userResponse.statusCode(), () -> "User cache clear failed: " + userResponse.body());
     }
 
     private JsonNode readCredentials(String userId) throws Exception {

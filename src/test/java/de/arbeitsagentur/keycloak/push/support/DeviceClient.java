@@ -155,6 +155,20 @@ public final class DeviceClient {
         return status;
     }
 
+    public JsonNode fetchPendingChallenges() throws Exception {
+        ensureAccessToken();
+        URI pendingUri = realmBase.resolve("push-mfa/login/pending?userId=" + urlEncode(state.userId()));
+        HttpRequest request = HttpRequest.newBuilder(pendingUri)
+                .header("Authorization", "DPoP " + accessToken)
+                .header("DPoP", createDpopProof("GET", pendingUri))
+                .header("Accept", "application/json")
+                .GET()
+                .build();
+        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode(), () -> "Pending fetch failed: " + response.body());
+        return MAPPER.readTree(response.body()).path("challenges");
+    }
+
     private SignedJWT sign(JWTClaimsSet claims) throws Exception {
         DeviceSigningKey signingKey = state.signingKey();
         JWSHeader header = new JWSHeader.Builder(signingKey.algorithm())
@@ -180,10 +194,6 @@ public final class DeviceClient {
         assertEquals(200, response.statusCode(), () -> "Token request failed: " + response.body());
         JsonNode json = MAPPER.readTree(response.body());
         accessToken = json.path("access_token").asText();
-        if (accessToken != null && !accessToken.isBlank()) {
-            var jwt = SignedJWT.parse(accessToken);
-            System.err.println("Access token claims: " + jwt.getJWTClaimsSet().toJSONObject());
-        }
         assertNotNull(accessToken);
     }
 

@@ -1,10 +1,10 @@
 package de.arbeitsagentur.keycloak.push;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import de.arbeitsagentur.keycloak.push.challenge.PushChallenge;
-import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStatus;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStore;
 import java.time.Duration;
 import java.util.HashMap;
@@ -31,29 +31,25 @@ class PushChallengeStoreTest {
     }
 
     @Test
-    void keepsMultiplePendingChallengesForSameCredential() {
+    void replacesPendingChallengesForSameCredential() {
         PushChallenge first = createAuthChallenge("cred-1");
         PushChallenge second = createAuthChallenge("cred-1");
 
-        assertEquals(2, store.countPendingAuthentication(REALM_ID, USER_ID));
-        assertContainsChallenge(first.getId());
-        assertContainsChallenge(second.getId());
-
-        store.resolve(first.getId(), PushChallengeStatus.APPROVED);
         assertEquals(1, store.countPendingAuthentication(REALM_ID, USER_ID));
         assertContainsChallenge(second.getId());
+        assertFalse(store.findPendingForUser(REALM_ID, USER_ID).stream()
+                .anyMatch(challenge -> first.getId().equals(challenge.getId())));
     }
 
     @Test
-    void keepsMultiplePendingChallengesForDifferentCredentials() {
+    void replacesPendingChallengesForDifferentCredentials() {
         PushChallenge first = createAuthChallenge("cred-1");
         PushChallenge second = createAuthChallenge("cred-2");
 
-        assertEquals(2, store.findPendingForUser(REALM_ID, USER_ID).size());
-
-        store.remove(second.getId());
         assertEquals(1, store.countPendingAuthentication(REALM_ID, USER_ID));
-        assertContainsChallenge(first.getId());
+        assertContainsChallenge(second.getId());
+        assertFalse(store.findPendingForUser(REALM_ID, USER_ID).stream()
+                .anyMatch(challenge -> first.getId().equals(challenge.getId())));
     }
 
     private PushChallenge createAuthChallenge(String credentialId) {

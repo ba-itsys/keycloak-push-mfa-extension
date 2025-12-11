@@ -225,6 +225,34 @@ class PushMfaIntegrationIT {
     }
 
     @Test
+    void refreshInvalidatesOldChallenge() throws Exception {
+        try {
+            DeviceClient deviceClient = enrollDevice();
+            BrowserSession pushSession = new BrowserSession(baseUri);
+
+            HtmlPage loginPage = pushSession.startAuthorization("test-app");
+            HtmlPage waitingPage = pushSession.submitLogin(loginPage, "test", "test");
+            BrowserSession.DeviceChallenge firstChallenge = pushSession.extractDeviceChallenge(waitingPage);
+
+            HtmlPage refreshedPage = pushSession.refreshPushChallenge(waitingPage);
+            BrowserSession.DeviceChallenge refreshedChallenge = pushSession.extractDeviceChallenge(refreshedPage);
+
+            var staleResponse = deviceClient.respondToChallengeRaw(
+                    firstChallenge.confirmToken(), firstChallenge.challengeId(), PushMfaConstants.CHALLENGE_APPROVE);
+            assertEquals(404, staleResponse.statusCode(), "Stale challenge should not be accepted");
+
+            deviceClient.respondToChallenge(
+                    refreshedChallenge.confirmToken(),
+                    refreshedChallenge.challengeId(),
+                    PushMfaConstants.CHALLENGE_APPROVE);
+            pushSession.completePushChallenge(refreshedChallenge.formAction());
+        } catch (Exception ex) {
+            System.err.println("Keycloak container logs:\n" + KEYCLOAK.getLogs());
+            throw ex;
+        }
+    }
+
+    @Test
     void pendingChallengeBlocksOtherSession() throws Exception {
         try {
             DeviceClient deviceClient = enrollDevice();

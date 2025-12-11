@@ -79,6 +79,13 @@ public final class DeviceClient {
     }
 
     public String respondToChallenge(String confirmToken, String challengeId, String action) throws Exception {
+        HttpResponse<String> response = respondToChallengeRaw(confirmToken, challengeId, action);
+        assertEquals(200, response.statusCode(), () -> "Respond failed: " + response.body());
+        return MAPPER.readTree(response.body()).path("status").asText();
+    }
+
+    public HttpResponse<String> respondToChallengeRaw(String confirmToken, String challengeId, String action)
+            throws Exception {
         ensureAccessToken();
         SignedJWT confirm = SignedJWT.parse(confirmToken);
         var confirmClaims = confirm.getJWTClaimsSet();
@@ -105,9 +112,7 @@ public final class DeviceClient {
                         .put("token", loginToken.serialize())
                         .toString()))
                 .build();
-        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
-        assertEquals(200, response.statusCode(), () -> "Respond failed: " + response.body());
-        return MAPPER.readTree(response.body()).path("status").asText();
+        return http.send(request, HttpResponse.BodyHandlers.ofString());
     }
 
     public String updatePushProvider(String pushProviderId, String pushProviderType) throws Exception {

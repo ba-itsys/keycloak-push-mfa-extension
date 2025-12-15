@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.3](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.1.2...v1.1.3) (2025-12-15)
+
+
+### Bug Fixes
+
+* **security:** add input constraints/validations and SSE hardening ([481682d](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/481682d16faf615243bc035798294c2d9c036bd2))
+
 ## [1.1.2](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.1.1...v1.1.2) (2025-12-15)
 
 

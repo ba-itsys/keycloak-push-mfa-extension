@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.2](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.1.1...v1.1.2) (2025-12-15)
+
+
+### Bug Fixes
+
+* add mock integration tests ([d0d1554](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/d0d1554fc3e59be5306ce16f699d18c366cb7232))
+
 ## [1.1.1](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.1.0...v1.1.1) (2025-12-11)
 
 

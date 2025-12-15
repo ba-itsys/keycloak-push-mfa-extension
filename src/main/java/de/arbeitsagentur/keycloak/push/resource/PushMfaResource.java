@@ -12,7 +12,6 @@ import de.arbeitsagentur.keycloak.push.util.PushSignatureVerifier;
 import de.arbeitsagentur.keycloak.push.util.TokenLogHelper;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.NotAuthorizedException;
@@ -373,16 +372,6 @@ public class PushMfaResource {
         return Response.ok(Map.of("status", "rotated")).build();
     }
 
-    @DELETE
-    @Path("login/challenges")
-    public Response deleteUserChallenges(
-            @jakarta.ws.rs.QueryParam("userId") String userId, @Context HttpHeaders headers) {
-        String targetUser = require(userId, "userId");
-        AccessToken token = authenticateAdminAccessToken(headers);
-        challengeStore.removeAllAuthentication(realm().getId(), targetUser);
-        return Response.noContent().build();
-    }
-
     private RealmModel realm() {
         return session.getContext().getRealm();
     }
@@ -475,53 +464,6 @@ public class PushMfaResource {
             return verifier.verify().getToken();
         } catch (VerificationException ex) {
             throw new NotAuthorizedException("Invalid access token", ex);
-        }
-    }
-
-    private boolean canManageUsers(AccessToken token) {
-        if (token == null) {
-            return false;
-        }
-        if (token.getRealmAccess() != null
-                && (token.getRealmAccess().isUserInRole("manage-users")
-                        || token.getRealmAccess().isUserInRole("admin"))) {
-            return true;
-        }
-        var realmMgmt = token.getResourceAccess("realm-management");
-        return realmMgmt != null && realmMgmt.isUserInRole("manage-users");
-    }
-
-    private AccessToken authenticateAdminAccessToken(HttpHeaders headers) {
-        String tokenString = requireAccessToken(headers);
-        String issuerRealm = extractRealmName(tokenString);
-        RealmModel targetRealm = session.realms().getRealmByName(issuerRealm != null ? issuerRealm : realm().getName());
-        if (targetRealm == null) {
-            throw new NotAuthorizedException("Invalid access token");
-        }
-
-        RealmModel previousRealm = session.getContext().getRealm();
-        try {
-            session.getContext().setRealm(targetRealm);
-            return authenticateAccessToken(tokenString);
-        } finally {
-            session.getContext().setRealm(previousRealm);
-        }
-    }
-
-    private String extractRealmName(String tokenString) {
-        try {
-            TokenVerifier<AccessToken> verifier = TokenVerifier.create(tokenString, AccessToken.class);
-            String issuer = verifier.getToken().getIssuer();
-            if (issuer == null) {
-                return null;
-            }
-            int idx = issuer.lastIndexOf("/realms/");
-            if (idx == -1) {
-                return null;
-            }
-            return issuer.substring(idx + "/realms/".length());
-        } catch (Exception ex) {
-            return null;
         }
     }
 

@@ -43,7 +43,6 @@ public final class AdminClient {
         }
         deletePushCredentials(userId);
         logoutUser(userId);
-        clearPendingChallenges(userId);
         clearRealmCaches();
     }
 
@@ -75,16 +74,6 @@ public final class AdminClient {
                 .build();
         HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
         assertEquals(204, response.statusCode(), () -> "Logout failed: " + response.body());
-    }
-
-    private void clearPendingChallenges(String userId) throws Exception {
-        URI deleteUri = baseUri.resolve("/realms/demo/push-mfa/login/challenges?userId=" + urlEncode(userId));
-        HttpRequest request = HttpRequest.newBuilder(deleteUri)
-                .header("Authorization", "Bearer " + accessToken)
-                .DELETE()
-                .build();
-        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
-        assertEquals(204, response.statusCode(), () -> "Challenge cleanup failed: " + response.body());
     }
 
     private void clearRealmCaches() throws Exception {

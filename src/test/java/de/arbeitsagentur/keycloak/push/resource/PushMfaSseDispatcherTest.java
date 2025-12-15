@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 
 class PushMfaSseDispatcherTest {
 
-    private static final Duration TIMEOUT = Duration.ofSeconds(3);
+    private static final Duration TIMEOUT = Duration.ofSeconds(10);
 
     @Test
     void submitReturnsFalseWhenAtCapacity() throws Exception {
@@ -28,9 +28,9 @@ class PushMfaSseDispatcherTest {
             assertTrue(dispatcher.submit(() -> {
                 started.countDown();
                 try {
-                    if (!unblock.await(TIMEOUT.toSeconds(), TimeUnit.SECONDS)) {
-                        workerFailure.compareAndSet(null, new AssertionError("Worker task did not unblock in time"));
-                    }
+                    // Don't use a timed await here: if it times out, the task would complete and release its permit,
+                    // which can make the "at capacity" assertion below flaky.
+                    unblock.await();
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
                     workerFailure.compareAndSet(null, ie);
@@ -48,8 +48,19 @@ class PushMfaSseDispatcherTest {
         assertTrue(finished.await(TIMEOUT.toSeconds(), TimeUnit.SECONDS));
         assertNull(workerFailure.get(), () -> "Worker task failed: " + workerFailure.get());
 
+        // `finished` only signals that the task's finally-block ran; the dispatcher releases the permit after
+        // `task.run()` returns, so we may still race the permit release / executor scheduling. Retry to avoid
+        // flakiness.
         CountDownLatch secondTaskFinished = new CountDownLatch(1);
-        assertTrue(dispatcher.submit(secondTaskFinished::countDown));
+        boolean accepted = false;
+        long deadline = System.nanoTime() + TIMEOUT.toNanos();
+        while (!accepted && System.nanoTime() < deadline) {
+            accepted = dispatcher.submit(secondTaskFinished::countDown);
+            if (!accepted) {
+                Thread.sleep(5);
+            }
+        }
+        assertTrue(accepted);
         assertTrue(secondTaskFinished.await(TIMEOUT.toSeconds(), TimeUnit.SECONDS));
     }
 
@@ -98,9 +109,7 @@ class PushMfaSseDispatcherTest {
             peak.updateAndGet(previous -> Math.max(previous, current));
             started.countDown();
             try {
-                if (!unblock.await(TIMEOUT.toSeconds(), TimeUnit.SECONDS)) {
-                    workerFailure.compareAndSet(null, new AssertionError("Worker task did not unblock in time"));
-                }
+                unblock.await();
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
                 workerFailure.compareAndSet(null, ie);
@@ -138,28 +147,29 @@ class PushMfaSseDispatcherTest {
         AtomicInteger active = new AtomicInteger();
         AtomicReference<Throwable> workerFailure = new AtomicReference<>();
 
-        for (int i = 0; i < maxConnections; i++) {
-            assertTrue(dispatcher.submit(() -> {
-                active.incrementAndGet();
-                started.countDown();
-                try {
-                    if (!unblock.await(TIMEOUT.toSeconds(), TimeUnit.SECONDS)) {
-                        workerFailure.compareAndSet(null, new AssertionError("Worker task did not unblock in time"));
+        try {
+            for (int i = 0; i < maxConnections; i++) {
+                assertTrue(dispatcher.submit(() -> {
+                    active.incrementAndGet();
+                    started.countDown();
+                    try {
+                        unblock.await();
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        workerFailure.compareAndSet(null, ie);
+                    } finally {
+                        active.decrementAndGet();
+                        finished.countDown();
                     }
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    workerFailure.compareAndSet(null, ie);
-                } finally {
-                    active.decrementAndGet();
-                    finished.countDown();
-                }
-            }));
+                }));
+            }
+
+            assertTrue(started.await(TIMEOUT.toSeconds(), TimeUnit.SECONDS));
+            assertEquals(maxConnections, active.get());
+        } finally {
+            unblock.countDown();
         }
 
-        assertTrue(started.await(TIMEOUT.toSeconds(), TimeUnit.SECONDS));
-        assertEquals(maxConnections, active.get());
-
-        unblock.countDown();
         assertTrue(finished.await(TIMEOUT.toSeconds(), TimeUnit.SECONDS));
         assertNull(workerFailure.get(), () -> "Worker task failed: " + workerFailure.get());
     }

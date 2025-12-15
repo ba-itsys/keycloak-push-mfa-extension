@@ -8,7 +8,7 @@ import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
-import de.arbeitsagentur.keycloak.push.resource.PushMfaResource;
+import de.arbeitsagentur.keycloak.push.util.PushMfaKeyUtil;
 import jakarta.ws.rs.BadRequestException;
 import org.junit.jupiter.api.Test;
 import org.keycloak.crypto.KeyType;
@@ -21,7 +21,7 @@ class PushMfaResourceTest {
         RSAKey rsaKey = new RSAKeyGenerator(2048).generate().toPublicJWK();
         String json = rsaKey.toJSONString();
         String expected = rsaKey.computeThumbprint().toString();
-        String actual = PushMfaResource.computeJwkThumbprint(json);
+        String actual = PushMfaKeyUtil.computeJwkThumbprint(json);
         assertEquals(expected, actual);
     }
 
@@ -30,7 +30,7 @@ class PushMfaResourceTest {
         ECKey ecKey = new ECKeyGenerator(Curve.P_256).generate().toPublicJWK();
         String json = ecKey.toJSONString();
         String expected = ecKey.computeThumbprint().toString();
-        String actual = PushMfaResource.computeJwkThumbprint(json);
+        String actual = PushMfaKeyUtil.computeJwkThumbprint(json);
         assertEquals(expected, actual);
     }
 
@@ -39,7 +39,7 @@ class PushMfaResourceTest {
         KeyWrapper rsa = new KeyWrapper();
         rsa.setType(KeyType.RSA);
         rsa.setAlgorithm("RS256");
-        assertThrows(BadRequestException.class, () -> PushMfaResource.ensureKeyMatchesAlgorithm(rsa, "ES256"));
+        assertThrows(BadRequestException.class, () -> PushMfaKeyUtil.ensureKeyMatchesAlgorithm(rsa, "ES256"));
     }
 
     @Test
@@ -48,6 +48,6 @@ class PushMfaResourceTest {
         ec.setType(KeyType.EC);
         ec.setAlgorithm("ES256");
         ec.setCurve("P-384");
-        assertThrows(BadRequestException.class, () -> PushMfaResource.ensureKeyMatchesAlgorithm(ec, "ES256"));
+        assertThrows(BadRequestException.class, () -> PushMfaKeyUtil.ensureKeyMatchesAlgorithm(ec, "ES256"));
     }
 }

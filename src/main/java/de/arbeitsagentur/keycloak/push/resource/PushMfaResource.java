@@ -7,7 +7,10 @@ import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStatus;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStore;
 import de.arbeitsagentur.keycloak.push.credential.PushCredentialData;
 import de.arbeitsagentur.keycloak.push.credential.PushCredentialService;
+import de.arbeitsagentur.keycloak.push.util.PushMfaConfig;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
+import de.arbeitsagentur.keycloak.push.util.PushMfaInputValidator;
+import de.arbeitsagentur.keycloak.push.util.PushMfaKeyUtil;
 import de.arbeitsagentur.keycloak.push.util.PushSignatureVerifier;
 import de.arbeitsagentur.keycloak.push.util.TokenLogHelper;
 import jakarta.ws.rs.BadRequestException;
@@ -29,35 +32,30 @@ import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriInfo;
 import jakarta.ws.rs.sse.Sse;
 import jakarta.ws.rs.sse.SseEventSink;
-import java.security.MessageDigest;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
 import org.jboss.logging.Logger;
 import org.keycloak.TokenVerifier;
 import org.keycloak.TokenVerifier.Predicate;
 import org.keycloak.common.VerificationException;
 import org.keycloak.credential.CredentialModel;
-import org.keycloak.crypto.KeyType;
 import org.keycloak.crypto.KeyWrapper;
 import org.keycloak.crypto.SignatureProvider;
 import org.keycloak.crypto.SignatureVerifierContext;
-import org.keycloak.jose.jwk.JWK;
 import org.keycloak.jose.jws.Algorithm;
 import org.keycloak.jose.jws.JWSInput;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
+import org.keycloak.models.SingleUseObjectProvider;
 import org.keycloak.models.UserModel;
 import org.keycloak.protocol.oidc.TokenManager;
 import org.keycloak.representations.AccessToken;
 import org.keycloak.services.Urls;
-import org.keycloak.util.JWKSUtils;
 import org.keycloak.util.JsonSerialization;
 import org.keycloak.util.TokenUtil;
 import org.keycloak.utils.StringUtil;
@@ -67,6 +65,12 @@ import org.keycloak.utils.StringUtil;
 public class PushMfaResource {
 
     private static final Logger LOG = Logger.getLogger(PushMfaResource.class);
+
+    private static final PushMfaConfig PUSH_MFA_CONFIG = PushMfaConfig.load();
+    private static final PushMfaConfig.Dpop DPOP_LIMITS = PUSH_MFA_CONFIG.dpop();
+    private static final PushMfaConfig.Input INPUT_LIMITS = PUSH_MFA_CONFIG.input();
+    private static final PushMfaConfig.Sse SSE_LIMITS = PUSH_MFA_CONFIG.sse();
+    private static final PushMfaSseDispatcher SSE_DISPATCHER = new PushMfaSseDispatcher(SSE_LIMITS.maxConnections());
 
     private final KeycloakSession session;
     private final PushChallengeStore challengeStore;
@@ -82,20 +86,37 @@ public class PushMfaResource {
     public void streamEnrollmentEvents(
             @PathParam("challengeId") String challengeId,
             @QueryParam("secret") String secret,
-            @jakarta.ws.rs.core.Context SseEventSink sink,
-            @jakarta.ws.rs.core.Context Sse sse) {
+            @Context SseEventSink sink,
+            @Context Sse sse) {
         if (sink == null || sse == null) {
             return;
         }
-        LOG.infof("Received enrollment SSE stream request for challenge %s", challengeId);
-        CompletableFuture.runAsync(() -> emitEnrollmentEvents(challengeId, secret, sink, sse));
+        String normalizedChallengeId = PushMfaInputValidator.requireUuid(challengeId, "challengeId");
+        String normalizedSecret =
+                PushMfaInputValidator.optionalBoundedText(secret, SSE_LIMITS.maxSecretLength(), "secret");
+        LOG.infof("Received enrollment SSE stream request for challenge %s", normalizedChallengeId);
+
+        boolean accepted =
+                SSE_DISPATCHER.submit(() -> emitEnrollmentEvents(normalizedChallengeId, normalizedSecret, sink, sse));
+        if (!accepted) {
+            LOG.warnf(
+                    "Rejecting enrollment SSE for %s due to maxConnections=%d",
+                    normalizedChallengeId, SSE_DISPATCHER.maxConnections());
+            try (SseEventSink eventSink = sink) {
+                sendEnrollmentStatusEvent(eventSink, sse, "TOO_MANY_CONNECTIONS", null);
+            }
+        }
     }
 
     @POST
     @Path("enroll/complete")
     @Consumes(MediaType.APPLICATION_JSON)
     public Response completeEnrollment(EnrollmentCompleteRequest request) {
-        String deviceToken = require(request.token(), "token");
+        if (request == null) {
+            throw new BadRequestException("Request body required");
+        }
+        String deviceToken = PushMfaInputValidator.require(request.token(), "token");
+        PushMfaInputValidator.requireMaxLength(deviceToken, INPUT_LIMITS.maxJwtLength(), "token");
         TokenLogHelper.logJwt("enroll-device-token", deviceToken);
 
         JWSInput deviceResponse;
@@ -113,12 +134,13 @@ public class PushMfaResource {
         }
 
         Algorithm algorithm = deviceResponse.getHeader().getAlgorithm();
-        requireSupportedAlgorithm(algorithm, "enrollment token");
+        PushMfaKeyUtil.requireSupportedAlgorithm(algorithm, "enrollment token");
 
-        String userId = require(jsonText(payload, "sub"), "sub");
+        String userId = PushMfaInputValidator.requireBoundedText(
+                jsonText(payload, "sub"), INPUT_LIMITS.maxUserIdLength(), "sub");
         UserModel user = getUser(userId);
 
-        String enrollmentId = require(jsonText(payload, "enrollmentId"), "enrollmentId");
+        String enrollmentId = PushMfaInputValidator.requireUuid(jsonText(payload, "enrollmentId"), "enrollmentId");
         PushChallenge challenge =
                 challengeStore.get(enrollmentId).orElseThrow(() -> new NotFoundException("Challenge not found"));
 
@@ -136,7 +158,7 @@ public class PushMfaResource {
 
         verifyTokenExpiration(payload.get("exp"), "enrollment token");
 
-        String encodedNonce = require(jsonText(payload, "nonce"), "nonce");
+        String encodedNonce = PushMfaInputValidator.requireBoundedText(jsonText(payload, "nonce"), 256, "nonce");
         if (!Objects.equals(encodedNonce, PushChallengeStore.encodeNonce(challenge.getNonce()))) {
             throw new ForbiddenException("Nonce mismatch");
         }
@@ -146,24 +168,36 @@ public class PushMfaResource {
         if (jwkNode.isMissingNode() || jwkNode.isNull()) {
             throw new BadRequestException("Enrollment token is missing cnf.jwk claim");
         }
-        KeyWrapper deviceKey = keyWrapperFromNode(jwkNode);
-        ensureKeyMatchesAlgorithm(deviceKey, algorithm.name());
+        if (!jwkNode.isObject()) {
+            throw new BadRequestException("Enrollment token cnf.jwk must be an object");
+        }
+        PushMfaInputValidator.ensurePublicJwk(jwkNode, "cnf.jwk");
+        String jwkJson = jwkNode.toString();
+        PushMfaInputValidator.requireMaxLength(jwkJson, INPUT_LIMITS.maxJwkJsonLength(), "cnf.jwk");
+        KeyWrapper deviceKey = PushMfaKeyUtil.keyWrapperFromNode(jwkNode);
+        PushMfaKeyUtil.ensureKeyMatchesAlgorithm(deviceKey, algorithm.name());
 
         if (!PushSignatureVerifier.verify(deviceResponse, deviceKey)) {
             throw new ForbiddenException("Invalid enrollment token signature");
         }
 
-        String deviceType = require(jsonText(payload, "deviceType"), "deviceType");
-        String pushProviderId = require(jsonText(payload, "pushProviderId"), "pushProviderId");
-        String pushProviderType = require(jsonText(payload, "pushProviderType"), "pushProviderType");
-        String credentialId = require(jsonText(payload, "credentialId"), "credentialId");
-        String deviceId = require(jsonText(payload, "deviceId"), "deviceId");
+        String deviceType = PushMfaInputValidator.requireBoundedText(
+                jsonText(payload, "deviceType"), INPUT_LIMITS.maxDeviceTypeLength(), "deviceType");
+        String pushProviderId = PushMfaInputValidator.requireBoundedText(
+                jsonText(payload, "pushProviderId"), INPUT_LIMITS.maxPushProviderIdLength(), "pushProviderId");
+        String pushProviderType = PushMfaInputValidator.requireBoundedText(
+                jsonText(payload, "pushProviderType"), INPUT_LIMITS.maxPushProviderTypeLength(), "pushProviderType");
+        String credentialId = PushMfaInputValidator.requireBoundedText(
+                jsonText(payload, "credentialId"), INPUT_LIMITS.maxCredentialIdLength(), "credentialId");
+        String deviceId = PushMfaInputValidator.requireBoundedText(
+                jsonText(payload, "deviceId"), INPUT_LIMITS.maxDeviceIdLength(), "deviceId");
 
         String labelClaim = jsonText(payload, "deviceLabel");
         String label = StringUtil.isBlank(labelClaim) ? PushMfaConstants.USER_CREDENTIAL_DISPLAY_NAME : labelClaim;
+        label = PushMfaInputValidator.requireBoundedText(label, INPUT_LIMITS.maxDeviceLabelLength(), "deviceLabel");
 
         PushCredentialData data = new PushCredentialData(
-                jwkNode.toString(),
+                jwkJson,
                 Instant.now().toEpochMilli(),
                 deviceType,
                 pushProviderId,
@@ -179,8 +213,9 @@ public class PushMfaResource {
     @GET
     @Path("login/pending")
     public Response listPendingChallenges(
-            @jakarta.ws.rs.QueryParam("userId") String userId, @Context HttpHeaders headers, @Context UriInfo uriInfo) {
-        String normalizedUserId = require(userId, "userId");
+            @QueryParam("userId") String userId, @Context HttpHeaders headers, @Context UriInfo uriInfo) {
+        String normalizedUserId =
+                PushMfaInputValidator.requireBoundedText(userId, INPUT_LIMITS.maxUserIdLength(), "userId");
         DeviceAssertion device = authenticateDevice(headers, uriInfo, "GET");
         if (!Objects.equals(device.user().getId(), normalizedUserId)) {
             throw new ForbiddenException("Device token subject mismatch");
@@ -212,7 +247,10 @@ public class PushMfaResource {
             ChallengeRespondRequest request,
             @Context HttpHeaders headers,
             @Context UriInfo uriInfo) {
-        String challengeId = require(cid, "cid");
+        if (request == null) {
+            throw new BadRequestException("Request body required");
+        }
+        String challengeId = PushMfaInputValidator.requireUuid(cid, "cid");
         PushChallenge challenge =
                 challengeStore.get(challengeId).orElseThrow(() -> new NotFoundException("Challenge not found"));
 
@@ -220,6 +258,9 @@ public class PushMfaResource {
 
         if (challenge.getType() != PushChallenge.Type.AUTHENTICATION) {
             throw new BadRequestException("Challenge is not for login");
+        }
+        if (challenge.getStatus() != PushChallengeStatus.PENDING) {
+            throw new BadRequestException("Challenge already resolved or expired");
         }
 
         DeviceAssertion assertion = authenticateDevice(headers, uriInfo, "POST");
@@ -235,7 +276,8 @@ public class PushMfaResource {
             throw new ForbiddenException("Authentication token device mismatch");
         }
 
-        String deviceToken = require(request.token(), "token");
+        String deviceToken = PushMfaInputValidator.require(request.token(), "token");
+        PushMfaInputValidator.requireMaxLength(deviceToken, INPUT_LIMITS.maxJwtLength(), "token");
         TokenLogHelper.logJwt("login-device-token", deviceToken);
 
         JWSInput loginResponse;
@@ -246,7 +288,7 @@ public class PushMfaResource {
         }
 
         Algorithm algorithm = loginResponse.getHeader().getAlgorithm();
-        requireSupportedAlgorithm(algorithm, "authentication token");
+        PushMfaKeyUtil.requireSupportedAlgorithm(algorithm, "authentication token");
 
         JsonNode payload;
         try {
@@ -259,7 +301,7 @@ public class PushMfaResource {
                 .map(String::toLowerCase)
                 .orElse(PushMfaConstants.CHALLENGE_APPROVE);
 
-        String tokenChallengeId = require(jsonText(payload, "cid"), "cid");
+        String tokenChallengeId = PushMfaInputValidator.requireUuid(jsonText(payload, "cid"), "cid");
         if (!Objects.equals(tokenChallengeId, challengeId)) {
             throw new ForbiddenException("Challenge mismatch");
         }
@@ -270,8 +312,8 @@ public class PushMfaResource {
             throw new BadRequestException("Stored credential missing credentialId");
         }
 
-        KeyWrapper publicKey = keyWrapperFromString(data.getPublicKeyJwk());
-        ensureKeyMatchesAlgorithm(publicKey, algorithm.name());
+        KeyWrapper publicKey = PushMfaKeyUtil.keyWrapperFromString(data.getPublicKeyJwk());
+        PushMfaKeyUtil.ensureKeyMatchesAlgorithm(publicKey, algorithm.name());
 
         if (!PushSignatureVerifier.verify(loginResponse, publicKey)) {
             throw new ForbiddenException("Invalid authentication token signature");
@@ -279,7 +321,8 @@ public class PushMfaResource {
 
         verifyTokenExpiration(payload.get("exp"), "authentication token");
 
-        String tokenCredentialId = require(jsonText(payload, "credId"), "credId");
+        String tokenCredentialId = PushMfaInputValidator.requireBoundedText(
+                jsonText(payload, "credId"), INPUT_LIMITS.maxCredentialIdLength(), "credId");
         if (!Objects.equals(tokenCredentialId, data.getCredentialId())) {
             throw new ForbiddenException("Authentication token credential mismatch");
         }
@@ -308,8 +351,21 @@ public class PushMfaResource {
         if (sink == null || sse == null) {
             return;
         }
-        LOG.infof("Received login SSE stream request for challenge %s", challengeId);
-        CompletableFuture.runAsync(() -> emitLoginChallengeEvents(challengeId, secret, sink, sse));
+        String normalizedChallengeId = PushMfaInputValidator.requireUuid(challengeId, "cid");
+        String normalizedSecret =
+                PushMfaInputValidator.optionalBoundedText(secret, SSE_LIMITS.maxSecretLength(), "secret");
+        LOG.infof("Received login SSE stream request for challenge %s", normalizedChallengeId);
+
+        boolean accepted = SSE_DISPATCHER.submit(
+                () -> emitLoginChallengeEvents(normalizedChallengeId, normalizedSecret, sink, sse));
+        if (!accepted) {
+            LOG.warnf(
+                    "Rejecting login SSE for %s due to maxConnections=%d",
+                    normalizedChallengeId, SSE_DISPATCHER.maxConnections());
+            try (SseEventSink eventSink = sink) {
+                sendLoginStatusEvent(eventSink, sse, "TOO_MANY_CONNECTIONS", null);
+            }
+        }
     }
 
     @PUT
@@ -317,12 +373,20 @@ public class PushMfaResource {
     @Consumes(MediaType.APPLICATION_JSON)
     public Response updateDevicePushProvider(
             @Context HttpHeaders headers, @Context UriInfo uriInfo, UpdatePushProviderRequest request) {
+        if (request == null) {
+            throw new BadRequestException("Request body required");
+        }
         DeviceAssertion device = authenticateDevice(headers, uriInfo, "PUT");
-        String pushProviderId = require(request.pushProviderId(), "pushProviderId");
-        String pushProviderType = request.pushProviderType();
+        String pushProviderId = PushMfaInputValidator.requireBoundedText(
+                request.pushProviderId(), INPUT_LIMITS.maxPushProviderIdLength(), "pushProviderId");
+        String pushProviderType = PushMfaInputValidator.optionalBoundedText(
+                request.pushProviderType(), INPUT_LIMITS.maxPushProviderTypeLength(), "pushProviderType");
         PushCredentialData current = device.credentialData();
         if (StringUtil.isBlank(pushProviderType)) {
             pushProviderType = current.getPushProviderType();
+        } else {
+            pushProviderType = PushMfaInputValidator.requireBoundedText(
+                    pushProviderType, INPUT_LIMITS.maxPushProviderTypeLength(), "pushProviderType");
         }
         if (pushProviderId.equals(current.getPushProviderId())
                 && pushProviderType.equals(current.getPushProviderType())) {
@@ -348,17 +412,26 @@ public class PushMfaResource {
     @Consumes(MediaType.APPLICATION_JSON)
     public Response rotateDeviceKey(
             @Context HttpHeaders headers, @Context UriInfo uriInfo, RotateDeviceKeyRequest request) {
+        if (request == null) {
+            throw new BadRequestException("Request body required");
+        }
         DeviceAssertion device = authenticateDevice(headers, uriInfo, "PUT");
         JsonNode jwkNode = Optional.ofNullable(request.publicKeyJwk())
                 .orElseThrow(() -> new BadRequestException("Request missing publicKeyJwk"));
+        if (!jwkNode.isObject()) {
+            throw new BadRequestException("publicKeyJwk must be an object");
+        }
+        PushMfaInputValidator.ensurePublicJwk(jwkNode, "publicKeyJwk");
+        String jwkJson = jwkNode.toString();
+        PushMfaInputValidator.requireMaxLength(jwkJson, INPUT_LIMITS.maxJwkJsonLength(), "publicKeyJwk");
 
-        KeyWrapper newKey = keyWrapperFromNode(jwkNode);
-        String normalizedAlgorithm = algorithmFromJwk(jwkNode);
-        ensureKeyMatchesAlgorithm(newKey, normalizedAlgorithm);
+        KeyWrapper newKey = PushMfaKeyUtil.keyWrapperFromNode(jwkNode);
+        String normalizedAlgorithm = PushMfaKeyUtil.requireAlgorithmFromJwk(jwkNode, "rotate-key request");
+        PushMfaKeyUtil.ensureKeyMatchesAlgorithm(newKey, normalizedAlgorithm);
 
         PushCredentialData current = device.credentialData();
         PushCredentialData updated = new PushCredentialData(
-                jwkNode.toString(),
+                jwkJson,
                 Instant.now().toEpochMilli(),
                 current.getDeviceType(),
                 current.getPushProviderId(),
@@ -399,13 +472,6 @@ public class PushMfaResource {
         return user;
     }
 
-    private static String require(String value, String fieldName) {
-        if (StringUtil.isBlank(value)) {
-            throw new BadRequestException("Missing field: " + fieldName);
-        }
-        return value;
-    }
-
     private static String jsonText(JsonNode node, String field) {
         JsonNode value = node.get(field);
         if (value == null || value.isNull()) {
@@ -443,6 +509,7 @@ public class PushMfaResource {
         if (StringUtil.isBlank(token)) {
             throw new NotAuthorizedException("DPoP access token required");
         }
+        PushMfaInputValidator.requireMaxLength(token, INPUT_LIMITS.maxJwtLength(), "access token");
         return token;
     }
 
@@ -475,7 +542,9 @@ public class PushMfaResource {
         if (StringUtil.isBlank(value)) {
             throw new NotAuthorizedException("DPoP proof required");
         }
-        return value.trim();
+        String proof = value.trim();
+        PushMfaInputValidator.requireMaxLength(proof, INPUT_LIMITS.maxJwtLength(), "DPoP proof");
+        return proof;
     }
 
     private DeviceAssertion authenticateDevice(HttpHeaders headers, UriInfo uriInfo, String httpMethod) {
@@ -491,7 +560,7 @@ public class PushMfaResource {
         }
 
         Algorithm algorithm = dpop.getHeader().getAlgorithm();
-        requireSupportedAlgorithm(algorithm, "DPoP proof");
+        PushMfaKeyUtil.requireSupportedAlgorithm(algorithm, "DPoP proof");
 
         String typ = dpop.getHeader().getType();
         if (typ == null || !"dpop+jwt".equalsIgnoreCase(typ)) {
@@ -505,12 +574,12 @@ public class PushMfaResource {
             throw new BadRequestException("Unable to parse DPoP proof");
         }
 
-        String htm = require(jsonText(payload, "htm"), "htm");
+        String htm = PushMfaInputValidator.require(jsonText(payload, "htm"), "htm");
         if (!httpMethod.equalsIgnoreCase(htm)) {
             throw new ForbiddenException("DPoP proof htm mismatch");
         }
 
-        String htu = require(jsonText(payload, "htu"), "htu");
+        String htu = PushMfaInputValidator.require(jsonText(payload, "htu"), "htu");
         String actualHtu = uriInfo.getRequestUri().toString();
         if (!actualHtu.equals(htu)) {
             throw new ForbiddenException("DPoP proof htu mismatch");
@@ -525,8 +594,13 @@ public class PushMfaResource {
             throw new BadRequestException("DPoP proof expired");
         }
 
-        String tokenSubject = require(jsonText(payload, "sub"), "sub");
-        String tokenDeviceId = require(jsonText(payload, "deviceId"), "deviceId");
+        String jti = PushMfaInputValidator.require(jsonText(payload, "jti"), "jti");
+        PushMfaInputValidator.requireMaxLength(jti, DPOP_LIMITS.jtiMaxLength(), "jti");
+
+        String tokenSubject = PushMfaInputValidator.requireBoundedText(
+                jsonText(payload, "sub"), INPUT_LIMITS.maxUserIdLength(), "sub");
+        String tokenDeviceId = PushMfaInputValidator.requireBoundedText(
+                jsonText(payload, "deviceId"), INPUT_LIMITS.maxDeviceIdLength(), "deviceId");
 
         UserModel user = getUser(tokenSubject);
 
@@ -550,8 +624,8 @@ public class PushMfaResource {
             throw new BadRequestException("Stored credential missing JWK");
         }
 
-        KeyWrapper keyWrapper = keyWrapperFromString(credentialData.getPublicKeyJwk());
-        ensureKeyMatchesAlgorithm(keyWrapper, algorithm.name());
+        KeyWrapper keyWrapper = PushMfaKeyUtil.keyWrapperFromString(credentialData.getPublicKeyJwk());
+        PushMfaKeyUtil.ensureKeyMatchesAlgorithm(keyWrapper, algorithm.name());
 
         if (!PushSignatureVerifier.verify(dpop, keyWrapper)) {
             throw new ForbiddenException("Invalid DPoP proof signature");
@@ -563,152 +637,25 @@ public class PushMfaResource {
                 || confirmation.getKeyThumbprint().isBlank()) {
             throw new ForbiddenException("Access token missing DPoP binding");
         }
-        String expectedJkt = computeJwkThumbprint(credentialData.getPublicKeyJwk());
+        String expectedJkt = PushMfaKeyUtil.computeJwkThumbprint(credentialData.getPublicKeyJwk());
         if (!Objects.equals(expectedJkt, confirmation.getKeyThumbprint())) {
             throw new ForbiddenException("Access token DPoP binding mismatch");
+        }
+
+        if (!markDpopJtiUsed(realm().getId(), expectedJkt, jti)) {
+            throw new ForbiddenException("DPoP proof replay detected");
         }
 
         return new DeviceAssertion(user, credential, credentialData);
     }
 
-    public static String computeJwkThumbprint(String jwkJson) {
-        try {
-            JsonNode jwk = JsonSerialization.mapper.readTree(jwkJson);
-            String kty = require(jwk.path("kty").asText(null), "kty");
-            var canonical = JsonSerialization.mapper.createObjectNode();
-            if ("RSA".equalsIgnoreCase(kty)) {
-                String n = require(jwk.path("n").asText(null), "n");
-                String e = require(jwk.path("e").asText(null), "e");
-                canonical.put("e", e);
-                canonical.put("kty", "RSA");
-                canonical.put("n", n);
-            } else if ("EC".equalsIgnoreCase(kty)) {
-                String crv = require(jwk.path("crv").asText(null), "crv");
-                String x = require(jwk.path("x").asText(null), "x");
-                String y = require(jwk.path("y").asText(null), "y");
-                canonical.put("crv", crv);
-                canonical.put("kty", "EC");
-                canonical.put("x", x);
-                canonical.put("y", y);
-            } else {
-                throw new BadRequestException("Unsupported key type for DPoP binding");
-            }
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(JsonSerialization.mapper.writeValueAsBytes(canonical));
-            return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
-        } catch (BadRequestException ex) {
-            throw ex;
-        } catch (Exception ex) {
-            throw new BadRequestException("Unable to compute JWK thumbprint", ex);
+    private boolean markDpopJtiUsed(String realmId, String jkt, String jti) {
+        SingleUseObjectProvider singleUse = session.singleUseObjects();
+        if (singleUse == null) {
+            throw new IllegalStateException("SingleUseObjectProvider unavailable");
         }
-    }
-
-    private static boolean isSupportedAlgorithmName(String algName) {
-        if (StringUtil.isBlank(algName)) {
-            return false;
-        }
-        String normalized = algName.toUpperCase();
-        return normalized.startsWith("RS") || normalized.startsWith("ES");
-    }
-
-    private static void requireSupportedAlgorithm(Algorithm algorithm, String context) {
-        if (algorithm == null || !isSupportedAlgorithmName(algorithm.name())) {
-            throw new BadRequestException("Unsupported " + context + " algorithm: " + algorithm);
-        }
-    }
-
-    private static void requireSupportedAlgorithm(String algName, String context) {
-        if (!isSupportedAlgorithmName(algName)) {
-            throw new BadRequestException("Unsupported " + context + " algorithm: " + algName);
-        }
-    }
-
-    public static void ensureKeyMatchesAlgorithm(KeyWrapper keyWrapper, String algorithm) {
-        if (keyWrapper == null) {
-            throw new BadRequestException("JWK is required");
-        }
-        if (StringUtil.isBlank(algorithm)) {
-            throw new BadRequestException("Missing algorithm");
-        }
-
-        String normalizedAlg = algorithm.toUpperCase();
-        if (keyWrapper.getAlgorithm() != null && !normalizedAlg.equalsIgnoreCase(keyWrapper.getAlgorithm())) {
-            throw new BadRequestException("JWK algorithm mismatch");
-        }
-        if (KeyType.RSA.equals(keyWrapper.getType())) {
-            if (!normalizedAlg.startsWith("RS")) {
-                throw new BadRequestException("RSA keys require RS* algorithms");
-            }
-        } else if (KeyType.EC.equals(keyWrapper.getType())) {
-            if (!normalizedAlg.startsWith("ES")) {
-                throw new BadRequestException("EC keys require ES* algorithms");
-            }
-            String curve = keyWrapper.getCurve();
-            String expectedCurve = curveForAlgorithm(normalizedAlg);
-            if (curve != null && expectedCurve != null && !expectedCurve.equalsIgnoreCase(curve)) {
-                throw new BadRequestException("EC curve " + curve + " incompatible with " + normalizedAlg);
-            }
-        } else {
-            throw new BadRequestException("Unsupported key type: " + keyWrapper.getType());
-        }
-        keyWrapper.setAlgorithm(normalizedAlg);
-    }
-
-    private String algorithmFromJwk(JsonNode jwkNode) {
-        if (jwkNode == null) {
-            throw new BadRequestException("JWK missing alg");
-        }
-        JsonNode algNode = jwkNode.get("alg");
-        if (algNode == null || !algNode.isTextual() || StringUtil.isBlank(algNode.asText())) {
-            throw new BadRequestException("JWK missing alg");
-        }
-        String algorithm = algNode.asText();
-        requireSupportedAlgorithm(algorithm, "rotate-key request");
-        return algorithm.toUpperCase();
-    }
-
-    private static String curveForAlgorithm(String algorithm) {
-        return switch (algorithm) {
-            case "ES256" -> "P-256";
-            case "ES384" -> "P-384";
-            case "ES512" -> "P-521";
-            default -> null;
-        };
-    }
-
-    private KeyWrapper keyWrapperFromNode(JsonNode jwkNode) {
-        if (jwkNode == null) {
-            throw new BadRequestException("JWK is required");
-        }
-        try {
-            JWK jwk = JsonSerialization.mapper.treeToValue(jwkNode, JWK.class);
-            KeyWrapper wrapper = JWKSUtils.getKeyWrapper(jwk);
-            if (wrapper == null) {
-                throw new BadRequestException("Unsupported JWK");
-            }
-            if (wrapper.getAlgorithm() == null && jwk.getAlgorithm() != null) {
-                wrapper.setAlgorithm(jwk.getAlgorithm());
-            }
-            return wrapper;
-        } catch (BadRequestException ex) {
-            throw ex;
-        } catch (Exception ex) {
-            throw new BadRequestException("Unable to parse JWK", ex);
-        }
-    }
-
-    private KeyWrapper keyWrapperFromString(String jwkJson) {
-        if (StringUtil.isBlank(jwkJson)) {
-            throw new BadRequestException("Stored credential missing JWK");
-        }
-        try {
-            JsonNode node = JsonSerialization.mapper.readTree(jwkJson);
-            return keyWrapperFromNode(node);
-        } catch (BadRequestException ex) {
-            throw ex;
-        } catch (Exception ex) {
-            throw new BadRequestException("Stored credential contains invalid JWK", ex);
-        }
+        String key = String.format("push-mfa:dpop:jti:%s:%s:%s", realmId, jkt, jti);
+        return singleUse.putIfAbsent(key, DPOP_LIMITS.jtiTtlSeconds());
     }
 
     private boolean ensureAuthenticationSessionActive(PushChallenge challenge) {

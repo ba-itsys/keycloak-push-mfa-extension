@@ -2,6 +2,7 @@ package de.arbeitsagentur.keycloak.push;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -19,10 +20,16 @@ import de.arbeitsagentur.keycloak.push.support.DeviceState;
 import de.arbeitsagentur.keycloak.push.support.HtmlPage;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -44,6 +51,9 @@ class PushMfaIntegrationIT {
     private static final Path REALM_FILE =
             Paths.get("config", "demo-realm.json").toAbsolutePath();
     private static final String TEST_USERNAME = "test";
+    private static final String TEST_PASSWORD = "test";
+    private static final String ATTACKER_USERNAME = "attacker";
+    private static final String ATTACKER_PASSWORD = "attacker";
 
     @Container
     private static final GenericContainer<?> KEYCLOAK = new GenericContainer<>("quay.io/keycloak/keycloak:26.4.5")
@@ -84,7 +94,7 @@ class PushMfaIntegrationIT {
         DeviceClient deviceClient = enrollDevice();
         BrowserSession pushSession = new BrowserSession(baseUri);
         HtmlPage pushLogin = pushSession.startAuthorization("test-app");
-        HtmlPage waitingPage = pushSession.submitLogin(pushLogin, "test", "test");
+        HtmlPage waitingPage = pushSession.submitLogin(pushLogin, TEST_USERNAME, TEST_PASSWORD);
         BrowserSession.DeviceChallenge confirm = pushSession.extractDeviceChallenge(waitingPage);
 
         String status = deviceClient.respondToChallenge(
@@ -106,7 +116,7 @@ class PushMfaIntegrationIT {
 
         BrowserSession enrollmentSession = new BrowserSession(baseUri);
         HtmlPage loginPage = enrollmentSession.startAuthorization("test-app");
-        HtmlPage enrollmentPage = enrollmentSession.submitLogin(loginPage, "test", "test");
+        HtmlPage enrollmentPage = enrollmentSession.submitLogin(loginPage, TEST_USERNAME, TEST_PASSWORD);
         String originalToken = enrollmentSession.extractEnrollmentToken(enrollmentPage);
         String originalChallenge = enrollmentSession.extractEnrollmentChallengeId(enrollmentPage);
 
@@ -128,7 +138,7 @@ class PushMfaIntegrationIT {
         BrowserSession pushSession = new BrowserSession(baseUri);
 
         HtmlPage loginPage = pushSession.startAuthorization("test-app");
-        HtmlPage waitingPage = pushSession.submitLogin(loginPage, "test", "test");
+        HtmlPage waitingPage = pushSession.submitLogin(loginPage, TEST_USERNAME, TEST_PASSWORD);
         BrowserSession.DeviceChallenge initialChallenge = pushSession.extractDeviceChallenge(waitingPage);
 
         HtmlPage refreshedWaiting = pushSession.refreshPushChallenge(waitingPage);
@@ -158,7 +168,7 @@ class PushMfaIntegrationIT {
         BrowserSession pushSession = new BrowserSession(baseUri);
 
         HtmlPage firstLogin = pushSession.startAuthorization("test-app");
-        HtmlPage waitingPage = pushSession.submitLogin(firstLogin, "test", "test");
+        HtmlPage waitingPage = pushSession.submitLogin(firstLogin, TEST_USERNAME, TEST_PASSWORD);
         BrowserSession.DeviceChallenge firstChallenge = pushSession.extractDeviceChallenge(waitingPage);
         JWTClaimsSet firstClaims =
                 SignedJWT.parse(firstChallenge.confirmToken()).getJWTClaimsSet();
@@ -170,7 +180,7 @@ class PushMfaIntegrationIT {
         JsonNode pending = deviceClient.fetchPendingChallenges();
         long pendingExpires = pending.get(0).path("expiresAt").asLong();
         String pendingCid = pending.get(0).path("cid").asText();
-        assertEquals("test", pending.get(0).path("username").asText());
+        assertEquals(TEST_USERNAME, pending.get(0).path("username").asText());
         assertEquals(refreshedChallenge.challengeId(), pendingCid);
 
         assertNotEquals(
@@ -202,7 +212,7 @@ class PushMfaIntegrationIT {
         BrowserSession pushSession = new BrowserSession(baseUri);
 
         HtmlPage loginPage = pushSession.startAuthorization("test-app");
-        HtmlPage waitingPage = pushSession.submitLogin(loginPage, "test", "test");
+        HtmlPage waitingPage = pushSession.submitLogin(loginPage, TEST_USERNAME, TEST_PASSWORD);
         BrowserSession.DeviceChallenge firstChallenge = pushSession.extractDeviceChallenge(waitingPage);
 
         HtmlPage refreshedPage = pushSession.refreshPushChallenge(waitingPage);
@@ -225,14 +235,14 @@ class PushMfaIntegrationIT {
         BrowserSession firstSession = new BrowserSession(baseUri);
 
         HtmlPage loginPage = firstSession.startAuthorization("test-app");
-        HtmlPage waitingPage = firstSession.submitLogin(loginPage, "test", "test");
+        HtmlPage waitingPage = firstSession.submitLogin(loginPage, TEST_USERNAME, TEST_PASSWORD);
         BrowserSession.DeviceChallenge firstChallenge = firstSession.extractDeviceChallenge(waitingPage);
 
         BrowserSession secondSession = new BrowserSession(baseUri);
         HtmlPage secondLogin = secondSession.startAuthorization("test-app");
         IllegalStateException error = assertThrows(
                 IllegalStateException.class,
-                () -> secondSession.submitLogin(secondLogin, "test", "test"),
+                () -> secondSession.submitLogin(secondLogin, TEST_USERNAME, TEST_PASSWORD),
                 "Second session should be blocked while a challenge is pending");
         String message = error.getMessage().toLowerCase();
         assertTrue(
@@ -280,10 +290,71 @@ class PushMfaIntegrationIT {
     private void completeLoginFlow(DeviceClient deviceClient) throws Exception {
         BrowserSession pushSession = new BrowserSession(baseUri);
         HtmlPage pushLogin = pushSession.startAuthorization("test-app");
-        HtmlPage waitingPage = pushSession.submitLogin(pushLogin, "test", "test");
+        HtmlPage waitingPage = pushSession.submitLogin(pushLogin, TEST_USERNAME, TEST_PASSWORD);
         BrowserSession.DeviceChallenge confirm = pushSession.extractDeviceChallenge(waitingPage);
         deviceClient.respondToChallenge(confirm.confirmToken(), confirm.challengeId());
         pushSession.completePushChallenge(confirm.formAction());
+    }
+
+    @Test
+    void injectedChallengeIdCannotBypassMfa() throws Exception {
+        try {
+            adminClient.ensureUser(ATTACKER_USERNAME, ATTACKER_PASSWORD);
+            DeviceClient victimDevice = enrollDevice(TEST_USERNAME, TEST_PASSWORD, DeviceKeyType.RSA);
+            DeviceClient attackerDevice = enrollDevice(ATTACKER_USERNAME, ATTACKER_PASSWORD, DeviceKeyType.RSA);
+
+            BrowserSession attackerSession = new BrowserSession(baseUri);
+            HtmlPage attackerLogin = attackerSession.startAuthorization("test-app");
+            HtmlPage attackerWaiting = attackerSession.submitLogin(attackerLogin, ATTACKER_USERNAME, ATTACKER_PASSWORD);
+            BrowserSession.DeviceChallenge attackerChallenge = attackerSession.extractDeviceChallenge(attackerWaiting);
+            attackerDevice.respondToChallenge(attackerChallenge.confirmToken(), attackerChallenge.challengeId());
+
+            BrowserSession victimSession = new BrowserSession(baseUri);
+            HtmlPage victimLogin = victimSession.startAuthorization("test-app");
+            BrowserSession.PageOrRedirect victimResult = victimSession.submitLoginResult(
+                    victimLogin, TEST_USERNAME, TEST_PASSWORD, Map.of("challengeId", attackerChallenge.challengeId()));
+            assertNotNull(victimResult.page(), "Victim login should not bypass push MFA");
+
+            BrowserSession.DeviceChallenge victimChallenge = victimSession.extractDeviceChallenge(victimResult.page());
+            assertNotEquals(attackerChallenge.challengeId(), victimChallenge.challengeId());
+
+            victimDevice.respondToChallenge(victimChallenge.confirmToken(), victimChallenge.challengeId());
+            victimSession.completePushChallenge(victimChallenge.formAction());
+
+            attackerSession.completePushChallenge(attackerChallenge.formAction());
+        } catch (Exception ex) {
+            System.err.println("Keycloak container logs:\n" + KEYCLOAK.getLogs());
+            throw ex;
+        }
+    }
+
+    @Test
+    void dpopReplayIsRejected() throws Exception {
+        try {
+            DeviceClient deviceClient = enrollDevice();
+            HttpClient httpClient =
+                    HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
+            String encodedUserId = URLEncoder.encode(deviceClient.state().userId(), StandardCharsets.UTF_8);
+            URI pendingUri = baseUri.resolve("/realms/demo/push-mfa/login/pending?userId=" + encodedUserId);
+            String proof = deviceClient.createDpopProof(
+                    "GET", pendingUri, UUID.randomUUID().toString());
+
+            HttpRequest request = HttpRequest.newBuilder(pendingUri)
+                    .header("Authorization", "DPoP " + deviceClient.accessToken())
+                    .header("DPoP", proof)
+                    .header("Accept", "application/json")
+                    .GET()
+                    .build();
+
+            HttpResponse<String> first = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, first.statusCode(), () -> "First request failed: " + first.body());
+
+            HttpResponse<String> second = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            assertEquals(403, second.statusCode(), () -> "Replay should be rejected: " + second.body());
+        } catch (Exception ex) {
+            System.err.println("Keycloak container logs:\n" + KEYCLOAK.getLogs());
+            throw ex;
+        }
     }
 
     private DeviceClient enrollDevice() throws Exception {
@@ -291,13 +362,17 @@ class PushMfaIntegrationIT {
     }
 
     private DeviceClient enrollDevice(DeviceKeyType keyType) throws Exception {
-        adminClient.resetUserState(TEST_USERNAME);
+        return enrollDevice(TEST_USERNAME, TEST_PASSWORD, keyType);
+    }
+
+    private DeviceClient enrollDevice(String username, String password, DeviceKeyType keyType) throws Exception {
+        adminClient.resetUserState(username);
         DeviceState deviceState = DeviceState.create(keyType);
         DeviceClient deviceClient = new DeviceClient(baseUri, deviceState);
 
         BrowserSession enrollmentSession = new BrowserSession(baseUri);
         HtmlPage loginPage = enrollmentSession.startAuthorization("test-app");
-        HtmlPage enrollmentPage = enrollmentSession.submitLogin(loginPage, "test", "test");
+        HtmlPage enrollmentPage = enrollmentSession.submitLogin(loginPage, username, password);
         String enrollmentToken = enrollmentSession.extractEnrollmentToken(enrollmentPage);
         deviceClient.completeEnrollment(enrollmentToken);
         enrollmentSession.submitEnrollmentCheck(enrollmentPage);

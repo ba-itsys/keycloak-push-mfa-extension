@@ -3,6 +3,7 @@ package de.arbeitsagentur.keycloak.push.challenge;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
@@ -111,6 +112,22 @@ public class PushChallengeStore {
     public void resolve(String challengeId, PushChallengeStatus status) {
         Map<String, String> data = singleUse.get(challengeKey(challengeId));
         if (data == null) {
+            return;
+        }
+
+        PushChallenge current = fromMap(challengeId, data);
+        if (current == null) {
+            singleUse.remove(challengeKey(challengeId));
+            return;
+        }
+        if (current.getStatus() != PushChallengeStatus.PENDING) {
+            return;
+        }
+        if (Instant.now().isAfter(current.getExpiresAt())) {
+            updateStatus(challengeId, data, PushChallengeStatus.EXPIRED);
+            if (current.getType() == PushChallenge.Type.AUTHENTICATION) {
+                refreshAuthenticationIndex(current.getRealmId(), current.getUserId());
+            }
             return;
         }
 
@@ -242,7 +259,7 @@ public class PushChallengeStore {
         if (StringUtil.isBlank(rawIds)) {
             return List.of();
         }
-        return java.util.Arrays.stream(rawIds.split(","))
+        return Arrays.stream(rawIds.split(","))
                 .map(String::trim)
                 .filter(StringUtil::isNotBlank)
                 .toList();

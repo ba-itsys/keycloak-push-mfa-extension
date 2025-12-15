@@ -421,7 +421,7 @@ All scripts source `scripts/common.sh`, which centralizes base64 helpers, compac
 **Where to configure**
 - Admin UI: `Authentication → Flows` (open your flow → execution `Config` for the authenticator) and `Authentication → Required Actions` (select `push-mfa-register` → `Configure`).
 - CLI: use `kcadm.sh` against the realm DB. Example: `kcadm.sh update authentication/executions/${EXEC_ID} -r demo -s "config.loginChallengeTtlSeconds=180" -s "config.maxPendingChallenges=2"` for the authenticator, or `kcadm.sh update authentication/required-actions/push-mfa-register -r demo -s "config.enrollmentChallengeTtlSeconds=300" -s "config.appUriPrefix=my-secure://enroll?token="`.
-- Environment variables: none; these values live in realm config, so set them via Admin UI or `kcadm.sh`.
+- Environment variables: the authenticator/required-action options live in realm config, so set them via Admin UI or `kcadm.sh`. Server-side hardening limits can be set via system properties/env vars (see below).
 
 **Authenticator (`push-mfa-authenticator`)**
 - `loginChallengeTtlSeconds` (default: `120`) – TTL for login challenges/confirm tokens.
@@ -430,6 +430,30 @@ All scripts source `scripts/common.sh`, which centralizes base64 helpers, compac
 **Required Action (`push-mfa-register`)**
 - `enrollmentChallengeTtlSeconds` (default: `120`) – TTL for enrollment challenges/tokens.
 - `appUriPrefix` (default: `my-secure://enroll?token=`) – prefix prepended to the enrollment token for companion-app deep links.
+
+**Server-side hardening (`push-mfa`)**
+
+These limits protect the device-facing endpoints under `/realms/demo/push-mfa/...` against DPoP replay and resource exhaustion. Configure them via system properties (recommended, e.g. `JAVA_OPTS_APPEND` in containers) or equivalent environment variables. Values are clamped to safe min/max bounds; invalid values are ignored. A Keycloak restart is required.
+
+Example (container):
+
+```
+JAVA_OPTS_APPEND="-Dkeycloak.push-mfa.input.maxJwtLength=8192 -Dkeycloak.push-mfa.sse.maxConnections=32"
+```
+
+- `keycloak.push-mfa.dpop.jtiTtlSeconds` (default: `300`, min: `30`, max: `3600`) – how long used DPoP `jti` values are remembered (replay window).
+- `keycloak.push-mfa.dpop.jtiMaxLength` (default: `128`, min: `16`, max: `512`) – maximum accepted DPoP `jti` length.
+- `keycloak.push-mfa.input.maxJwtLength` (default: `16384`, min: `2048`, max: `131072`) – maximum length for any JWT coming from the device (access token, DPoP proof, enrollment/login tokens).
+- `keycloak.push-mfa.input.maxJwkJsonLength` (default: `8192`, min: `512`, max: `65536`) – maximum length for posted/stored JWK JSON.
+- `keycloak.push-mfa.input.maxUserIdLength` (default: `128`, min: `32`, max: `512`) – maximum length for user ids passed to the device endpoints.
+- `keycloak.push-mfa.input.maxDeviceIdLength` (default: `128`, min: `32`, max: `512`) – maximum length for `deviceId`.
+- `keycloak.push-mfa.input.maxDeviceTypeLength` (default: `64`, min: `16`, max: `256`) – maximum length for `deviceType`.
+- `keycloak.push-mfa.input.maxDeviceLabelLength` (default: `128`, min: `32`, max: `1024`) – maximum length for `deviceLabel`.
+- `keycloak.push-mfa.input.maxCredentialIdLength` (default: `128`, min: `32`, max: `512`) – maximum length for `credId`/`credentialId`.
+- `keycloak.push-mfa.input.maxPushProviderIdLength` (default: `2048`, min: `64`, max: `8192`) – maximum length for `pushProviderId`.
+- `keycloak.push-mfa.input.maxPushProviderTypeLength` (default: `64`, min: `16`, max: `256`) – maximum length for `pushProviderType`.
+- `keycloak.push-mfa.sse.maxConnections` (default: `256`, min: `1`, max: `1024`) – maximum concurrent SSE connections per Keycloak instance (shared across enrollment + login watchers). Rule of thumb: set this to roughly `logins_per_second_per_pod × average_approval_seconds` (plus headroom). For example, with ~10 logins/s per pod and ~15s average approval time, use ~150–250.
+- `keycloak.push-mfa.sse.maxSecretLength` (default: `128`, min: `16`, max: `1024`) – maximum length for the SSE `secret` query parameter.
 
 ## App Implementation Notes
 

@@ -52,6 +52,16 @@ public final class BrowserSession {
     }
 
     public HtmlPage submitLogin(HtmlPage loginPage, String username, String password) throws Exception {
+        PageOrRedirect result = submitLoginResult(loginPage, username, password, null);
+        if (result.page() == null) {
+            throw new IllegalStateException("Expected HTML page from " + result.uri() + " but received redirect to "
+                    + result.redirectLocation());
+        }
+        return result.page();
+    }
+
+    public PageOrRedirect submitLoginResult(
+            HtmlPage loginPage, String username, String password, Map<String, String> extraParams) throws Exception {
         Element form = loginPage.document().selectFirst("form#kc-form-login");
         if (form == null) {
             throw new IllegalStateException("Login form not found");
@@ -59,8 +69,16 @@ public final class BrowserSession {
         Map<String, String> params = collectFormInputs(form);
         params.put("username", username);
         params.put("password", password);
+        if (extraParams != null && !extraParams.isEmpty()) {
+            params.putAll(extraParams);
+        }
         URI action = resolve(loginPage.uri(), form.attr("action"));
-        return fetch(action, "POST", params).requirePage();
+        FetchResponse response = fetch(action, "POST", params);
+        if (response.document() == null) {
+            return new PageOrRedirect(response.status(), response.uri(), null, response.redirectLocation());
+        }
+        return new PageOrRedirect(
+                response.status(), response.uri(), new HtmlPage(response.uri(), response.document()), null);
     }
 
     public String extractEnrollmentToken(HtmlPage page) {
@@ -91,7 +109,7 @@ public final class BrowserSession {
         return fetch(action, "POST", Map.of("refresh", "true")).requirePage();
     }
 
-    public String extractEnrollmentChallengeId(HtmlPage page) {
+    public URI extractEnrollmentEventsUri(HtmlPage page) {
         Element root = page.document().getElementById("kc-push-register-root");
         if (root == null) {
             throw new IllegalStateException("Enrollment root element missing");
@@ -100,14 +118,22 @@ public final class BrowserSession {
         if (eventsUrl == null || eventsUrl.isBlank()) {
             throw new IllegalStateException("Enrollment events URL missing");
         }
-        URI uri = URI.create(eventsUrl);
+        URI candidate = URI.create(eventsUrl);
+        if (candidate.isAbsolute()) {
+            return candidate;
+        }
+        return page.uri().resolve(candidate);
+    }
+
+    public String extractEnrollmentChallengeId(HtmlPage page) {
+        URI uri = extractEnrollmentEventsUri(page);
         String[] segments = uri.getPath().split("/");
         for (int i = 0; i < segments.length; i++) {
             if ("challenges".equals(segments[i]) && i + 1 < segments.length) {
                 return segments[i + 1];
             }
         }
-        throw new IllegalStateException("Unable to extract challenge id from " + eventsUrl);
+        throw new IllegalStateException("Unable to extract challenge id from " + uri);
     }
 
     public DeviceChallenge extractDeviceChallenge(HtmlPage page) {
@@ -289,6 +315,8 @@ public final class BrowserSession {
     }
 
     public record DeviceChallenge(String confirmToken, String challengeId, URI formAction) {}
+
+    public record PageOrRedirect(int status, URI uri, HtmlPage page, String redirectLocation) {}
 
     private record FetchResponse(int status, URI uri, Document document, String redirectLocation) {
         HtmlPage requirePage() {

@@ -25,6 +25,18 @@ public final class AdminClient {
         this.baseUri = baseUri;
     }
 
+    public String ensureUser(String username, String password) throws Exception {
+        ensureAccessToken();
+        String userId = findUserId(username);
+        if (userId == null) {
+            userId = createUser(username);
+        }
+        if (password != null && !password.isBlank()) {
+            setUserPassword(userId, password);
+        }
+        return userId;
+    }
+
     public JsonNode fetchPushCredential(String userId) throws Exception {
         JsonNode items = readCredentials(userId);
         for (JsonNode item : items) {
@@ -44,6 +56,52 @@ public final class AdminClient {
         deletePushCredentials(userId);
         logoutUser(userId);
         clearRealmCaches();
+    }
+
+    private String createUser(String username) throws Exception {
+        URI createUri = baseUri.resolve("/admin/realms/demo/users");
+        String payload = MAPPER.createObjectNode()
+                .put("username", username)
+                .put("enabled", true)
+                .toString();
+        HttpRequest request = HttpRequest.newBuilder(createUri)
+                .header("Authorization", "Bearer " + accessToken)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(payload))
+                .build();
+        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() == 201) {
+            String location = response.headers()
+                    .firstValue("Location")
+                    .orElseThrow(() -> new IllegalStateException("Missing Location header"));
+            int idx = location.lastIndexOf('/');
+            if (idx == -1 || idx == location.length() - 1) {
+                throw new IllegalStateException("Unexpected user location: " + location);
+            }
+            return location.substring(idx + 1);
+        }
+        assertEquals(409, response.statusCode(), () -> "User create failed: " + response.body());
+        String userId = findUserId(username);
+        if (userId == null) {
+            throw new IllegalStateException("User lookup failed after create conflict: " + username);
+        }
+        return userId;
+    }
+
+    private void setUserPassword(String userId, String password) throws Exception {
+        URI resetUri = baseUri.resolve("/admin/realms/demo/users/" + userId + "/reset-password");
+        String payload = MAPPER.createObjectNode()
+                .put("type", "password")
+                .put("value", password)
+                .put("temporary", false)
+                .toString();
+        HttpRequest request = HttpRequest.newBuilder(resetUri)
+                .header("Authorization", "Bearer " + accessToken)
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(payload))
+                .build();
+        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+        assertEquals(204, response.statusCode(), () -> "Password set failed: " + response.body());
     }
 
     private void deletePushCredentials(String userId) throws Exception {

@@ -17,6 +17,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.Date;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -58,7 +59,7 @@ public final class DeviceClient {
                 .claim("credentialId", state.credentialId())
                 .claim("deviceId", state.deviceId())
                 .claim("deviceLabel", state.deviceLabel())
-                .expirationTime(java.util.Date.from(Instant.now().plusSeconds(300)))
+                .expirationTime(Date.from(Instant.now().plusSeconds(300)))
                 .claim("cnf", Map.of("jwk", state.signingKey().publicJwk().toJSONObject()))
                 .build();
         SignedJWT deviceToken = sign(deviceClaims);
@@ -99,7 +100,7 @@ public final class DeviceClient {
                 .claim("credId", credId)
                 .claim("deviceId", state.deviceId())
                 .claim("action", normalizedAction)
-                .expirationTime(java.util.Date.from(Instant.now().plusSeconds(120)))
+                .expirationTime(Date.from(Instant.now().plusSeconds(120)))
                 .build();
         SignedJWT loginToken = sign(loginClaims);
 
@@ -203,13 +204,17 @@ public final class DeviceClient {
     }
 
     private String createDpopProof(String method, URI uri) throws Exception {
+        return createDpopProof(method, uri, UUID.randomUUID().toString());
+    }
+
+    public String createDpopProof(String method, URI uri, String jti) throws Exception {
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
                 .claim("htm", method)
                 .claim("htu", uri.toString())
                 .claim("sub", state.userId())
                 .claim("deviceId", state.deviceId())
                 .claim("iat", Instant.now().getEpochSecond())
-                .claim("jti", UUID.randomUUID().toString())
+                .claim("jti", jti)
                 .build();
         DeviceSigningKey signingKey = state.signingKey();
         SignedJWT proof = new SignedJWT(
@@ -221,6 +226,11 @@ public final class DeviceClient {
                 claims);
         proof.sign(signingKey.signer());
         return proof.serialize();
+    }
+
+    public String accessToken() throws Exception {
+        ensureAccessToken();
+        return accessToken;
     }
 
     private String urlEncode(String value) {

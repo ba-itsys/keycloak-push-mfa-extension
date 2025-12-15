@@ -20,6 +20,7 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.push.util.PushSignatureVerifier;
 import java.time.Instant;
+import java.util.Date;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -80,7 +81,7 @@ class PushSignatureVerifierTest {
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
                 .subject(subject)
                 .issuer("test-suite")
-                .expirationTime(java.util.Date.from(Instant.now().plusSeconds(60)))
+                .expirationTime(Date.from(Instant.now().plusSeconds(60)))
                 .build();
         JWSHeader header = new JWSHeader.Builder(alg)
                 .type(JOSEObjectType.JWT)

@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import de.arbeitsagentur.keycloak.push.challenge.PushChallenge;
+import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStatus;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStore;
 import java.time.Duration;
 import java.util.HashMap;
@@ -50,6 +51,36 @@ class PushChallengeStoreTest {
         assertContainsChallenge(second.getId());
         assertFalse(store.findPendingForUser(REALM_ID, USER_ID).stream()
                 .anyMatch(challenge -> first.getId().equals(challenge.getId())));
+    }
+
+    @Test
+    void resolveDoesNotOverrideExpiredChallenge() throws Exception {
+        PushChallenge challenge = store.create(
+                REALM_ID,
+                USER_ID,
+                new byte[] {1, 2, 3},
+                PushChallenge.Type.AUTHENTICATION,
+                Duration.ofMillis(10),
+                "cred-1",
+                "client",
+                "watch-secret",
+                "root-session");
+
+        Thread.sleep(25);
+        store.resolve(challenge.getId(), PushChallengeStatus.APPROVED);
+
+        PushChallenge updated = store.get(challenge.getId()).orElseThrow();
+        assertEquals(PushChallengeStatus.EXPIRED, updated.getStatus());
+    }
+
+    @Test
+    void resolveDoesNotOverrideResolvedChallenge() {
+        PushChallenge challenge = createAuthChallenge("cred-1");
+        store.resolve(challenge.getId(), PushChallengeStatus.APPROVED);
+        store.resolve(challenge.getId(), PushChallengeStatus.DENIED);
+
+        PushChallenge updated = store.get(challenge.getId()).orElseThrow();
+        assertEquals(PushChallengeStatus.APPROVED, updated.getStatus());
     }
 
     private PushChallenge createAuthChallenge(String credentialId) {

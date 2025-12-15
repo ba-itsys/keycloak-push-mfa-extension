@@ -41,12 +41,21 @@ public class PushMfaAuthenticator implements Authenticator {
         MultivaluedMap<String, String> form = context.getHttpRequest().getDecodedFormParameters();
         String requestChallengeId = ChallengeNoteHelper.firstNonBlank(form.getFirst("challengeId"));
         boolean isRefresh = form.containsKey("refresh") || form.containsKey("cancel");
-        if (!StringUtil.isBlank(requestChallengeId)) {
-            ChallengeNoteHelper.storeChallengeId(authSession, requestChallengeId);
+        boolean looksLikePrimaryLogin = form.containsKey("username") || form.containsKey("password");
+        String storedChallengeId = ChallengeNoteHelper.readChallengeId(authSession);
+
+        if (!looksLikePrimaryLogin && !StringUtil.isBlank(requestChallengeId)) {
+            if (StringUtil.isBlank(storedChallengeId)) {
+                ChallengeNoteHelper.storeChallengeId(authSession, requestChallengeId);
+            } else if (!storedChallengeId.equals(requestChallengeId)) {
+                LOG.warnf(
+                        "Ignoring mismatched push challenge id %s for user %s (stored=%s)",
+                        requestChallengeId, context.getUser().getId(), storedChallengeId);
+            }
             action(context);
             return;
         }
-        if (isRefresh && ChallengeNoteHelper.readChallengeId(authSession) != null) {
+        if (!looksLikePrimaryLogin && isRefresh && storedChallengeId != null) {
             action(context);
             return;
         }
@@ -127,6 +136,9 @@ public class PushMfaAuthenticator implements Authenticator {
                 PushMfaConstants.DEFAULT_MAX_PENDING_AUTH_CHALLENGES);
         PushChallengeStore challengeStore = new PushChallengeStore(context.getSession());
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
+        String rootSessionId = authSession.getParentSession() != null
+                ? authSession.getParentSession().getId()
+                : null;
         MultivaluedMap<String, String> form = context.getHttpRequest().getDecodedFormParameters();
         String challengeId = ChallengeNoteHelper.firstNonBlank(
                 ChallengeNoteHelper.readChallengeId(authSession), form.getFirst("challengeId"));
@@ -142,13 +154,6 @@ public class PushMfaAuthenticator implements Authenticator {
 
         boolean refreshRequested = form.containsKey("refresh");
         boolean cancelRequested = form.containsKey("cancel");
-        if (cancelRequested) {
-            challengeStore.resolve(challengeId, PushChallengeStatus.DENIED);
-            challengeStore.remove(challengeId);
-            ChallengeNoteHelper.clear(authSession);
-            context.forkWithErrorMessage(new FormMessage("push-mfa-cancelled-message"));
-            return;
-        }
 
         Optional<PushChallenge> challenge = challengeStore.get(challengeId);
         if (challenge.isEmpty()) {
@@ -160,13 +165,40 @@ public class PushMfaAuthenticator implements Authenticator {
         }
 
         PushChallenge current = challenge.get();
+        if (!isExpectedChallenge(context, current, rootSessionId)) {
+            LOG.warnf(
+                    "Rejecting push challenge %s for user %s because it does not match current session (challengeUser=%s,type=%s,root=%s,expectedRoot=%s)",
+                    challengeId,
+                    context.getUser().getId(),
+                    current.getUserId(),
+                    current.getType(),
+                    current.getRootSessionId(),
+                    rootSessionId);
+            ChallengeNoteHelper.clear(authSession);
+            if (cancelRequested) {
+                context.forkWithErrorMessage(new FormMessage("push-mfa-cancelled-message"));
+                return;
+            }
+            IssuedChallengeResult issued = issueChallengeFromAction(
+                    context, challengeStore, loginChallengeTtl, maxPendingChallenges, rootSessionId);
+            if (issued != null) {
+                showWaitingForm(context, issued.challenge(), issued.credentialData(), issued.confirmToken());
+            }
+            return;
+        }
+
+        if (cancelRequested) {
+            challengeStore.resolve(challengeId, PushChallengeStatus.DENIED);
+            challengeStore.remove(challengeId);
+            ChallengeNoteHelper.clear(authSession);
+            context.forkWithErrorMessage(new FormMessage("push-mfa-cancelled-message"));
+            return;
+        }
+
         if (refreshRequested && current.getStatus() == PushChallengeStatus.PENDING) {
             challengeStore.removeWithoutIndex(challengeId);
             ChallengeNoteHelper.clear(authSession);
 
-            String rootSessionId = authSession.getParentSession() != null
-                    ? authSession.getParentSession().getId()
-                    : null;
             PendingChallengeGuard guard = new PendingChallengeGuard(challengeStore);
             PendingCheckResult pending = guard.cleanAndCount(
                     context.getRealm().getId(),
@@ -296,6 +328,75 @@ public class PushMfaAuthenticator implements Authenticator {
                         .authenticationSessions()
                         .getRootAuthenticationSession(context.getRealm(), rootSession)
                 != null;
+    }
+
+    private boolean isExpectedChallenge(
+            AuthenticationFlowContext context, PushChallenge challenge, String rootSessionId) {
+        if (challenge == null || context.getUser() == null || context.getRealm() == null) {
+            return false;
+        }
+        if (!context.getRealm().getId().equals(challenge.getRealmId())) {
+            return false;
+        }
+        if (!context.getUser().getId().equals(challenge.getUserId())) {
+            return false;
+        }
+        if (challenge.getType() != PushChallenge.Type.AUTHENTICATION) {
+            return false;
+        }
+        String challengeRoot = challenge.getRootSessionId();
+        if (!StringUtil.isBlank(challengeRoot) && !StringUtil.isBlank(rootSessionId)) {
+            return challengeRoot.equals(rootSessionId);
+        }
+        return true;
+    }
+
+    private record IssuedChallengeResult(
+            PushChallenge challenge, PushCredentialData credentialData, String confirmToken) {}
+
+    private IssuedChallengeResult issueChallengeFromAction(
+            AuthenticationFlowContext context,
+            PushChallengeStore challengeStore,
+            Duration loginChallengeTtl,
+            int maxPendingChallenges,
+            String rootSessionId) {
+        PendingChallengeGuard guard = new PendingChallengeGuard(challengeStore);
+        PendingCheckResult pending = guard.cleanAndCount(
+                context.getRealm().getId(),
+                context.getUser().getId(),
+                rootSessionId,
+                null,
+                challenge -> isAuthenticationSessionActive(context, challenge),
+                challenge -> resolveCredentialForChallenge(context.getUser(), challenge) != null);
+
+        if (pending.pendingCount() >= maxPendingChallenges) {
+            context.failureChallenge(
+                    AuthenticationFlowError.GENERIC_AUTHENTICATION_ERROR,
+                    context.form()
+                            .setError("push-mfa-too-many-challenges")
+                            .createErrorPage(Response.Status.TOO_MANY_REQUESTS));
+            return null;
+        }
+
+        List<CredentialModel> credentials = PushCredentialService.getActiveCredentials(context.getUser());
+        if (credentials.isEmpty()) {
+            context.success();
+            return null;
+        }
+
+        CredentialModel credential = credentials.get(0);
+        PushCredentialData credentialData = PushCredentialService.readCredentialData(credential);
+        if (credentialData == null || credentialData.getCredentialId() == null) {
+            context.success();
+            return null;
+        }
+
+        ClientModel client = context.getAuthenticationSession().getClient();
+        String clientId = client != null ? client.getClientId() : null;
+
+        IssuedChallenge issued = issueNewChallenge(
+                context, challengeStore, credentialData, credential, loginChallengeTtl, clientId, rootSessionId);
+        return new IssuedChallengeResult(issued.challenge(), credentialData, issued.confirmToken());
     }
 
     private IssuedChallenge issueNewChallenge(

@@ -41,6 +41,18 @@ export async function postChallengesResponse(
   return await post(url, header, JSON.stringify(body));
 }
 
+export async function getPendingChallenges(url: string, dPop: string, accessToken: string) {
+  const header = {
+    Authorization: `DPoP ${accessToken}`,
+    Accept: 'application/json',
+    DPoP: dPop,
+  };
+  return await fetch(url, {
+    method: 'GET',
+    headers: header,
+  });
+}
+
 async function post(url: string, headers?: HeadersInit, body?: any): Promise<Response> {
   return await fetch(url, {
     method: 'POST',

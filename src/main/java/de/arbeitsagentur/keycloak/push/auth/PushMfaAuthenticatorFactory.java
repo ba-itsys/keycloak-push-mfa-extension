@@ -37,6 +37,22 @@ public class PushMfaAuthenticatorFactory implements AuthenticatorFactory {
         maxPending.setHelpText("Maximum number of open login challenges per user.");
         maxPending.setDefaultValue(String.valueOf(PushMfaConstants.DEFAULT_MAX_PENDING_AUTH_CHALLENGES));
 
+        ProviderConfigProperty userVerification = new ProviderConfigProperty();
+        userVerification.setName(PushMfaConstants.USER_VERIFICATION_CONFIG);
+        userVerification.setLabel("User verification");
+        userVerification.setType(ProviderConfigProperty.STRING_TYPE);
+        userVerification.setHelpText(
+                "Optional additional user verification for login approvals: none, number-match, pin.");
+        userVerification.setDefaultValue(PushMfaConstants.USER_VERIFICATION_NONE);
+
+        ProviderConfigProperty userVerificationPinLength = new ProviderConfigProperty();
+        userVerificationPinLength.setName(PushMfaConstants.USER_VERIFICATION_PIN_LENGTH_CONFIG);
+        userVerificationPinLength.setLabel("User verification PIN length");
+        userVerificationPinLength.setType(ProviderConfigProperty.STRING_TYPE);
+        userVerificationPinLength.setHelpText("Length of the PIN shown to the user when userVerification=pin.");
+        userVerificationPinLength.setDefaultValue(
+                String.valueOf(PushMfaConstants.DEFAULT_USER_VERIFICATION_PIN_LENGTH));
+
         ProviderConfigProperty appUniversalLink = new ProviderConfigProperty();
         appUniversalLink.setName(PushMfaConstants.APP_UNIVERSAL_LINK_CONFIG);
         appUniversalLink.setLabel("Companion app/universal link");
@@ -45,7 +61,8 @@ public class PushMfaAuthenticatorFactory implements AuthenticatorFactory {
                 "App link (android) or universal link (iOS) to launch companion app on the same device, e.g., https://push-mfa-app.com/");
         appUniversalLink.setDefaultValue(PushMfaConstants.DEFAULT_APP_UNIVERSAL_LINK + "confirm");
 
-        CONFIG_PROPERTIES = List.of(loginTtl, maxPending, appUniversalLink);
+        CONFIG_PROPERTIES =
+                List.of(loginTtl, maxPending, userVerification, userVerificationPinLength, appUniversalLink);
     }
 
     @Override

@@ -13,9 +13,14 @@ import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriBuilder;
+import java.security.SecureRandom;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.jboss.logging.Logger;
 import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.authentication.AuthenticationFlowError;
@@ -34,6 +39,7 @@ import org.keycloak.utils.StringUtil;
 public class PushMfaAuthenticator implements Authenticator {
 
     private static final Logger LOG = Logger.getLogger(PushMfaAuthenticator.class);
+    private static final SecureRandom RANDOM = new SecureRandom();
 
     @Override
     public void authenticate(AuthenticationFlowContext context) {
@@ -408,6 +414,20 @@ public class PushMfaAuthenticator implements Authenticator {
             String clientId,
             String rootSessionId) {
         String watchSecret = KeycloakModelUtils.generateId();
+        PushChallenge.UserVerificationMode userVerificationMode =
+                resolveUserVerificationMode(context.getAuthenticatorConfig());
+        String userVerificationValue = null;
+        List<String> userVerificationOptions = List.of();
+        switch (userVerificationMode) {
+            case NUMBER_MATCH -> {
+                userVerificationOptions = generateNumberMatchOptions();
+                userVerificationValue = userVerificationOptions.get(RANDOM.nextInt(userVerificationOptions.size()));
+            }
+            case PIN -> userVerificationValue = generatePin(resolvePinLength(context.getAuthenticatorConfig()));
+            case NONE -> {
+                // no user verification
+            }
+        }
         PushChallenge pushChallenge = challengeStore.create(
                 context.getRealm().getId(),
                 context.getUser().getId(),
@@ -417,7 +437,10 @@ public class PushMfaAuthenticator implements Authenticator {
                 credential.getId(),
                 clientId,
                 watchSecret,
-                rootSessionId);
+                rootSessionId,
+                userVerificationMode,
+                userVerificationValue,
+                userVerificationOptions);
 
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
         ChallengeNoteHelper.storeChallengeId(authSession, pushChallenge.getId());
@@ -463,7 +486,7 @@ public class PushMfaAuthenticator implements Authenticator {
             watchSecret = ChallengeNoteHelper.readWatchSecret(authSession);
         }
 
-        context.form()
+        var form = context.form()
                 .setAttribute("challengeId", challengeId)
                 .setAttribute("pollingIntervalSeconds", 5)
                 .setAttribute("pushUsername", context.getUser().getUsername())
@@ -473,12 +496,21 @@ public class PushMfaAuthenticator implements Authenticator {
                 .setAttribute("pushMessageType", String.valueOf(PushMfaConstants.PUSH_MESSAGE_TYPE))
                 .setAttribute("appUniversalLink", resolveAppUniversalLink(context));
 
-        String watchUrl = buildChallengeWatchUrl(context, challengeId, watchSecret);
-        if (watchUrl != null) {
-            context.form().setAttribute("pushChallengeWatchUrl", watchUrl);
+        if (challenge != null
+                && challenge.getUserVerificationMode() != PushChallenge.UserVerificationMode.NONE
+                && !StringUtil.isBlank(challenge.getUserVerificationValue())) {
+            form.setAttribute(
+                            "pushUserVerificationMode",
+                            challenge.getUserVerificationMode().name())
+                    .setAttribute("pushUserVerificationValue", challenge.getUserVerificationValue());
         }
 
-        context.challenge(context.form().createForm("push-wait.ftl"));
+        String watchUrl = buildChallengeWatchUrl(context, challengeId, watchSecret);
+        if (watchUrl != null) {
+            form.setAttribute("pushChallengeWatchUrl", watchUrl);
+        }
+
+        context.challenge(form.createForm("push-wait.ftl"));
     }
 
     private String buildChallengeWatchUrl(AuthenticationFlowContext context, String challengeId, String watchSecret) {
@@ -515,6 +547,63 @@ public class PushMfaAuthenticator implements Authenticator {
             return null;
         }
         return name;
+    }
+
+    private PushChallenge.UserVerificationMode resolveUserVerificationMode(AuthenticatorConfigModel config) {
+        if (config == null || config.getConfig() == null) {
+            return PushChallenge.UserVerificationMode.NONE;
+        }
+        String rawValue = config.getConfig().get(PushMfaConstants.USER_VERIFICATION_CONFIG);
+        if (StringUtil.isBlank(rawValue)) {
+            return PushChallenge.UserVerificationMode.NONE;
+        }
+        String normalized = rawValue.trim().toLowerCase();
+        return switch (normalized) {
+            case PushMfaConstants.USER_VERIFICATION_NUMBER_MATCH, "number_match", "numbermatch" -> PushChallenge
+                    .UserVerificationMode.NUMBER_MATCH;
+            case PushMfaConstants.USER_VERIFICATION_PIN -> PushChallenge.UserVerificationMode.PIN;
+            default -> PushChallenge.UserVerificationMode.NONE;
+        };
+    }
+
+    private List<String> generateNumberMatchOptions() {
+        Set<String> options = new LinkedHashSet<>(3);
+        while (options.size() < 3) {
+            int value = RANDOM.nextInt(100);
+            options.add(String.valueOf(value));
+        }
+        List<String> shuffled = new ArrayList<>(options);
+        Collections.shuffle(shuffled, RANDOM);
+        return shuffled;
+    }
+
+    private int resolvePinLength(AuthenticatorConfigModel config) {
+        int defaultValue = PushMfaConstants.DEFAULT_USER_VERIFICATION_PIN_LENGTH;
+        if (config == null || config.getConfig() == null) {
+            return defaultValue;
+        }
+        String rawValue = config.getConfig().get(PushMfaConstants.USER_VERIFICATION_PIN_LENGTH_CONFIG);
+        if (StringUtil.isBlank(rawValue)) {
+            return defaultValue;
+        }
+        try {
+            int configured = Integer.parseInt(rawValue.trim());
+            if (configured <= 0) {
+                return defaultValue;
+            }
+            return Math.min(configured, 12);
+        } catch (NumberFormatException ex) {
+            return defaultValue;
+        }
+    }
+
+    private String generatePin(int length) {
+        int effectiveLength = Math.max(1, length);
+        StringBuilder builder = new StringBuilder(effectiveLength);
+        for (int i = 0; i < effectiveLength; i++) {
+            builder.append(RANDOM.nextInt(10));
+        }
+        return builder.toString();
     }
 
     private Duration parseDurationSeconds(AuthenticatorConfigModel config, String key, Duration defaultValue) {

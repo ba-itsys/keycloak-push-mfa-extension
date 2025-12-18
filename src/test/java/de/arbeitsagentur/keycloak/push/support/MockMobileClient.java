@@ -2,6 +2,7 @@ package de.arbeitsagentur.keycloak.push.support;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -20,18 +21,42 @@ public final class MockMobileClient {
     }
 
     public Response enroll(String enrollmentToken) throws Exception {
-        return postJson("/enroll", enrollmentToken, null);
+        ObjectNode body = MAPPER.createObjectNode().put("token", enrollmentToken);
+        return postJson("/enroll", body);
     }
 
     public Response approveLogin(String confirmToken) throws Exception {
-        return postJson("/confirm-login", confirmToken, null);
+        return approveLogin(confirmToken, null);
     }
 
-    private Response postJson(String path, String token, String context) throws Exception {
-        var body = MAPPER.createObjectNode().put("token", token);
+    public Response approveLogin(String confirmToken, String userVerification) throws Exception {
+        return respondLogin(confirmToken, "approve", userVerification);
+    }
+
+    public Response denyLogin(String confirmToken) throws Exception {
+        return respondLogin(confirmToken, "deny", null);
+    }
+
+    private Response respondLogin(String confirmToken, String action, String userVerification) throws Exception {
+        ObjectNode body = MAPPER.createObjectNode().put("token", confirmToken);
+        if (action != null && !action.isBlank()) {
+            body.put("action", action);
+        }
+        if (userVerification != null && !userVerification.isBlank()) {
+            body.put("userVerification", userVerification);
+        }
+        return postJson("/confirm-login", body);
+    }
+
+    public Response enroll(String enrollmentToken, String context) throws Exception {
+        ObjectNode body = MAPPER.createObjectNode().put("token", enrollmentToken);
         if (context != null && !context.isBlank()) {
             body.put("context", context);
         }
+        return postJson("/enroll", body);
+    }
+
+    private Response postJson(String path, ObjectNode body) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(baseUri.resolve(path))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body.toString()))

@@ -3,6 +3,7 @@ package de.arbeitsagentur.keycloak.push;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -29,9 +30,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -77,6 +81,12 @@ class PushMfaIntegrationIT {
         adminClient = new AdminClient(baseUri);
     }
 
+    @BeforeEach
+    void resetUserVerificationConfig() throws Exception {
+        adminClient.configurePushMfaUserVerification(
+                PushMfaConstants.USER_VERIFICATION_NONE, PushMfaConstants.DEFAULT_USER_VERIFICATION_PIN_LENGTH);
+    }
+
     @Test
     void deviceEnrollsAndApprovesLogin() throws Exception {
         DeviceClient deviceClient = enrollDevice();
@@ -93,6 +103,352 @@ class PushMfaIntegrationIT {
     void deviceDeniesLoginChallenge() throws Exception {
         DeviceClient deviceClient = enrollDevice();
         BrowserSession pushSession = new BrowserSession(baseUri);
+        HtmlPage pushLogin = pushSession.startAuthorization("test-app");
+        HtmlPage waitingPage = pushSession.submitLogin(pushLogin, TEST_USERNAME, TEST_PASSWORD);
+        BrowserSession.DeviceChallenge confirm = pushSession.extractDeviceChallenge(waitingPage);
+
+        String status = deviceClient.respondToChallenge(
+                confirm.confirmToken(), confirm.challengeId(), PushMfaConstants.CHALLENGE_DENY);
+        assertEquals("denied", status);
+
+        HtmlPage deniedPage = pushSession.submitPushChallengeForPage(confirm.formAction());
+        String pageText = deniedPage.document().text().toLowerCase();
+        assertTrue(
+                pageText.contains("push approval denied") || pageText.contains("push request was denied"),
+                "Denied page should explain the rejected push login");
+    }
+
+    @Test
+    void userVerificationNoneDoesNotRequireClaim() throws Exception {
+        adminClient.configurePushMfaUserVerification(PushMfaConstants.USER_VERIFICATION_NONE);
+        DeviceClient deviceClient = enrollDevice();
+        BrowserSession pushSession = new BrowserSession(baseUri);
+
+        HtmlPage pushLogin = pushSession.startAuthorization("test-app");
+        HtmlPage waitingPage = pushSession.submitLogin(pushLogin, TEST_USERNAME, TEST_PASSWORD);
+        assertNull(pushSession.extractUserVerification(waitingPage));
+        BrowserSession.DeviceChallenge confirm = pushSession.extractDeviceChallenge(waitingPage);
+
+        String status = deviceClient.respondToChallenge(
+                confirm.confirmToken(), confirm.challengeId(), PushMfaConstants.CHALLENGE_APPROVE);
+        assertEquals("approved", status);
+        pushSession.completePushChallenge(confirm.formAction());
+    }
+
+    @Test
+    void numberMatchRequiresCorrectSelection() throws Exception {
+        adminClient.configurePushMfaUserVerification(PushMfaConstants.USER_VERIFICATION_NUMBER_MATCH);
+        DeviceClient deviceClient = enrollDevice();
+        BrowserSession pushSession = new BrowserSession(baseUri);
+
+        HtmlPage pushLogin = pushSession.startAuthorization("test-app");
+        HtmlPage waitingPage = pushSession.submitLogin(pushLogin, TEST_USERNAME, TEST_PASSWORD);
+        BrowserSession.DeviceChallenge confirm = pushSession.extractDeviceChallenge(waitingPage);
+
+        String displayed = pushSession.extractUserVerification(waitingPage);
+        assertNotNull(displayed);
+        assertTrue(
+                displayed.matches("^(0|[1-9][0-9]?)$"), () -> "Expected number-match value 0-99 but got: " + displayed);
+
+        SignedJWT confirmToken = SignedJWT.parse(confirm.confirmToken());
+        JWTClaimsSet confirmClaims = confirmToken.getJWTClaimsSet();
+        assertNull(confirmClaims.getClaim("userVerification"));
+        assertNull(confirmClaims.getClaim("number"));
+
+        JsonNode pending = deviceClient.fetchPendingChallenges();
+        JsonNode challenge = pending.get(0);
+        assertEquals(confirm.challengeId(), challenge.path("cid").asText());
+        JsonNode verification = challenge.path("userVerification");
+        assertEquals(
+                PushMfaConstants.USER_VERIFICATION_NUMBER_MATCH,
+                verification.path("type").asText());
+        verification
+                .fieldNames()
+                .forEachRemaining(field -> assertTrue(
+                        Set.of("type", "numbers", "pinLength").contains(field),
+                        () -> "Unexpected userVerification field: " + field + " in " + verification));
+        assertTrue(
+                verification.path("pinLength").isMissingNode()
+                        || verification.path("pinLength").isNull(),
+                () -> "number-match should not include pinLength: " + verification);
+        JsonNode numbers = verification.path("numbers");
+        assertTrue(numbers.isArray(), () -> "Expected numbers array but got: " + verification);
+        assertEquals(3, numbers.size(), () -> "Expected 3 options but got: " + numbers);
+
+        Set<String> uniqueOptions = new HashSet<>();
+        String wrong = null;
+        boolean containsDisplayed = false;
+        for (JsonNode option : numbers) {
+            String value = option.asText();
+            assertTrue(value.matches("^(0|[1-9][0-9]?)$"), () -> "Expected number-match option 0-99 but got: " + value);
+            uniqueOptions.add(value);
+            if (displayed.equals(value)) {
+                containsDisplayed = true;
+                continue;
+            }
+            if (wrong == null) {
+                wrong = value;
+            }
+        }
+        assertEquals(3, uniqueOptions.size(), () -> "Expected unique options but got: " + numbers);
+        assertTrue(containsDisplayed, "Displayed number must be one of the device options");
+        assertNotNull(wrong);
+
+        HttpResponse<String> rejected = deviceClient.respondToChallengeRaw(
+                confirm.confirmToken(), confirm.challengeId(), PushMfaConstants.CHALLENGE_APPROVE, wrong);
+        assertEquals(403, rejected.statusCode(), () -> "Expected mismatch rejection but got: " + rejected.body());
+
+        String approved = deviceClient.respondToChallenge(
+                confirm.confirmToken(), confirm.challengeId(), PushMfaConstants.CHALLENGE_APPROVE, displayed);
+        assertEquals("approved", approved);
+        pushSession.completePushChallenge(confirm.formAction());
+    }
+
+    @Test
+    void numberMatchCorrectPositionIsApproximatelyUniform() throws Exception {
+        adminClient.configurePushMfaUserVerification(PushMfaConstants.USER_VERIFICATION_NUMBER_MATCH);
+        DeviceClient deviceClient = enrollDevice();
+
+        int samples = 150;
+        int[] counts = new int[3];
+        for (int attempt = 0; attempt < samples; attempt++) {
+            BrowserSession pushSession = new BrowserSession(baseUri);
+            HtmlPage pushLogin = pushSession.startAuthorization("test-app");
+            HtmlPage waitingPage = pushSession.submitLogin(pushLogin, TEST_USERNAME, TEST_PASSWORD);
+            BrowserSession.DeviceChallenge confirm = pushSession.extractDeviceChallenge(waitingPage);
+
+            String displayed = pushSession.extractUserVerification(waitingPage);
+            assertNotNull(displayed);
+            assertTrue(
+                    displayed.matches("^(0|[1-9][0-9]?)$"),
+                    () -> "Expected number-match value 0-99 but got: " + displayed);
+
+            JsonNode pending = deviceClient.fetchPendingChallenges();
+            JsonNode matching = null;
+            for (JsonNode candidate : pending) {
+                if (confirm.challengeId().equals(candidate.path("cid").asText())) {
+                    matching = candidate;
+                    break;
+                }
+            }
+            assertNotNull(matching, () -> "Pending response did not contain " + confirm.challengeId() + ": " + pending);
+
+            JsonNode numbers = matching.path("userVerification").path("numbers");
+            assertTrue(numbers.isArray(), "Expected numbers array but got: " + matching);
+            assertEquals(3, numbers.size(), () -> "Expected 3 number-match options but got: " + numbers);
+            int index = -1;
+            for (int i = 0; i < numbers.size(); i++) {
+                if (displayed.equals(numbers.get(i).asText())) {
+                    index = i;
+                    break;
+                }
+            }
+            assertTrue(index >= 0, () -> "Displayed number not found in pending: " + displayed + " vs " + numbers);
+            counts[index]++;
+
+            String status = deviceClient.respondToChallenge(
+                    confirm.confirmToken(), confirm.challengeId(), PushMfaConstants.CHALLENGE_DENY);
+            assertEquals("denied", status);
+            pushSession.submitPushChallengeForPage(confirm.formAction());
+        }
+
+        // Regression test for randomness:
+        // In number-match mode the browser shows 1 of the 3 numbers that the device receives via /login/pending.
+        // The shown number should be equally likely to be in position 0, 1, or 2 of that 3-item list. If it keeps
+        // landing in the same position (or strongly prefers one position), that's a bug.
+        //
+        // We create many challenges, count which position the shown number had, and then run a simple "are these
+        // three counts roughly equal?" check (a chi-square goodness-of-fit test for 3 buckets).
+        // Reference: https://en.wikipedia.org/wiki/Chi-squared_test
+        // Why 18.42? With 3 buckets the test has df=2; 18.42 is the 99.99th percentile (p=0.0001), so a truly uniform
+        // implementation almost never fails this test by chance, but biased placement still gets caught.
+        final double chiSquareCritical = 18.42;
+        double expected = samples / 3.0;
+        double chiSquare = 0.0;
+        for (int count : counts) {
+            double diff = count - expected;
+            chiSquare += (diff * diff) / expected;
+        }
+        assertTrue(
+                chiSquare <= chiSquareCritical,
+                "Expected roughly uniform distribution across indices but got counts=" + counts[0] + "," + counts[1]
+                        + "," + counts[2] + " (chiSquare=" + chiSquare + ")");
+
+        assertTrue(
+                counts[0] > 0 && counts[1] > 0 && counts[2] > 0,
+                () -> "All indices should appear at least once but got counts=" + counts[0] + "," + counts[1] + ","
+                        + counts[2]);
+    }
+
+    @Test
+    void numberMatchDenyWorksWithoutSelection() throws Exception {
+        adminClient.configurePushMfaUserVerification(PushMfaConstants.USER_VERIFICATION_NUMBER_MATCH);
+        DeviceClient deviceClient = enrollDevice();
+        BrowserSession pushSession = new BrowserSession(baseUri);
+
+        HtmlPage pushLogin = pushSession.startAuthorization("test-app");
+        HtmlPage waitingPage = pushSession.submitLogin(pushLogin, TEST_USERNAME, TEST_PASSWORD);
+        BrowserSession.DeviceChallenge confirm = pushSession.extractDeviceChallenge(waitingPage);
+
+        String status = deviceClient.respondToChallenge(
+                confirm.confirmToken(), confirm.challengeId(), PushMfaConstants.CHALLENGE_DENY);
+        assertEquals("denied", status);
+
+        HtmlPage deniedPage = pushSession.submitPushChallengeForPage(confirm.formAction());
+        String pageText = deniedPage.document().text().toLowerCase();
+        assertTrue(
+                pageText.contains("push approval denied") || pageText.contains("push request was denied"),
+                "Denied page should explain the rejected push login");
+    }
+
+    @Test
+    void pinRequiresCorrectPin() throws Exception {
+        adminClient.configurePushMfaUserVerification(PushMfaConstants.USER_VERIFICATION_PIN);
+        DeviceClient deviceClient = enrollDevice();
+        BrowserSession pushSession = new BrowserSession(baseUri);
+
+        HtmlPage pushLogin = pushSession.startAuthorization("test-app");
+        HtmlPage waitingPage = pushSession.submitLogin(pushLogin, TEST_USERNAME, TEST_PASSWORD);
+        BrowserSession.DeviceChallenge confirm = pushSession.extractDeviceChallenge(waitingPage);
+
+        String pin = pushSession.extractUserVerification(waitingPage);
+        assertNotNull(pin);
+        assertTrue(pin.matches("\\d{4}"), () -> "Expected 4-digit pin but got: " + pin);
+
+        SignedJWT confirmToken = SignedJWT.parse(confirm.confirmToken());
+        JWTClaimsSet confirmClaims = confirmToken.getJWTClaimsSet();
+        assertNull(confirmClaims.getClaim("userVerification"));
+        assertNull(confirmClaims.getClaim("pin"));
+
+        JsonNode pending = deviceClient.fetchPendingChallenges();
+        JsonNode challenge = pending.get(0);
+        assertEquals(confirm.challengeId(), challenge.path("cid").asText());
+        JsonNode verification = challenge.path("userVerification");
+        assertEquals(
+                PushMfaConstants.USER_VERIFICATION_PIN,
+                verification.path("type").asText());
+        assertEquals(4, verification.path("pinLength").asInt());
+        verification
+                .fieldNames()
+                .forEachRemaining(field -> assertTrue(
+                        Set.of("type", "numbers", "pinLength").contains(field),
+                        () -> "Unexpected userVerification field: " + field + " in " + verification));
+        assertTrue(
+                verification.path("numbers").isMissingNode()
+                        || verification.path("numbers").isNull(),
+                () -> "Pin verification should not include numbers: " + verification);
+
+        HttpResponse<String> missingVerification = deviceClient.respondToChallengeRaw(
+                confirm.confirmToken(), confirm.challengeId(), PushMfaConstants.CHALLENGE_APPROVE);
+        assertEquals(
+                400,
+                missingVerification.statusCode(),
+                () -> "Expected missing verification rejection but got: " + missingVerification.body());
+        assertEquals(
+                "Missing user verification",
+                MAPPER.readTree(missingVerification.body()).path("error").asText(),
+                () -> "Unexpected missing verification error body: " + missingVerification.body());
+
+        String wrong = "0000".equals(pin) ? "0001" : "0000";
+        HttpResponse<String> rejected = deviceClient.respondToChallengeRaw(
+                confirm.confirmToken(), confirm.challengeId(), PushMfaConstants.CHALLENGE_APPROVE, wrong);
+        assertEquals(403, rejected.statusCode(), () -> "Expected mismatch rejection but got: " + rejected.body());
+
+        String approved = deviceClient.respondToChallenge(
+                confirm.confirmToken(), confirm.challengeId(), PushMfaConstants.CHALLENGE_APPROVE, pin);
+        assertEquals("approved", approved);
+        pushSession.completePushChallenge(confirm.formAction());
+    }
+
+    @Test
+    void pinMustBeSentWithLeadingZeros() throws Exception {
+        adminClient.configurePushMfaUserVerification(PushMfaConstants.USER_VERIFICATION_PIN);
+        DeviceClient deviceClient = enrollDevice();
+        BrowserSession pushSession = new BrowserSession(baseUri);
+
+        HtmlPage pushLogin = pushSession.startAuthorization("test-app");
+        HtmlPage waitingPage = pushSession.submitLogin(pushLogin, TEST_USERNAME, TEST_PASSWORD);
+        BrowserSession.DeviceChallenge confirm = pushSession.extractDeviceChallenge(waitingPage);
+
+        String pin = pushSession.extractUserVerification(waitingPage);
+        assertNotNull(pin);
+        assertTrue(pin.matches("\\d{4}"), "Expected 4-digit pin but got: " + pin);
+
+        int refreshes = 0;
+        while (!pin.startsWith("0") && refreshes < 100) {
+            waitingPage = pushSession.refreshPushChallenge(waitingPage);
+            confirm = pushSession.extractDeviceChallenge(waitingPage);
+            pin = pushSession.extractUserVerification(waitingPage);
+            assertNotNull(pin);
+            assertTrue(pin.matches("\\d{4}"), "Expected 4-digit pin but got: " + pin);
+            refreshes++;
+        }
+        assertTrue(
+                pin.startsWith("0"),
+                "Expected a PIN with leading zero after " + refreshes + " refreshes but got: " + pin);
+
+        String withoutLeadingZeros = pin.replaceFirst("^0+", "");
+        if (withoutLeadingZeros.isEmpty()) {
+            withoutLeadingZeros = "0";
+        }
+
+        HttpResponse<String> rejected = deviceClient.respondToChallengeRaw(
+                confirm.confirmToken(), confirm.challengeId(), PushMfaConstants.CHALLENGE_APPROVE, withoutLeadingZeros);
+        assertEquals(403, rejected.statusCode(), () -> "Expected trimmed PIN rejection but got: " + rejected.body());
+        assertEquals(
+                "User verification mismatch",
+                MAPPER.readTree(rejected.body()).path("error").asText(),
+                () -> "Unexpected error body: " + rejected.body());
+
+        String approved = deviceClient.respondToChallenge(
+                confirm.confirmToken(), confirm.challengeId(), PushMfaConstants.CHALLENGE_APPROVE, pin);
+        assertEquals("approved", approved);
+        pushSession.completePushChallenge(confirm.formAction());
+    }
+
+    @Test
+    void pinLengthIsConfigurable() throws Exception {
+        adminClient.configurePushMfaUserVerification(PushMfaConstants.USER_VERIFICATION_PIN, 6);
+        DeviceClient deviceClient = enrollDevice();
+        BrowserSession pushSession = new BrowserSession(baseUri);
+
+        HtmlPage pushLogin = pushSession.startAuthorization("test-app");
+        HtmlPage waitingPage = pushSession.submitLogin(pushLogin, TEST_USERNAME, TEST_PASSWORD);
+        BrowserSession.DeviceChallenge confirm = pushSession.extractDeviceChallenge(waitingPage);
+
+        String pin = pushSession.extractUserVerification(waitingPage);
+        assertNotNull(pin);
+        assertTrue(pin.matches("\\d{6}"), () -> "Expected 6-digit pin but got: " + pin);
+
+        JsonNode pending = deviceClient.fetchPendingChallenges();
+        JsonNode challenge = pending.get(0);
+        assertEquals(confirm.challengeId(), challenge.path("cid").asText());
+        JsonNode verification = challenge.path("userVerification");
+        assertEquals(
+                PushMfaConstants.USER_VERIFICATION_PIN,
+                verification.path("type").asText());
+        assertEquals(6, verification.path("pinLength").asInt());
+
+        String wrong = "0".repeat(6);
+        if (wrong.equals(pin)) {
+            wrong = "0".repeat(5) + "1";
+        }
+        HttpResponse<String> rejected = deviceClient.respondToChallengeRaw(
+                confirm.confirmToken(), confirm.challengeId(), PushMfaConstants.CHALLENGE_APPROVE, wrong);
+        assertEquals(403, rejected.statusCode(), () -> "Expected mismatch rejection but got: " + rejected.body());
+
+        String approved = deviceClient.respondToChallenge(
+                confirm.confirmToken(), confirm.challengeId(), PushMfaConstants.CHALLENGE_APPROVE, pin);
+        assertEquals("approved", approved);
+        pushSession.completePushChallenge(confirm.formAction());
+    }
+
+    @Test
+    void pinDenyWorksWithoutPin() throws Exception {
+        adminClient.configurePushMfaUserVerification(PushMfaConstants.USER_VERIFICATION_PIN);
+        DeviceClient deviceClient = enrollDevice();
+        BrowserSession pushSession = new BrowserSession(baseUri);
+
         HtmlPage pushLogin = pushSession.startAuthorization("test-app");
         HtmlPage waitingPage = pushSession.submitLogin(pushLogin, TEST_USERNAME, TEST_PASSWORD);
         BrowserSession.DeviceChallenge confirm = pushSession.extractDeviceChallenge(waitingPage);

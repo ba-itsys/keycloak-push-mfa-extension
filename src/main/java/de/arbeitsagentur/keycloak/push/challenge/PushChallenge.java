@@ -2,6 +2,7 @@ package de.arbeitsagentur.keycloak.push.challenge;
 
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 
 public final class PushChallenge {
@@ -9,6 +10,12 @@ public final class PushChallenge {
     public enum Type {
         ENROLLMENT,
         AUTHENTICATION
+    }
+
+    public enum UserVerificationMode {
+        NONE,
+        NUMBER_MATCH,
+        PIN
     }
 
     private final String id;
@@ -24,6 +31,9 @@ public final class PushChallenge {
     private final PushChallengeStatus status;
     private final Instant createdAt;
     private final Instant resolvedAt;
+    private final UserVerificationMode userVerificationMode;
+    private final String userVerificationValue;
+    private final List<String> userVerificationOptions;
 
     public PushChallenge(
             String id,
@@ -39,6 +49,42 @@ public final class PushChallenge {
             PushChallengeStatus status,
             Instant createdAt,
             Instant resolvedAt) {
+        this(
+                id,
+                realmId,
+                userId,
+                nonce,
+                credentialId,
+                clientId,
+                watchSecret,
+                rootSessionId,
+                expiresAt,
+                type,
+                status,
+                createdAt,
+                resolvedAt,
+                UserVerificationMode.NONE,
+                null,
+                List.of());
+    }
+
+    public PushChallenge(
+            String id,
+            String realmId,
+            String userId,
+            byte[] nonce,
+            String credentialId,
+            String clientId,
+            String watchSecret,
+            String rootSessionId,
+            Instant expiresAt,
+            Type type,
+            PushChallengeStatus status,
+            Instant createdAt,
+            Instant resolvedAt,
+            UserVerificationMode userVerificationMode,
+            String userVerificationValue,
+            List<String> userVerificationOptions) {
         this.id = Objects.requireNonNull(id);
         this.realmId = Objects.requireNonNull(realmId);
         this.userId = Objects.requireNonNull(userId);
@@ -52,6 +98,10 @@ public final class PushChallenge {
         this.status = Objects.requireNonNull(status);
         this.createdAt = Objects.requireNonNull(createdAt);
         this.resolvedAt = resolvedAt;
+        this.userVerificationMode = userVerificationMode == null ? UserVerificationMode.NONE : userVerificationMode;
+        this.userVerificationValue = userVerificationValue;
+        this.userVerificationOptions =
+                userVerificationOptions == null ? List.of() : List.copyOf(userVerificationOptions);
     }
 
     public String getId() {
@@ -104,5 +154,17 @@ public final class PushChallenge {
 
     public Instant getResolvedAt() {
         return resolvedAt;
+    }
+
+    public UserVerificationMode getUserVerificationMode() {
+        return userVerificationMode;
+    }
+
+    public String getUserVerificationValue() {
+        return userVerificationValue;
+    }
+
+    public List<String> getUserVerificationOptions() {
+        return userVerificationOptions;
     }
 }

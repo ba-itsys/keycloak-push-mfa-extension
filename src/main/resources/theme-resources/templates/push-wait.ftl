@@ -60,6 +60,18 @@
             .kc-push-open-app {
                 margin-top: 1rem;
             }
+
+            .kc-push-user-verification-code {
+                background: var(--pf-v5-global--BackgroundColor--200, #f5f5f5);
+                border: 1px solid var(--pf-v5-global--BorderColor--200, #c7c7c7);
+                border-radius: 4px;
+                padding: 0.75rem 1rem;
+                font-size: 2rem;
+                font-weight: 600;
+                letter-spacing: 0.12em;
+                text-align: center;
+                margin-top: 0.75rem;
+            }
         </style>
 
         <div id="kc-push-wait-root"
@@ -69,6 +81,20 @@
              data-push-form-id="kc-push-form">
             <div class="kc-push-card">
                 <p class="kc-push-hint">${msg("push-mfa-wait-details")!"Approve the notification on your device to continue."}</p>
+
+                <#if pushUserVerificationMode?? && pushUserVerificationValue??>
+                    <div class="kc-push-token-card">
+                        <h4>${msg("push-mfa-user-verification-title")!"Verify this sign-in"}</h4>
+                        <p class="kc-push-hint">
+                            <#if pushUserVerificationMode == "NUMBER_MATCH">
+                                ${msg("push-mfa-user-verification-number")!"Select this number in the companion app:"}
+                            <#elseif pushUserVerificationMode == "PIN">
+                                ${msg("push-mfa-user-verification-pin")!"Enter this PIN in the companion app:"}
+                            </#if>
+                        </p>
+                        <div id="kc-push-user-verification" class="kc-push-user-verification-code">${pushUserVerificationValue}</div>
+                    </div>
+                </#if>
 
                 <#if pushConfirmToken?? && pushCredentialId??>
                     <div class="kc-push-token-card">

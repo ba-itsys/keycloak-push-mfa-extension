@@ -2,7 +2,7 @@
 
 ## Introduction
 
-:warning: This project extends Keycloak with a push-style second factor that mimics passkey primitives. After initial enrollment, the mobile app never receives the real user identifier from Keycloak; instead, it works with a credential id that only the app can map back to the real user. Everything is implemented with standard Keycloak SPIs plus a small JAX-RS resource exposed under `/realms/<realm>/push-mfa`.
+This project extends Keycloak with a push-style second factor that mimics passkey primitives. After initial enrollment, the mobile app never receives the real user identifier from Keycloak; instead, it works with a credential id that only the app can map back to the real user. Everything is implemented with standard Keycloak SPIs plus a small JAX-RS resource exposed under `/realms/<realm>/push-mfa`.
 
 - Build the provider: `mvn -DskipTests package`
 - Run Keycloak locally (imports realm + loads provider): `docker compose up`
@@ -123,7 +123,7 @@ sequenceDiagram
    }
    ```
 
-3. **Confirm token delivery:** Every login creates a fresh push challenge. Keycloak signs a `confirmToken` using the realm key and displays/logs it. This token is what would be sent via your push provider (Firebase/FCM in the demo implementation): it contains only the credential id (`credId`), the challenge id (`cid`), and the numeric message `typ`/`ver` identifiers so the provider learns nothing about the real user or whether the login ultimately succeeds. After receiving a push, the device should call `/realms/demo/push-mfa/login/pending` to fetch the username and client metadata to display in its approval prompt.
+3. **Confirm token delivery:** Every login creates a fresh push challenge. Keycloak signs a `confirmToken` using the realm key and displays/logs it. This token is what would be sent via your push provider (Firebase/FCM in the demo implementation): it contains only the credential id (`credId`), the challenge id (`cid`), and the numeric message `typ`/`ver` identifiers so the provider learns nothing about the real user or whether the login ultimately succeeds. After receiving a push, the device should call `/realms/demo/push-mfa/login/pending` to fetch the username + client metadata to display in its approval prompt (and optional user-verification metadata if enabled).
 
    ```json
    {
@@ -138,7 +138,7 @@ sequenceDiagram
    }
    ```
 
-4. **Login approval:** The device looks up the confirm token’s `credId` (credential id), resolves it to the real Keycloak user id in its secure storage, and signs a JWT (`loginToken`) with the same key pair from enrollment. The payload echoes the challenge id (`cid`), the `credId`, and the desired `action` (`approve`/`deny`) so Keycloak can fully trust the intent because it is covered by the user key signature (no nonce is needed because possession of the key already proves authenticity, and `cid` is unguessable).
+4. **Login approval:** The device looks up the confirm token’s `credId` (credential id), resolves it to the real Keycloak user id in its secure storage, and signs a JWT (`loginToken`) with the same key pair from enrollment. The payload echoes the challenge id (`cid`), the `credId`, and the desired `action` (`approve`/`deny`) so Keycloak can fully trust the intent because it is covered by the user key signature (no nonce is needed because possession of the key already proves authenticity, and `cid` is unguessable). If user verification is enabled, the device must include the selected number / entered PIN as `userVerification` (as a JSON string; preserve leading zeros) when approving (deny works without it).
 
   ```json
   {
@@ -147,6 +147,7 @@ sequenceDiagram
       "credId": "credential-bf7a9f52",
       "deviceId": "device-3d7a4e65-9bd6-4df3-9c7d-2b3e0ce9e1a5",
       "action": "approve",
+      "userVerification": "42",
       "exp": 1731403020
     }
    ```
@@ -342,6 +343,11 @@ The `DPoP` header carries a short-lived JWT signed with the user key (see the ex
 
 If the credential referenced by the device assertion does not own an outstanding challenge, the array is empty even if other devices for the same user are awaiting approval.
 
+If the authenticator is configured with `userVerification`, each entry also includes a `userVerification` object:
+
+- `{"type":"number-match","numbers":["5","34","56"]}` – show the three options and let the user tap the number shown in the browser (values are strings in the range `0`–`99` without leading zeros).
+- `{"type":"pin","pinLength":<n>}` – ask the user to enter the PIN shown in the browser (`pinLength` matches `userVerificationPinLength`). The PIN may start with `0`, so send it as a string and preserve leading zeros in `userVerification`.
+
 `expiresAt` is expressed in Unix seconds (the same format used by JWT `exp` claims) so the device can reuse its existing JWT helpers for deadline calculations.
 
 ### Approve or deny a challenge
@@ -357,10 +363,24 @@ Content-Type: application/json
 }
 ```
 
-Keycloak verifies the DPoP proof to authenticate the device, then validates the login token (stored in the request body) with the saved JWK. The login token must carry `cid`, `credId`, `deviceId`, and `action`. `"action": "approve"` marks the challenge as approved; `"action": "deny"` marks it as denied. Any other value is rejected.
+Keycloak verifies the DPoP proof to authenticate the device, then validates the login token (stored in the request body) with the saved JWK. The login token must carry `cid`, `credId`, `deviceId`, and `action`. `"action": "approve"` marks the challenge as approved; `"action": "deny"` marks it as denied. Any other value is rejected. When `userVerification` is enabled, `"action": "approve"` also requires `userVerification` (selected number / entered PIN); `"deny"` never does.
 
 ```json
 { "status": "approved" }
+```
+
+If `userVerification` is enabled, Keycloak returns an error when the device omits or provides a wrong value (`400`/`403`):
+
+Missing (`400`):
+
+```json
+{ "error": "Missing user verification" }
+```
+
+Mismatch (`403`):
+
+```json
+{ "error": "User verification mismatch" }
 ```
 
 ### Update the push provider
@@ -410,7 +430,7 @@ The DPoP proof must be signed with the *existing* user key. After validation, Ke
 The repository includes thin shell wrappers that simulate a device:
 
 - `scripts/enroll.sh <enrollment-token>` decodes the QR payload, generates a key pair (RSA or EC), and completes enrollment.
-- `scripts/confirm-login.sh <confirm-token>` decodes the Firebase-style payload, lists pending challenges (for demo visibility), and approves/denies the challenge.
+- `scripts/confirm-login.sh <confirm-token>` decodes the Firebase-style payload, lists pending challenges (for demo visibility), and approves/denies the challenge (set `LOGIN_USER_VERIFICATION` or use the prompt when `userVerification` is enabled).
 - `scripts/update-push-provider.sh <credential-id> <provider-id> [provider-type]` updates the stored push provider metadata (defaults to the `log` provider used in this demo).
 - `scripts/rotate-user-key.sh <credential-id>` rotates the user key material and immediately persists the new JWK.
 
@@ -426,6 +446,11 @@ All scripts source `scripts/common.sh`, which centralizes base64 helpers, compac
 **Authenticator (`push-mfa-authenticator`)**
 - `loginChallengeTtlSeconds` (default: `120`) – TTL for login challenges/confirm tokens.
 - `maxPendingChallenges` (default: `1`) – maximum concurrent pending login challenges per user.
+- `userVerification` (default: `none`) – optional extra verification for approvals:
+  - `none` – no additional verification.
+  - `number-match` – show a number in the browser (range `0`–`99`, no leading zeros) and send 3 options to the device via `/push-mfa/login/pending`; the device must return the selected number as `userVerification` when approving.
+  - `pin` – show a PIN in the browser; the device must return the entered PIN as `userVerification` when approving (length controlled by `userVerificationPinLength`).
+- `userVerificationPinLength` (default: `4`) – PIN length for `userVerification=pin` (max `12`).
 
 **Required Action (`push-mfa-register`)**
 - `enrollmentChallengeTtlSeconds` (default: `120`) – TTL for enrollment challenges/tokens.
@@ -461,8 +486,8 @@ JAVA_OPTS_APPEND="-Dkeycloak.push-mfa.input.maxJwtLength=8192 -Dkeycloak.push-mf
 - **User key material:** Generate a key pair per user (or per device if you let a user enroll more than one), select a unique `kid`, and keep the private key in secure storage. Persist and exchange the public component exclusively as a JWK (the same document posted in `cnf.jwk`). With a single device per user you can reuse a stable `deviceId`; only multi-device setups need distinct ids.
 - **Algorithm choice:** The demo scripts default to RSA/RS256 but also support EC keys and ECDSA proofs—set `DEVICE_KEY_TYPE=EC`, pick a curve via `DEVICE_EC_CURVE` (P-256/384/521), and override `DEVICE_SIGNING_ALG` if you need ES256/384/512. The selected algorithm lives in the stored JWK (no extra `algorithm` property is stored or sent) so Keycloak enforces it for all future DPoP proofs, login approvals, and rotation requests.
 - **State to store locally:** credential id ↔ real Keycloak user id mapping, the user key pair, the `kid`, `deviceType`, `pushProviderId`, `pushProviderType`, preferred `deviceLabel`, and any metadata needed to post to Keycloak again. Track a `deviceId` only when you support multiple devices per user.
-- **Confirm token handling:** When the confirm token arrives through Firebase (or when the user copies it from the waiting UI), decode the JWT, extract `cid` and `credId`, then call `/push-mfa/login/pending` to load user-facing metadata (username + client id/name) before prompting the user. After that, sign the login approval JWT and post it to `/push-mfa/login/challenges/{cid}/respond`.
-- **Pending challenge discovery:** Before calling `/push-mfa/login/pending`, build a DPoP proof that includes the HTTP method (`htm`), full URL (`htu`), `sub`, `deviceId`, `iat`, and a fresh `jti`, and send it via the `DPoP` header so Keycloak can scope the response to that physical device. The response lists each pending challenge with `clientId`, `clientName`, and `username` that should be shown to the user alongside the approve/deny UI.
+- **Confirm token handling:** When the confirm token arrives through Firebase (or when the user copies it from the waiting UI), decode the JWT, extract `cid` and `credId`, then call `/push-mfa/login/pending` to load user-facing metadata (username + client id/name) before prompting the user. If the response contains `userVerification`, implement the requested UX (number match / PIN) and include `userVerification` in the signed approval JWT.
+- **Pending challenge discovery:** Before calling `/push-mfa/login/pending`, build a DPoP proof that includes the HTTP method (`htm`), full URL (`htu`), `sub`, `deviceId`, `iat`, and a fresh `jti`, and send it via the `DPoP` header so Keycloak can scope the response to that physical device. The response lists each pending challenge with `clientId`, `clientName`, and `username` (plus optional `userVerification` instructions) that should be shown to the user alongside the approve/deny UI.
 - **Access tokens:** Obtain a short-lived access token via the realm’s token endpoint using the device client credentials. The token request itself must include a DPoP proof, and each subsequent REST call must send `Authorization: DPoP <access-token>` alongside a fresh `DPoP` header signed with the same key.
 - **Request authentication:** Every REST call (aside from enrollment, which already embeds the user key) must include a DPoP proof signed with the current user key. The proof binds the request method and URL to the hardware-backed key, making replay or reverse-engineering of a shared client secret ineffective.
 - **Error handling:** Enrollment and login requests return structured error responses (`400`, `403`, or `404`) when the JWTs are invalid, expired, or mismatched. Surface those errors to the user to re-trigger the flow if necessary.
@@ -573,9 +598,9 @@ npm run build
 npm run start
 ```
 
-2. The mock server listens on a port (e.g., 3000) and exposes endpoints like:
+2. The mock server listens on a port (e.g., 3001) and exposes endpoints like:
     - `/enroll`: POST endpoint to mimic QR code scanning and enrollment completion.
-    - `/login-confirm`: POST endpoint to receive and process login request from keyclaok for login approval.
+    - `/confirm-login`: POST endpoint to process a Keycloak `confirmToken` and respond to the login challenge (`action=approve|deny`, plus optional `userVerification` for number-match / PIN).
 
 ### Example Integration with Keycloak Flow
 

@@ -41,6 +41,18 @@ public final class BrowserSession {
         this.realmPort = normalizePort(baseUri);
     }
 
+    public String extractUserVerification(HtmlPage page) {
+        if (page == null || page.document() == null) {
+            return null;
+        }
+        Element verification = page.document().getElementById("kc-push-user-verification");
+        if (verification == null) {
+            return null;
+        }
+        String text = verification.text();
+        return text == null ? null : text.trim();
+    }
+
     public HtmlPage startAuthorization(String clientId) throws Exception {
         String state = UUID.randomUUID().toString();
         String nonce = UUID.randomUUID().toString();

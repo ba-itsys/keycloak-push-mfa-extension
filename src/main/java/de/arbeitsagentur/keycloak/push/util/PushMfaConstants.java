@@ -20,6 +20,11 @@ public final class PushMfaConstants {
     public static final String LOGIN_CHALLENGE_TTL_CONFIG = "loginChallengeTtlSeconds";
     public static final String ENROLLMENT_CHALLENGE_TTL_CONFIG = "enrollmentChallengeTtlSeconds";
     public static final String MAX_PENDING_AUTH_CHALLENGES_CONFIG = "maxPendingChallenges";
+    public static final String USER_VERIFICATION_CONFIG = "userVerification";
+    public static final String USER_VERIFICATION_PIN_LENGTH_CONFIG = "userVerificationPinLength";
+    public static final String USER_VERIFICATION_NONE = "none";
+    public static final String USER_VERIFICATION_NUMBER_MATCH = "number-match";
+    public static final String USER_VERIFICATION_PIN = "pin";
     public static final int PUSH_MESSAGE_VERSION = 1;
     public static final int PUSH_MESSAGE_TYPE = 1;
     public static final String APP_UNIVERSAL_LINK_CONFIG = "appUniversalLink";
@@ -29,6 +34,7 @@ public final class PushMfaConstants {
     public static final Duration DEFAULT_LOGIN_CHALLENGE_TTL = Duration.ofSeconds(120);
     public static final Duration DEFAULT_ENROLLMENT_CHALLENGE_TTL = Duration.ofSeconds(120);
     public static final int DEFAULT_MAX_PENDING_AUTH_CHALLENGES = 1;
+    public static final int DEFAULT_USER_VERIFICATION_PIN_LENGTH = 4;
 
     public static final String REQUIRED_ACTION_ID = "push-mfa-register";
 }

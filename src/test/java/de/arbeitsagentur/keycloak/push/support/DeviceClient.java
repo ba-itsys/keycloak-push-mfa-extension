@@ -80,13 +80,25 @@ public final class DeviceClient {
     }
 
     public String respondToChallenge(String confirmToken, String challengeId, String action) throws Exception {
-        HttpResponse<String> response = respondToChallengeRaw(confirmToken, challengeId, action);
+        HttpResponse<String> response = respondToChallengeRaw(confirmToken, challengeId, action, null);
         assertEquals(200, response.statusCode(), () -> "Respond failed: " + response.body());
         return MAPPER.readTree(response.body()).path("status").asText();
     }
 
     public HttpResponse<String> respondToChallengeRaw(String confirmToken, String challengeId, String action)
             throws Exception {
+        return respondToChallengeRaw(confirmToken, challengeId, action, null);
+    }
+
+    public String respondToChallenge(String confirmToken, String challengeId, String action, String userVerification)
+            throws Exception {
+        HttpResponse<String> response = respondToChallengeRaw(confirmToken, challengeId, action, userVerification);
+        assertEquals(200, response.statusCode(), () -> "Respond failed: " + response.body());
+        return MAPPER.readTree(response.body()).path("status").asText();
+    }
+
+    public HttpResponse<String> respondToChallengeRaw(
+            String confirmToken, String challengeId, String action, String userVerification) throws Exception {
         ensureAccessToken();
         SignedJWT confirm = SignedJWT.parse(confirmToken);
         var confirmClaims = confirm.getJWTClaimsSet();
@@ -95,13 +107,16 @@ public final class DeviceClient {
         assertEquals(state.credentialId(), credId, "Confirm token carried unexpected credential id");
         String tokenAction = (action == null || action.isBlank()) ? PushMfaConstants.CHALLENGE_APPROVE : action;
         String normalizedAction = tokenAction.toLowerCase();
-        JWTClaimsSet loginClaims = new JWTClaimsSet.Builder()
+        JWTClaimsSet.Builder loginBuilder = new JWTClaimsSet.Builder()
                 .claim("cid", cid)
                 .claim("credId", credId)
                 .claim("deviceId", state.deviceId())
                 .claim("action", normalizedAction)
-                .expirationTime(Date.from(Instant.now().plusSeconds(120)))
-                .build();
+                .expirationTime(Date.from(Instant.now().plusSeconds(120)));
+        if (userVerification != null && !userVerification.isBlank()) {
+            loginBuilder.claim("userVerification", userVerification);
+        }
+        JWTClaimsSet loginClaims = loginBuilder.build();
         SignedJWT loginToken = sign(loginClaims);
 
         URI respondUri = realmBase.resolve("push-mfa/login/challenges/" + cid + "/respond");

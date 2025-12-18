@@ -11,6 +11,7 @@ import de.arbeitsagentur.keycloak.push.support.BrowserSession;
 import de.arbeitsagentur.keycloak.push.support.ContainerLogWatcher;
 import de.arbeitsagentur.keycloak.push.support.HtmlPage;
 import de.arbeitsagentur.keycloak.push.support.MockMobileClient;
+import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -83,6 +84,7 @@ class MockMobileIntegrationIT {
     @Test
     void mockEnrollsDeviceSuccessfully() throws Exception {
         adminClient.resetUserState(TEST_USERNAME);
+        adminClient.configurePushMfaUserVerification(PushMfaConstants.USER_VERIFICATION_NONE);
         EnrollmentFlow enrollment = startEnrollmentFlow();
 
         MockMobileClient.Response response = mockMobileClient.enroll(enrollment.enrollmentToken());
@@ -102,6 +104,7 @@ class MockMobileIntegrationIT {
     @Test
     void mockApprovesLoginChallenge() throws Exception {
         adminClient.resetUserState(TEST_USERNAME);
+        adminClient.configurePushMfaUserVerification(PushMfaConstants.USER_VERIFICATION_NONE);
         enrollWithMockDevice();
 
         BrowserSession pushSession = new BrowserSession(baseUri);
@@ -119,6 +122,7 @@ class MockMobileIntegrationIT {
     @Test
     void mockHandlesRefreshedChallenge() throws Exception {
         adminClient.resetUserState(TEST_USERNAME);
+        adminClient.configurePushMfaUserVerification(PushMfaConstants.USER_VERIFICATION_NONE);
         enrollWithMockDevice();
 
         BrowserSession pushSession = new BrowserSession(baseUri);
@@ -143,6 +147,102 @@ class MockMobileIntegrationIT {
         assertEquals(200, refreshed.responseStatus(), () -> describe(refreshed));
 
         pushSession.completePushChallenge(refreshedChallenge.formAction());
+    }
+
+    @Test
+    void mockApprovesLoginWithNumberMatch() throws Exception {
+        adminClient.resetUserState(TEST_USERNAME);
+        adminClient.configurePushMfaUserVerification(PushMfaConstants.USER_VERIFICATION_NUMBER_MATCH);
+        enrollWithMockDevice();
+
+        BrowserSession pushSession = new BrowserSession(baseUri);
+        HtmlPage loginPage = pushSession.startAuthorization("test-app");
+        HtmlPage waitingPage = pushSession.submitLogin(loginPage, TEST_USERNAME, TEST_USERNAME);
+        BrowserSession.DeviceChallenge challenge = pushSession.extractDeviceChallenge(waitingPage);
+        String displayed = pushSession.extractUserVerification(waitingPage);
+        assertTrue(
+                displayed != null && displayed.matches("^(0|[1-9][0-9]?)$"),
+                "Expected number-match value 0-99 but got: " + displayed);
+
+        MockMobileClient.Response approval = mockMobileClient.approveLogin(challenge.confirmToken(), displayed);
+        assertEquals(200, approval.httpStatus(), () -> describe(approval));
+        assertEquals(200, approval.responseStatus(), () -> describe(approval));
+
+        pushSession.completePushChallenge(challenge.formAction());
+    }
+
+    @Test
+    void mockRejectsWrongNumberMatchSelection() throws Exception {
+        adminClient.resetUserState(TEST_USERNAME);
+        adminClient.configurePushMfaUserVerification(PushMfaConstants.USER_VERIFICATION_NUMBER_MATCH);
+        enrollWithMockDevice();
+
+        BrowserSession pushSession = new BrowserSession(baseUri);
+        HtmlPage loginPage = pushSession.startAuthorization("test-app");
+        HtmlPage waitingPage = pushSession.submitLogin(loginPage, TEST_USERNAME, TEST_USERNAME);
+        BrowserSession.DeviceChallenge challenge = pushSession.extractDeviceChallenge(waitingPage);
+        String displayed = pushSession.extractUserVerification(waitingPage);
+        assertTrue(
+                displayed != null && displayed.matches("^(0|[1-9][0-9]?)$"),
+                "Expected number-match value 0-99 but got: " + displayed);
+
+        String wrong = "0".equals(displayed) ? "1" : "0";
+        MockMobileClient.Response rejected = mockMobileClient.approveLogin(challenge.confirmToken(), wrong);
+        assertEquals(403, rejected.httpStatus(), () -> "Expected 403 but got: " + describe(rejected));
+        assertTrue(
+                (rejected.error() != null && rejected.error().contains("User verification mismatch")),
+                () -> "Expected mismatch error but got: " + describe(rejected));
+
+        MockMobileClient.Response approval = mockMobileClient.approveLogin(challenge.confirmToken(), displayed);
+        assertEquals(200, approval.httpStatus(), () -> describe(approval));
+        assertEquals(200, approval.responseStatus(), () -> describe(approval));
+        pushSession.completePushChallenge(challenge.formAction());
+    }
+
+    @Test
+    void mockApprovesLoginWithPin() throws Exception {
+        adminClient.resetUserState(TEST_USERNAME);
+        adminClient.configurePushMfaUserVerification(PushMfaConstants.USER_VERIFICATION_PIN);
+        enrollWithMockDevice();
+
+        BrowserSession pushSession = new BrowserSession(baseUri);
+        HtmlPage loginPage = pushSession.startAuthorization("test-app");
+        HtmlPage waitingPage = pushSession.submitLogin(loginPage, TEST_USERNAME, TEST_USERNAME);
+        BrowserSession.DeviceChallenge challenge = pushSession.extractDeviceChallenge(waitingPage);
+        String pin = pushSession.extractUserVerification(waitingPage);
+        assertTrue(pin != null && pin.matches("\\d{4}"), "Expected 4-digit pin but got: " + pin);
+
+        MockMobileClient.Response approval = mockMobileClient.approveLogin(challenge.confirmToken(), pin);
+        assertEquals(200, approval.httpStatus(), () -> describe(approval));
+        assertEquals(200, approval.responseStatus(), () -> describe(approval));
+
+        pushSession.completePushChallenge(challenge.formAction());
+    }
+
+    @Test
+    void mockRejectsWrongPin() throws Exception {
+        adminClient.resetUserState(TEST_USERNAME);
+        adminClient.configurePushMfaUserVerification(PushMfaConstants.USER_VERIFICATION_PIN);
+        enrollWithMockDevice();
+
+        BrowserSession pushSession = new BrowserSession(baseUri);
+        HtmlPage loginPage = pushSession.startAuthorization("test-app");
+        HtmlPage waitingPage = pushSession.submitLogin(loginPage, TEST_USERNAME, TEST_USERNAME);
+        BrowserSession.DeviceChallenge challenge = pushSession.extractDeviceChallenge(waitingPage);
+        String pin = pushSession.extractUserVerification(waitingPage);
+        assertTrue(pin != null && pin.matches("\\d{4}"), "Expected 4-digit pin but got: " + pin);
+
+        String wrong = "0000".equals(pin) ? "0001" : "0000";
+        MockMobileClient.Response rejected = mockMobileClient.approveLogin(challenge.confirmToken(), wrong);
+        assertEquals(403, rejected.httpStatus(), () -> "Expected 403 but got: " + describe(rejected));
+        assertTrue(
+                (rejected.error() != null && rejected.error().contains("User verification mismatch")),
+                () -> "Expected mismatch error but got: " + describe(rejected));
+
+        MockMobileClient.Response approval = mockMobileClient.approveLogin(challenge.confirmToken(), pin);
+        assertEquals(200, approval.httpStatus(), () -> describe(approval));
+        assertEquals(200, approval.responseStatus(), () -> describe(approval));
+        pushSession.completePushChallenge(challenge.formAction());
     }
 
     private void enrollWithMockDevice() throws Exception {

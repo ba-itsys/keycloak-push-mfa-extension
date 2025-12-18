@@ -234,7 +234,8 @@ public class PushMfaResource {
                                 challenge.getId(),
                                 challenge.getExpiresAt().getEpochSecond(),
                                 challenge.getClientId(),
-                                resolveClientDisplayName(challenge.getClientId())))
+                                resolveClientDisplayName(challenge.getClientId()),
+                                buildUserVerificationInfo(challenge)))
                         .toList();
         return Response.ok(Map.of("challenges", pending)).build();
     }
@@ -336,6 +337,7 @@ public class PushMfaResource {
             throw new BadRequestException("Unsupported action: " + tokenAction);
         }
 
+        verifyUserVerification(challenge, payload);
         challengeStore.resolve(challengeId, PushChallengeStatus.APPROVED);
         return Response.ok(Map.of("status", "approved")).build();
     }
@@ -672,6 +674,58 @@ public class PushMfaResource {
         return false;
     }
 
+    private UserVerificationInfo buildUserVerificationInfo(PushChallenge challenge) {
+        if (challenge == null) {
+            return null;
+        }
+        return switch (challenge.getUserVerificationMode()) {
+            case NUMBER_MATCH -> new UserVerificationInfo(
+                    PushMfaConstants.USER_VERIFICATION_NUMBER_MATCH, challenge.getUserVerificationOptions(), null);
+            case PIN -> {
+                Integer pinLength = null;
+                String expected = challenge.getUserVerificationValue();
+                if (!StringUtil.isBlank(expected)) {
+                    pinLength = expected.length();
+                }
+                if (pinLength == null || pinLength <= 0) {
+                    pinLength = PushMfaConstants.DEFAULT_USER_VERIFICATION_PIN_LENGTH;
+                }
+                yield new UserVerificationInfo(PushMfaConstants.USER_VERIFICATION_PIN, null, pinLength);
+            }
+            case NONE -> null;
+        };
+    }
+
+    private void verifyUserVerification(PushChallenge challenge, JsonNode payload) {
+        if (challenge == null) {
+            return;
+        }
+        PushChallenge.UserVerificationMode mode = challenge.getUserVerificationMode();
+        if (mode == null || mode == PushChallenge.UserVerificationMode.NONE) {
+            return;
+        }
+
+        String expected = challenge.getUserVerificationValue();
+        if (StringUtil.isBlank(expected)) {
+            throw new IllegalStateException("Challenge missing expected user verification");
+        }
+
+        JsonNode verificationNode = payload == null ? null : payload.get("userVerification");
+        if (verificationNode == null || verificationNode.isNull()) {
+            throw new BadRequestException("Missing user verification");
+        }
+        if (!verificationNode.isTextual()) {
+            throw new BadRequestException("Invalid user verification value");
+        }
+        String provided = verificationNode.textValue();
+        if (StringUtil.isBlank(provided)) {
+            throw new BadRequestException("Missing user verification");
+        }
+        if (!Objects.equals(expected, provided.trim())) {
+            throw new ForbiddenException("User verification mismatch");
+        }
+    }
+
     private void emitLoginChallengeEvents(String challengeId, String secret, SseEventSink sink, Sse sse) {
         try (SseEventSink eventSink = sink) {
             LOG.infof("Starting login SSE stream for challenge %s", challengeId);
@@ -847,7 +901,13 @@ public class PushMfaResource {
             @JsonProperty("cid") String cid,
             @JsonProperty("expiresAt") long expiresAt,
             @JsonProperty("clientId") String clientId,
-            @JsonProperty("clientName") String clientName) {}
+            @JsonProperty("clientName") String clientName,
+            @JsonProperty("userVerification") UserVerificationInfo userVerification) {}
+
+    record UserVerificationInfo(
+            @JsonProperty("type") String type,
+            @JsonProperty("numbers") List<String> numbers,
+            @JsonProperty("pinLength") Integer pinLength) {}
 
     record ChallengeRespondRequest(@JsonProperty("token") String token) {}
 

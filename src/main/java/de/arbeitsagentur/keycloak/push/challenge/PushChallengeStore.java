@@ -21,6 +21,9 @@ public class PushChallengeStore {
     private static final String CHALLENGE_PREFIX = "push-mfa:challenge:";
     private static final String USER_INDEX_PREFIX = "push-mfa:user-index:";
     private static final String INDEX_CHALLENGE_IDS = "challengeIds";
+    private static final String USER_VERIFICATION_MODE = "userVerificationMode";
+    private static final String USER_VERIFICATION_VALUE = "userVerificationValue";
+    private static final String USER_VERIFICATION_OPTIONS = "userVerificationOptions";
 
     private final SingleUseObjectProvider singleUse;
 
@@ -38,6 +41,34 @@ public class PushChallengeStore {
             String clientId,
             String watchSecret,
             String rootSessionId) {
+        return create(
+                realmId,
+                userId,
+                nonceBytes,
+                type,
+                ttl,
+                credentialId,
+                clientId,
+                watchSecret,
+                rootSessionId,
+                PushChallenge.UserVerificationMode.NONE,
+                null,
+                List.of());
+    }
+
+    public PushChallenge create(
+            String realmId,
+            String userId,
+            byte[] nonceBytes,
+            PushChallenge.Type type,
+            Duration ttl,
+            String credentialId,
+            String clientId,
+            String watchSecret,
+            String rootSessionId,
+            PushChallenge.UserVerificationMode userVerificationMode,
+            String userVerificationValue,
+            List<String> userVerificationOptions) {
         Instant now = Instant.now();
         Instant expiresAt = now.plus(ttl);
         String id = KeycloakModelUtils.generateId();
@@ -63,6 +94,18 @@ public class PushChallengeStore {
             data.put("rootSessionId", rootSessionId);
         }
 
+        PushChallenge.UserVerificationMode effectiveVerificationMode =
+                userVerificationMode == null ? PushChallenge.UserVerificationMode.NONE : userVerificationMode;
+        if (effectiveVerificationMode != PushChallenge.UserVerificationMode.NONE) {
+            data.put(USER_VERIFICATION_MODE, effectiveVerificationMode.name());
+            if (userVerificationValue != null) {
+                data.put(USER_VERIFICATION_VALUE, userVerificationValue);
+            }
+            if (userVerificationOptions != null && !userVerificationOptions.isEmpty()) {
+                data.put(USER_VERIFICATION_OPTIONS, serializeUserVerificationOptions(userVerificationOptions));
+            }
+        }
+
         long ttlSeconds = Math.max(1L, ttl.toSeconds());
 
         singleUse.put(challengeKey(id), ttlSeconds, data);
@@ -80,7 +123,10 @@ public class PushChallengeStore {
                 type,
                 PushChallengeStatus.PENDING,
                 now,
-                null);
+                null,
+                effectiveVerificationMode,
+                userVerificationValue,
+                userVerificationOptions);
 
         if (type == PushChallenge.Type.AUTHENTICATION) {
             storeAuthenticationIndex(realmId, userId, List.of(challenge));
@@ -289,6 +335,15 @@ public class PushChallengeStore {
         Instant created = Instant.parse(createdAt);
         Instant resolved = resolvedAt == null ? null : Instant.parse(resolvedAt);
 
+        PushChallenge.UserVerificationMode userVerificationMode =
+                parseUserVerificationMode(data.get(USER_VERIFICATION_MODE));
+        String userVerificationValue = userVerificationMode == PushChallenge.UserVerificationMode.NONE
+                ? null
+                : data.get(USER_VERIFICATION_VALUE);
+        List<String> userVerificationOptions = userVerificationMode == PushChallenge.UserVerificationMode.NUMBER_MATCH
+                ? parseUserVerificationOptions(data.get(USER_VERIFICATION_OPTIONS))
+                : List.of();
+
         return new PushChallenge(
                 challengeId,
                 realmId,
@@ -302,7 +357,10 @@ public class PushChallengeStore {
                 PushChallenge.Type.valueOf(type),
                 PushChallengeStatus.valueOf(status),
                 created,
-                resolved);
+                resolved,
+                userVerificationMode,
+                userVerificationValue,
+                userVerificationOptions);
     }
 
     private boolean isAuthentication(Map<String, String> data) {
@@ -324,6 +382,37 @@ public class PushChallengeStore {
         } catch (IllegalArgumentException ex) {
             throw new IllegalStateException("Invalid stored challenge data", ex);
         }
+    }
+
+    private PushChallenge.UserVerificationMode parseUserVerificationMode(String rawValue) {
+        if (StringUtil.isBlank(rawValue)) {
+            return PushChallenge.UserVerificationMode.NONE;
+        }
+        try {
+            return PushChallenge.UserVerificationMode.valueOf(rawValue.trim().toUpperCase());
+        } catch (IllegalArgumentException ex) {
+            return PushChallenge.UserVerificationMode.NONE;
+        }
+    }
+
+    private String serializeUserVerificationOptions(List<String> userVerificationOptions) {
+        if (userVerificationOptions == null || userVerificationOptions.isEmpty()) {
+            return "";
+        }
+        return userVerificationOptions.stream()
+                .filter(StringUtil::isNotBlank)
+                .map(String::trim)
+                .collect(Collectors.joining(","));
+    }
+
+    private List<String> parseUserVerificationOptions(String rawValue) {
+        if (StringUtil.isBlank(rawValue)) {
+            return List.of();
+        }
+        return Arrays.stream(rawValue.split(","))
+                .map(String::trim)
+                .filter(StringUtil::isNotBlank)
+                .toList();
     }
 
     public static String encodeNonce(byte[] nonceBytes) {

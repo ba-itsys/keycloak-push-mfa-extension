@@ -39,6 +39,19 @@ export function getView() {
         <input id="context" type="text" placeholder="e.g. deviceXY" />
       </label>
 
+      <label class="field">
+        <b>User verification (number/PIN) [optional]:</b>
+        <input id="userVerification" type="text" placeholder="e.g. 42 or 0123" />
+      </label>
+
+      <label class="field">
+        <b>Login action:</b>
+        <select id="action">
+          <option value="approve" selected>approve</option>
+          <option value="deny">deny</option>
+        </select>
+      </label>
+
     <label class="field">
         <b>Actions:</b>
             <div class="row" style="justify-content: space-between;">
@@ -68,6 +81,8 @@ export function getView() {
     const qs = new URLSearchParams(location.search);
     const tokenEl = document.getElementById('token');
     const contextEl = document.getElementById('context');
+    const userVerificationEl = document.getElementById('userVerification');
+    const actionEl = document.getElementById('action');
     const outEl = document.getElementById('out');
     const cfgEl = document.getElementById('cfg');
 
@@ -77,6 +92,8 @@ export function getView() {
 
     if (qs.get('token')) tokenEl.value = qs.get('token');
     if (qs.get('context')) contextEl.value = qs.get('context');
+    if (qs.get('userVerification')) userVerificationEl.value = qs.get('userVerification');
+    if (qs.get('action')) actionEl.value = qs.get('action');
 
     document.getElementById('enrollBtn').addEventListener('click', async () => {
       const token = tokenEl.value.trim();
@@ -101,7 +118,8 @@ export function getView() {
 
     document.getElementById('confirm-loginBtn').addEventListener('click', async () => {
       const token = tokenEl.value.trim();
-      const context = contextEl.value.trim();
+      const userVerification = userVerificationEl.value.trim();
+      const action = actionEl.value.trim();
       if (!token) {
         outEl.textContent = 'Please enter token.';
         return;
@@ -111,7 +129,7 @@ export function getView() {
         const res = await fetch('/confirm-login', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ token, context })
+          body: JSON.stringify({ token, userVerification, action })
         });
         const data = await res.json();
         outEl.textContent = JSON.stringify(data, null, 2);

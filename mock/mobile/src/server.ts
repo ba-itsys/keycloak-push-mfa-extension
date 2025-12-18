@@ -6,14 +6,22 @@ import {
   postChallengesResponse,
   postAccessToken,
   postEnrollComplete,
+  getPendingChallenges,
 } from './service/http-util.js';
-import { CHALLENGE_URL, ENROLL_COMPLETE_URL, REALM_BASE, TOKEN_ENDPOINT } from './service/urls.js';
+import {
+  CHALLENGE_URL,
+  ENROLL_COMPLETE_URL,
+  LOGIN_PENDING_URL,
+  REALM_BASE,
+  TOKEN_ENDPOINT,
+} from './service/urls.js';
 import {
   createEnrollmentJwt,
   createChallengeToken,
-  createAccessToken,
+  createDpopProof,
   unpackEnrollmentToken,
   unpackLoginConfirmToken,
+  extractUserIdFromCredentialId,
   getCredentialId,
 } from './service/token-util.js';
 
@@ -25,19 +33,32 @@ const CHALLENGE_ID = 'CHALLENGE_ID';
 
 app.post('/confirm-login', async (req, res) => {
   try {
-    const { token } = req.body as { token?: string; context?: string };
+    const { token, context, userVerification, action } = req.body as {
+      token?: string;
+      context?: string;
+      userVerification?: string;
+      action?: string;
+    };
     if (!token) {
       return res.status(400).json({ error: 'token required' });
     }
+
+    const effectiveAction = (action ?? 'approve').trim().toLowerCase();
+    const effectiveUserVerification = userVerification ?? context;
 
     const confirmValues = unpackLoginConfirmToken(token);
     if (confirmValues === null) {
       return res.status(400).json({ error: 'invalid confirm token payload' });
     }
 
-    const userId = confirmValues.userId;
+    const credentialId = confirmValues.userId;
     const challengeId = confirmValues.challengeId;
-    const dPopAccessToken = await createAccessToken(userId, TOKEN_ENDPOINT);
+    const userId = extractUserIdFromCredentialId(credentialId);
+    if (!userId) {
+      return res.status(400).json({ error: 'unable to extract user id from credential id' });
+    }
+
+    const dPopAccessToken = await createDpopProof(credentialId, 'POST', TOKEN_ENDPOINT);
     const accessTokenResponse = await postAccessToken(dPopAccessToken);
 
     if (!accessTokenResponse.ok) {
@@ -48,9 +69,38 @@ app.post('/confirm-login', async (req, res) => {
     const accessTokenJson = (await accessTokenResponse.json()) as any;
     const accessToken = accessTokenJson['access_token'];
 
+    const pendingUrl = new URL(LOGIN_PENDING_URL);
+    pendingUrl.searchParams.set('userId', userId);
+    const pendingHtu = pendingUrl.toString();
+    const pendingDpop = await createDpopProof(credentialId, 'GET', pendingHtu);
+    const pendingResponse = await getPendingChallenges(pendingHtu, pendingDpop, accessToken);
+    if (!pendingResponse.ok) {
+      return res.status(pendingResponse.status).json({ error: `${await pendingResponse.text()}` });
+    }
+    const pendingJson = (await pendingResponse.json()) as any;
+    const pendingChallenge =
+      pendingJson?.challenges?.find((candidate: any) => candidate?.cid === challengeId) ?? null;
+    const pendingUserVerification = pendingChallenge?.userVerification ?? null;
+
+    if (
+      effectiveAction === 'approve' &&
+      pendingUserVerification != null &&
+      (!effectiveUserVerification || effectiveUserVerification.trim().length === 0)
+    ) {
+      return res.status(400).json({
+        error: 'userVerification required',
+        userVerification: pendingUserVerification,
+      });
+    }
+
     const url = CHALLENGE_URL.replace(CHALLENGE_ID, challengeId);
-    const dpopChallengeToken = await createAccessToken(userId, url);
-    const challengeToken = await createChallengeToken(userId, challengeId);
+    const dpopChallengeToken = await createDpopProof(credentialId, 'POST', url);
+    const challengeToken = await createChallengeToken(
+      credentialId,
+      challengeId,
+      effectiveAction,
+      effectiveAction === 'approve' ? effectiveUserVerification : undefined,
+    );
 
     const challangeResponse = await postChallengesResponse(
       url,
@@ -68,6 +118,7 @@ app.post('/confirm-login', async (req, res) => {
     res.json({
       userId: userId,
       responseStatus: challangeResponse.status,
+      userVerification: pendingUserVerification,
     });
   } catch (e: any) {
     res.status(500).json({ error: e.message ?? 'internal error' });
@@ -119,7 +170,7 @@ app.get('/meta', (_req, res) => {
   res.json({
     endpoints: {
       enroll: 'POST /enroll { token, context }',
-      confirmLogin: 'POST /confirm-login { token}',
+      confirmLogin: 'POST /confirm-login { token, action?, userVerification? }',
     },
     defaults: {
       REALM_BASE: REALM_BASE,

@@ -31,6 +31,7 @@ export type DpopPayload = {
   deviceId?: string;
   credId?: string;
   action?: string;
+  userVerification?: string;
 };
 
 export type EnrollmentValues = {
@@ -106,27 +107,45 @@ export async function createEnrollmentJwt(enrollmentValues: EnrollmentValues, co
 }
 
 export async function createAccessToken(userId: string, htu: string) {
-  const ctxEndIndex = userId?.indexOf(DEVICE_ALIAS);
-  const _aliasAndEkid = userId.substring(ctxEndIndex, userId.length);
-  const ekid = _aliasAndEkid?.slice(DEVICE_ALIAS.length) as string;
+  return await createDpopProof(userId, 'POST', htu);
+}
+
+export function extractUserIdFromCredentialId(credentialId: string): string | null {
+  const aliasIndex = credentialId.indexOf(DEVICE_ALIAS);
+  if (aliasIndex < 0) {
+    return null;
+  }
+  return credentialId.slice(aliasIndex + DEVICE_ALIAS.length);
+}
+
+export async function createDpopProof(credentialId: string, method: string, htu: string) {
+  const userId = extractUserIdFromCredentialId(credentialId) ?? credentialId;
 
   const dpopTokenPayload: DpopPayload = {
-    htm: 'POST',
+    htm: method,
     htu: htu,
-    sub: ekid,
+    sub: userId,
     deviceId: DEVICE_STATIC_ID,
   };
 
   return await createDpopJwt(dpopTokenPayload);
 }
 
-export async function createChallengeToken(userId: string, challengeId: string) {
+export async function createChallengeToken(
+  userId: string,
+  challengeId: string,
+  action: string = 'approve',
+  userVerification?: string,
+) {
   const body: DpopPayload = {
     cid: challengeId,
     credId: userId,
     deviceId: DEVICE_STATIC_ID,
-    action: 'approve',
+    action: action,
   };
+  if (userVerification && userVerification.trim().length > 0) {
+    body.userVerification = userVerification;
+  }
   return await createConfirmJwt(body);
 }
 

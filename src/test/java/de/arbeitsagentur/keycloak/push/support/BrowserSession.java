@@ -7,6 +7,7 @@ import java.net.CookieManager;
 import java.net.CookiePolicy;
 import java.net.HttpCookie;
 import java.net.URI;
+import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -167,6 +168,29 @@ public final class BrowserSession {
         }
         URI action = resolve(page.uri(), form.attr("action"));
         return new DeviceChallenge(token.text().trim(), challengeInput.attr("value"), action);
+    }
+
+    public String extractSameDeviceToken(HtmlPage page) {
+        Element button = page.document().getElementById("kc-push-open-app");
+        if (button == null) {
+            throw new IllegalStateException("Same-device link button not found");
+        }
+        String url = button.attr("data-push-same-device-url");
+        if (url == null || url.isBlank()) {
+            throw new IllegalStateException("Same-device link URL missing");
+        }
+        URI link = URI.create(url);
+        String query = link.getQuery();
+        if (query == null || query.isBlank()) {
+            throw new IllegalStateException("Same-device link missing token param");
+        }
+        for (String pair : query.split("&")) {
+            String[] parts = pair.split("=", 2);
+            if (parts.length == 2 && "token".equals(parts[0])) {
+                return URLDecoder.decode(parts[1], StandardCharsets.UTF_8);
+            }
+        }
+        throw new IllegalStateException("Same-device link missing token param");
     }
 
     public void completePushChallenge(URI formAction) throws Exception {

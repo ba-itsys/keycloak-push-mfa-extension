@@ -85,6 +85,7 @@ class PushMfaIntegrationIT {
     void resetUserVerificationConfig() throws Exception {
         adminClient.configurePushMfaUserVerification(
                 PushMfaConstants.USER_VERIFICATION_NONE, PushMfaConstants.DEFAULT_USER_VERIFICATION_PIN_LENGTH);
+        adminClient.configurePushMfaSameDeviceUserVerification(false);
     }
 
     @Test
@@ -200,6 +201,77 @@ class PushMfaIntegrationIT {
 
         String approved = deviceClient.respondToChallenge(
                 confirm.confirmToken(), confirm.challengeId(), PushMfaConstants.CHALLENGE_APPROVE, displayed);
+        assertEquals("approved", approved);
+        pushSession.completePushChallenge(confirm.formAction());
+    }
+
+    @Test
+    void sameDeviceLinkCarriesUserVerificationWhenEnabled() throws Exception {
+        adminClient.configurePushMfaUserVerification(PushMfaConstants.USER_VERIFICATION_NUMBER_MATCH);
+        adminClient.configurePushMfaSameDeviceUserVerification(true);
+        DeviceClient deviceClient = enrollDevice();
+
+        BrowserSession pushSession = new BrowserSession(baseUri);
+        HtmlPage pushLogin = pushSession.startAuthorization("test-app");
+        HtmlPage waitingPage = pushSession.submitLogin(pushLogin, TEST_USERNAME, TEST_PASSWORD);
+        BrowserSession.DeviceChallenge confirm = pushSession.extractDeviceChallenge(waitingPage);
+
+        String displayed = pushSession.extractUserVerification(waitingPage);
+        assertNotNull(displayed);
+
+        String sameDeviceToken = pushSession.extractSameDeviceToken(waitingPage);
+        SignedJWT sameDeviceJwt = SignedJWT.parse(sameDeviceToken);
+        JWTClaimsSet sameDeviceClaims = sameDeviceJwt.getJWTClaimsSet();
+        assertEquals(displayed, sameDeviceClaims.getStringClaim("userVerification"));
+
+        String approved = deviceClient.respondToChallenge(
+                confirm.confirmToken(), confirm.challengeId(), PushMfaConstants.CHALLENGE_APPROVE, displayed);
+        assertEquals("approved", approved);
+        pushSession.completePushChallenge(confirm.formAction());
+    }
+
+    @Test
+    void sameDeviceLinkDoesNotLeakUserVerificationToConfirmTokenOrPending() throws Exception {
+        adminClient.configurePushMfaUserVerification(PushMfaConstants.USER_VERIFICATION_PIN);
+        adminClient.configurePushMfaSameDeviceUserVerification(true);
+        DeviceClient deviceClient = enrollDevice();
+
+        BrowserSession pushSession = new BrowserSession(baseUri);
+        HtmlPage pushLogin = pushSession.startAuthorization("test-app");
+        HtmlPage waitingPage = pushSession.submitLogin(pushLogin, TEST_USERNAME, TEST_PASSWORD);
+        BrowserSession.DeviceChallenge confirm = pushSession.extractDeviceChallenge(waitingPage);
+
+        String pin = pushSession.extractUserVerification(waitingPage);
+        assertNotNull(pin);
+
+        SignedJWT confirmToken = SignedJWT.parse(confirm.confirmToken());
+        JWTClaimsSet confirmClaims = confirmToken.getJWTClaimsSet();
+        assertNull(confirmClaims.getClaim("userVerification"));
+
+        JsonNode pending = deviceClient.fetchPendingChallenges();
+        JsonNode challenge = pending.get(0);
+        assertEquals(confirm.challengeId(), challenge.path("cid").asText());
+        JsonNode verification = challenge.path("userVerification");
+        assertEquals(
+                PushMfaConstants.USER_VERIFICATION_PIN,
+                verification.path("type").asText());
+        verification
+                .fieldNames()
+                .forEachRemaining(field -> assertTrue(
+                        Set.of("type", "numbers", "pinLength").contains(field),
+                        () -> "Unexpected userVerification field: " + field + " in " + verification));
+        assertTrue(
+                verification.path("userVerification").isMissingNode()
+                        || verification.path("userVerification").isNull(),
+                () -> "Pending response should not include userVerification: " + verification);
+
+        String sameDeviceToken = pushSession.extractSameDeviceToken(waitingPage);
+        SignedJWT sameDeviceJwt = SignedJWT.parse(sameDeviceToken);
+        JWTClaimsSet sameDeviceClaims = sameDeviceJwt.getJWTClaimsSet();
+        assertEquals(pin, sameDeviceClaims.getStringClaim("userVerification"));
+
+        String approved = deviceClient.respondToChallenge(
+                confirm.confirmToken(), confirm.challengeId(), PushMfaConstants.CHALLENGE_APPROVE, pin);
         assertEquals("approved", approved);
         pushSession.completePushChallenge(confirm.formAction());
     }

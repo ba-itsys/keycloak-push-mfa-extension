@@ -31,6 +31,15 @@ app.use(bodyParser.json());
 const PORT = Number(process.env.PORT ?? 3001);
 const CHALLENGE_ID = 'CHALLENGE_ID';
 
+const firstNonBlank = (...values: Array<string | undefined | null>) => {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+  return undefined;
+};
+
 app.post('/confirm-login', async (req, res) => {
   try {
     const { token, context, userVerification, action } = req.body as {
@@ -43,13 +52,14 @@ app.post('/confirm-login', async (req, res) => {
       return res.status(400).json({ error: 'token required' });
     }
 
-    const effectiveAction = (action ?? 'approve').trim().toLowerCase();
-    const effectiveUserVerification = userVerification ?? context;
-
     const confirmValues = unpackLoginConfirmToken(token);
     if (confirmValues === null) {
       return res.status(400).json({ error: 'invalid confirm token payload' });
     }
+
+    const effectiveAction = (action ?? 'approve').trim().toLowerCase();
+    const tokenUserVerification = confirmValues.userVerification;
+    const effectiveUserVerification = firstNonBlank(userVerification, tokenUserVerification, context);
 
     const credentialId = confirmValues.userId;
     const challengeId = confirmValues.challengeId;

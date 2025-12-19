@@ -75,6 +75,22 @@ class PushTokenBuilderTest {
     }
 
     @Test
+    void confirmTokenIncludesUserVerificationWhenProvided() throws Exception {
+        String token = PushConfirmTokenBuilder.build(
+                session,
+                realm,
+                "credential-alias",
+                "challenge-456",
+                Instant.ofEpochSecond(1700000125),
+                URI.create("http://localhost:8080/"),
+                "0421");
+
+        SignedJWT jwt = SignedJWT.parse(token);
+        JWTClaimsSet claims = jwt.getJWTClaimsSet();
+        assertEquals("0421", claims.getStringClaim("userVerification"));
+    }
+
+    @Test
     void confirmTokenDoesNotLeakClientDetails() throws Exception {
         String token = PushConfirmTokenBuilder.build(
                 session,

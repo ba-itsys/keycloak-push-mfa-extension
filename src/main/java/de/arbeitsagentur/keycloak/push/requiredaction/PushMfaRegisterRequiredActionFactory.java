@@ -23,11 +23,11 @@ public class PushMfaRegisterRequiredActionFactory implements RequiredActionFacto
         challengeTtl.setDefaultValue(String.valueOf(PushMfaConstants.DEFAULT_ENROLLMENT_CHALLENGE_TTL.toSeconds()));
 
         ProviderConfigProperty appUniversalLink = new ProviderConfigProperty();
-        appUniversalLink.setName(PushMfaConstants.APP_UNIVERSAL_LINK_CONFIG);
-        appUniversalLink.setLabel("Companion app/universal link");
+        appUniversalLink.setName(PushMfaConstants.ENROLLMENT_APP_UNIVERSAL_LINK_CONFIG);
+        appUniversalLink.setLabel("Enrollment universal link");
         appUniversalLink.setType(ProviderConfigProperty.STRING_TYPE);
         appUniversalLink.setHelpText(
-                "App link (android) or universal link (iOS) to launch companion app on the same device, e.g., https://push-mfa-app.com/");
+                "App link (android) or universal link (iOS) for enrollment on the same device, e.g., https://push-mfa-app.com/enroll");
         appUniversalLink.setDefaultValue(PushMfaConstants.DEFAULT_APP_UNIVERSAL_LINK + "enroll");
 
         CONFIG_PROPERTIES = List.of(challengeTtl, appUniversalLink);

@@ -53,16 +53,29 @@ public class PushMfaAuthenticatorFactory implements AuthenticatorFactory {
         userVerificationPinLength.setDefaultValue(
                 String.valueOf(PushMfaConstants.DEFAULT_USER_VERIFICATION_PIN_LENGTH));
 
+        ProviderConfigProperty sameDeviceUserVerification = new ProviderConfigProperty();
+        sameDeviceUserVerification.setName(PushMfaConstants.SAME_DEVICE_INCLUDE_USER_VERIFICATION_CONFIG);
+        sameDeviceUserVerification.setLabel("Same-device link includes user verification");
+        sameDeviceUserVerification.setType(ProviderConfigProperty.BOOLEAN_TYPE);
+        sameDeviceUserVerification.setHelpText(
+                "Include the current user verification answer in the same-device link token so the app can auto-fill it.");
+        sameDeviceUserVerification.setDefaultValue(Boolean.FALSE);
+
         ProviderConfigProperty appUniversalLink = new ProviderConfigProperty();
-        appUniversalLink.setName(PushMfaConstants.APP_UNIVERSAL_LINK_CONFIG);
-        appUniversalLink.setLabel("Companion app/universal link");
+        appUniversalLink.setName(PushMfaConstants.LOGIN_APP_UNIVERSAL_LINK_CONFIG);
+        appUniversalLink.setLabel("Same-device login universal link");
         appUniversalLink.setType(ProviderConfigProperty.STRING_TYPE);
         appUniversalLink.setHelpText(
-                "App link (android) or universal link (iOS) to launch companion app on the same device, e.g., https://push-mfa-app.com/");
+                "App link (android) or universal link (iOS) for same-device login, e.g., https://push-mfa-app.com/confirm");
         appUniversalLink.setDefaultValue(PushMfaConstants.DEFAULT_APP_UNIVERSAL_LINK + "confirm");
 
-        CONFIG_PROPERTIES =
-                List.of(loginTtl, maxPending, userVerification, userVerificationPinLength, appUniversalLink);
+        CONFIG_PROPERTIES = List.of(
+                loginTtl,
+                maxPending,
+                userVerification,
+                userVerificationPinLength,
+                sameDeviceUserVerification,
+                appUniversalLink);
     }
 
     @Override

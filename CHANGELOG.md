@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.0](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.1.3...v1.2.0) (2025-12-19)
+
+
+### Features
+
+* add user verification modes (none, pin, match-numbers) ([5405625](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/5405625973974d240edd29e28c598b653fbc8dff))
+
+
+### Bug Fixes
+
+* fix flaky test ([00d6ca8](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/00d6ca8a6b83324017eea6652d7fcbd3a8f4cb3a))
+
 ## [1.1.3](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.1.2...v1.1.3) (2025-12-15)
 
 

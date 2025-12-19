@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.2.0...v1.3.0) (2025-12-19)
+
+
+### Features
+
+* optionally add correct userVerification answer to same device app-link ([870ddf5](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/870ddf566d159dca2db51cf275b0a2c9e6030997))
+
 ## [1.2.0](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.1.3...v1.2.0) (2025-12-19)
 
 

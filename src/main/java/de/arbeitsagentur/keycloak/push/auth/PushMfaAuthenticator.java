@@ -13,6 +13,7 @@ import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriBuilder;
+import java.net.URISyntaxException;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -21,6 +22,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import org.apache.http.client.utils.URIBuilder;
 import org.jboss.logging.Logger;
 import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.authentication.AuthenticationFlowError;
@@ -486,6 +488,10 @@ public class PushMfaAuthenticator implements Authenticator {
             watchSecret = ChallengeNoteHelper.readWatchSecret(authSession);
         }
 
+        String appUniversalLink = resolveAppUniversalLink(context);
+        String sameDeviceToken = resolveSameDeviceToken(context, challenge, credentialData, confirmToken);
+        String sameDeviceUri = buildPushUri(appUniversalLink, sameDeviceToken);
+
         var form = context.form()
                 .setAttribute("challengeId", challengeId)
                 .setAttribute("pollingIntervalSeconds", 5)
@@ -494,7 +500,8 @@ public class PushMfaAuthenticator implements Authenticator {
                 .setAttribute("pushCredentialId", credentialData != null ? credentialData.getCredentialId() : null)
                 .setAttribute("pushMessageVersion", String.valueOf(PushMfaConstants.PUSH_MESSAGE_VERSION))
                 .setAttribute("pushMessageType", String.valueOf(PushMfaConstants.PUSH_MESSAGE_TYPE))
-                .setAttribute("appUniversalLink", resolveAppUniversalLink(context));
+                .setAttribute("appUniversalLink", appUniversalLink)
+                .setAttribute("pushSameDeviceUri", sameDeviceUri);
 
         if (challenge != null
                 && challenge.getUserVerificationMode() != PushChallenge.UserVerificationMode.NONE
@@ -643,11 +650,70 @@ public class PushMfaAuthenticator implements Authenticator {
         if (config == null || config.getConfig() == null) {
             return PushMfaConstants.DEFAULT_APP_UNIVERSAL_LINK + "confirm";
         }
-        String value = config.getConfig().get(PushMfaConstants.APP_UNIVERSAL_LINK_CONFIG);
+        String value = config.getConfig().get(PushMfaConstants.LOGIN_APP_UNIVERSAL_LINK_CONFIG);
+        if (StringUtil.isBlank(value)) {
+            value = config.getConfig().get(PushMfaConstants.APP_UNIVERSAL_LINK_CONFIG);
+        }
         if (StringUtil.isBlank(value)) {
             return PushMfaConstants.DEFAULT_APP_UNIVERSAL_LINK + "confirm";
         }
         return value;
+    }
+
+    private String resolveSameDeviceToken(
+            AuthenticationFlowContext context,
+            PushChallenge challenge,
+            PushCredentialData credentialData,
+            String confirmToken) {
+        if (StringUtil.isBlank(confirmToken)
+                || !shouldIncludeUserVerificationInSameDeviceToken(context.getAuthenticatorConfig())
+                || challenge == null) {
+            return confirmToken;
+        }
+        String userVerification = challenge.getUserVerificationValue();
+        if (StringUtil.isBlank(userVerification)) {
+            return confirmToken;
+        }
+        return PushConfirmTokenBuilder.build(
+                context.getSession(),
+                context.getRealm(),
+                credentialData.getCredentialId(),
+                challenge.getId(),
+                challenge.getExpiresAt(),
+                context.getUriInfo().getBaseUri(),
+                userVerification);
+    }
+
+    private boolean shouldIncludeUserVerificationInSameDeviceToken(AuthenticatorConfigModel config) {
+        return parseBoolean(config, PushMfaConstants.SAME_DEVICE_INCLUDE_USER_VERIFICATION_CONFIG, false);
+    }
+
+    private boolean parseBoolean(AuthenticatorConfigModel config, String key, boolean defaultValue) {
+        if (config == null || config.getConfig() == null) {
+            return defaultValue;
+        }
+        String value = config.getConfig().get(key);
+        if (StringUtil.isBlank(value)) {
+            return defaultValue;
+        }
+        return Boolean.parseBoolean(value.trim());
+    }
+
+    private String buildPushUri(String appUniversalLink, String token) {
+        if (StringUtil.isBlank(token)) {
+            return null;
+        }
+        if (StringUtil.isBlank(appUniversalLink)) {
+            return token;
+        }
+        try {
+            URIBuilder uriBuilder = new URIBuilder(appUniversalLink);
+            uriBuilder.addParameter("token", token);
+            return uriBuilder.toString();
+        } catch (URISyntaxException e) {
+            // noop - fallback to just the token
+        }
+        return token;
     }
 
     private record IssuedChallenge(PushChallenge challenge, String confirmToken) {}

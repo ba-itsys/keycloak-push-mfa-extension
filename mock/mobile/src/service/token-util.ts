@@ -43,6 +43,7 @@ export type EnrollmentValues = {
 export type ConfirmLoginValues = {
   challengeId: string;
   userId: string;
+  userVerification?: string;
 };
 
 export function unpackEnrollmentToken(token: string): EnrollmentValues | null {
@@ -62,11 +63,16 @@ export function unpackLoginConfirmToken(token: string): ConfirmLoginValues | nul
 
   const challengeId = (confirmPayload as any).cid;
   const userId = (confirmPayload as any).credId;
+  const userVerification = (confirmPayload as any).userVerification;
 
   if (!challengeId || !userId) {
     return null;
   }
-  return { challengeId, userId };
+  const normalizedVerification =
+    typeof userVerification === 'string' && userVerification.trim().length > 0
+      ? userVerification
+      : undefined;
+  return { challengeId, userId, userVerification: normalizedVerification };
 }
 
 export async function createConfirmJwt(payload: DpopPayload) {

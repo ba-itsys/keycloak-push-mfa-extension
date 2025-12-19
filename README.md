@@ -440,7 +440,7 @@ All scripts source `scripts/common.sh`, which centralizes base64 helpers, compac
 
 **Where to configure**
 - Admin UI: `Authentication → Flows` (open your flow → execution `Config` for the authenticator) and `Authentication → Required Actions` (select `push-mfa-register` → `Configure`).
-- CLI: use `kcadm.sh` against the realm DB. Example: `kcadm.sh update authentication/executions/${EXEC_ID} -r demo -s "config.loginChallengeTtlSeconds=180" -s "config.maxPendingChallenges=2"` for the authenticator, or `kcadm.sh update authentication/required-actions/push-mfa-register -r demo -s "config.enrollmentChallengeTtlSeconds=300" -s "config.appUriPrefix=my-secure://enroll?token="`.
+- CLI: use `kcadm.sh` against the realm DB. Example: `kcadm.sh update authentication/executions/${EXEC_ID} -r demo -s "config.loginChallengeTtlSeconds=180" -s "config.maxPendingChallenges=2"` for the authenticator, or `kcadm.sh update authentication/required-actions/push-mfa-register -r demo -s "config.enrollmentChallengeTtlSeconds=300" -s "config.enrollmentAppUniversalLink=my-secure://enroll"`.
 - Environment variables: the authenticator/required-action options live in realm config, so set them via Admin UI or `kcadm.sh`. Server-side hardening limits can be set via system properties/env vars (see below).
 
 **Authenticator (`push-mfa-authenticator`)**
@@ -451,10 +451,12 @@ All scripts source `scripts/common.sh`, which centralizes base64 helpers, compac
   - `number-match` – show a number in the browser (range `0`–`99`, no leading zeros) and send 3 options to the device via `/push-mfa/login/pending`; the device must return the selected number as `userVerification` when approving.
   - `pin` – show a PIN in the browser; the device must return the entered PIN as `userVerification` when approving (length controlled by `userVerificationPinLength`).
 - `userVerificationPinLength` (default: `4`) – PIN length for `userVerification=pin` (max `12`).
+- `sameDeviceIncludeUserVerification` (default: `false`) – include the current user verification answer in the same-device link token rendered on the waiting screen.
+- `loginAppUniversalLink` (default: `my-secure://confirm`) – app/universal link used for same-device login deep links.
 
 **Required Action (`push-mfa-register`)**
 - `enrollmentChallengeTtlSeconds` (default: `120`) – TTL for enrollment challenges/tokens.
-- `appUriPrefix` (default: `my-secure://enroll?token=`) – prefix prepended to the enrollment token for companion-app deep links.
+- `enrollmentAppUniversalLink` (default: `my-secure://enroll`) – app/universal link used for same-device enrollment deep links.
 
 **Server-side hardening (`push-mfa`)**
 
@@ -541,7 +543,7 @@ With these primitives an actual mobile app UI or automation can be layered on to
 The provider ships with a lightweight theme fragment under `src/main/resources/theme-resources/`. When the extension is built, those assets are copied into the deployed theme so you can either customize them in-place or copy them into your own Keycloak theme module and override the templates via standard theme selection. The bundle contains:
 
 - **Enrollment (Required Action)** – `templates/push-register.ftl` renders the QR code, enrollment token, and SSE watcher while the user finishes onboarding. The markup is fully self-contained: everything is driven by `data-push-*` attributes on the root element plus localized strings from `messages/messages_en.properties`. To restyle the screen, replace the HTML/CSS and keep emitting the same attributes (or call `KeycloakPushMfa.initRegisterPage(...)` manually) so the QR code and SSE wiring continue to function.
-- **Login waiting UI** – `templates/push-wait.ftl` powers the “waiting for approval” screen. It subscribes to the challenge SSE endpoint via the same data attributes and optionally shows the confirm token for demo purposes. Swap the layout or remove the token preview altogether; just ensure the `data-push-*` attributes remain if you still rely on `KeycloakPushMfa.initLoginPage(...)`.
+- **Login waiting UI** – `templates/push-wait.ftl` powers the “waiting for approval” screen. It subscribes to the challenge SSE endpoint via the same data attributes and optionally shows the confirm token for demo purposes. The “Open App” button uses the same-device link token (optionally carrying `userVerification` when `sameDeviceIncludeUserVerification=true`). Swap the layout or remove the token preview altogether; just ensure the `data-push-*` attributes remain if you still rely on `KeycloakPushMfa.initLoginPage(...)`.
 - **Terminal pages** – `templates/push-denied.ftl` and `templates/push-expired.ftl` explain why a login stopped (canceled, denied, expired). These files only display localized strings, so they are easy to rebrand or translate by editing the template and updating the corresponding entries in `messages/messages_<locale>.properties`.
 
 All shared browser behavior (SSE handling, QR rendering, clipboard helpers) lives in `resources/js/push-mfa.js`. The script exposes `KeycloakPushMfa.initRegisterPage`, `KeycloakPushMfa.initLoginPage`, and `KeycloakPushMfa.autoInit`, so if you move to a different frontend stack you can reuse those helpers or replace them entirely with your own EventSource/QR logic. Because every UI asset is a regular Keycloak theme resource, you customize them the same way as any other login theme: copy the template/JS/message files into your custom theme folder, adjust them, and point the realm to that theme via the admin console or `keycloak.conf`.

@@ -238,7 +238,10 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider {
         if (config == null || config.getConfig() == null) {
             return PushMfaConstants.DEFAULT_APP_UNIVERSAL_LINK + "enroll";
         }
-        String value = config.getConfig().get(PushMfaConstants.APP_UNIVERSAL_LINK_CONFIG);
+        String value = config.getConfig().get(PushMfaConstants.ENROLLMENT_APP_UNIVERSAL_LINK_CONFIG);
+        if (StringUtil.isBlank(value)) {
+            value = config.getConfig().get(PushMfaConstants.APP_UNIVERSAL_LINK_CONFIG);
+        }
         if (StringUtil.isBlank(value)) {
             return PushMfaConstants.DEFAULT_APP_UNIVERSAL_LINK + "enroll";
         }

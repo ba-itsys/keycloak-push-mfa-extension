@@ -103,7 +103,8 @@
                             <button id="kc-push-open-app"
                                     type="button"
                                     class="${properties.kcButtonClass!} ${properties.kcButtonSecondaryClass!}"
-                                    onClick="openApp('${appUniversalLink!''}?token=${pushConfirmToken!''}')">
+                                    data-push-same-device-url="${pushSameDeviceUri!''}"
+                                    onClick="openApp('${pushSameDeviceUri!''}')">
                                 ${msg("push-mfa-open-app")!"Open App"}
                             </button>
                         </div>

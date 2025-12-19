@@ -27,6 +27,17 @@ public final class PushConfirmTokenBuilder {
             String challengeId,
             Instant challengeExpiresAt,
             URI baseUri) {
+        return build(session, realm, credentialId, challengeId, challengeExpiresAt, baseUri, null);
+    }
+
+    public static String build(
+            KeycloakSession session,
+            RealmModel realm,
+            String credentialId,
+            String challengeId,
+            Instant challengeExpiresAt,
+            URI baseUri,
+            String userVerification) {
         String signatureAlgorithm = realm.getDefaultSignatureAlgorithm();
         if (StringUtil.isBlank(signatureAlgorithm)) {
             signatureAlgorithm = Algorithm.RS256.toString();
@@ -45,6 +56,9 @@ public final class PushConfirmTokenBuilder {
         payload.put("typ", PushMfaConstants.PUSH_MESSAGE_TYPE);
         payload.put("ver", PushMfaConstants.PUSH_MESSAGE_VERSION);
         payload.put("cid", challengeId);
+        if (!StringUtil.isBlank(userVerification)) {
+            payload.put("userVerification", userVerification);
+        }
         Instant issuedAt = Instant.now();
         payload.put("iat", issuedAt.getEpochSecond());
         payload.put("exp", challengeExpiresAt.getEpochSecond());

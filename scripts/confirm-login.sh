@@ -59,6 +59,7 @@ fi
 
 CREDENTIAL_ID=$(echo "$CONFIRM_PAYLOAD" | jq -r '.credId // empty')
 CHALLENGE_ID=$(echo "$CONFIRM_PAYLOAD" | jq -r '.cid // empty')
+TOKEN_USER_VERIFICATION=$(echo "$CONFIRM_PAYLOAD" | jq -r '.userVerification // empty')
 if [[ -z $CREDENTIAL_ID || $CREDENTIAL_ID == "null" ]]; then
   echo "error: confirm token missing credential id" >&2
   exit 1
@@ -123,6 +124,9 @@ EXPIRY=$(($(date +%s) + 120))
 LOGIN_ACTION=${LOGIN_ACTION:-approve}
 LOGIN_ACTION=$(printf '%s' "${LOGIN_ACTION:-}" | tr '[:upper:]' '[:lower:]')
 LOGIN_USER_VERIFICATION=${LOGIN_USER_VERIFICATION:-}
+if [[ -z ${LOGIN_USER_VERIFICATION:-} && -n ${TOKEN_USER_VERIFICATION:-} ]]; then
+  LOGIN_USER_VERIFICATION=$TOKEN_USER_VERIFICATION
+fi
 
 PENDING_CHALLENGE=$(echo "$PENDING_RESPONSE" | jq -c --arg cid "$CHALLENGE_ID" '
   .challenges // []

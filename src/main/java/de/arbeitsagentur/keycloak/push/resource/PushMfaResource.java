@@ -674,7 +674,7 @@ public class PushMfaResource {
         return false;
     }
 
-    private UserVerificationInfo buildUserVerificationInfo(PushChallenge challenge) {
+    UserVerificationInfo buildUserVerificationInfo(PushChallenge challenge) {
         if (challenge == null) {
             return null;
         }
@@ -696,7 +696,7 @@ public class PushMfaResource {
         };
     }
 
-    private void verifyUserVerification(PushChallenge challenge, JsonNode payload) {
+    void verifyUserVerification(PushChallenge challenge, JsonNode payload) {
         if (challenge == null) {
             return;
         }

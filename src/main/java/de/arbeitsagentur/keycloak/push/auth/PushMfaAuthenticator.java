@@ -18,10 +18,10 @@ import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
+import java.util.Random;
+import java.util.stream.IntStream;
 import org.apache.http.client.utils.URIBuilder;
 import org.jboss.logging.Logger;
 import org.keycloak.authentication.AuthenticationFlowContext;
@@ -42,6 +42,8 @@ public class PushMfaAuthenticator implements Authenticator {
 
     private static final Logger LOG = Logger.getLogger(PushMfaAuthenticator.class);
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final List<String> NUMBER_MATCH_VALUES =
+            IntStream.range(0, 100).mapToObj(String::valueOf).toList();
 
     @Override
     public void authenticate(AuthenticationFlowContext context) {
@@ -423,7 +425,7 @@ public class PushMfaAuthenticator implements Authenticator {
         switch (userVerificationMode) {
             case NUMBER_MATCH -> {
                 userVerificationOptions = generateNumberMatchOptions();
-                userVerificationValue = userVerificationOptions.get(RANDOM.nextInt(userVerificationOptions.size()));
+                userVerificationValue = selectNumberMatchValue(userVerificationOptions);
             }
             case PIN -> userVerificationValue = generatePin(resolvePinLength(context.getAuthenticatorConfig()));
             case NONE -> {
@@ -573,18 +575,20 @@ public class PushMfaAuthenticator implements Authenticator {
         };
     }
 
-    private List<String> generateNumberMatchOptions() {
-        Set<String> options = new LinkedHashSet<>(3);
-        while (options.size() < 3) {
-            int value = RANDOM.nextInt(100);
-            options.add(String.valueOf(value));
-        }
-        List<String> shuffled = new ArrayList<>(options);
-        Collections.shuffle(shuffled, RANDOM);
-        return shuffled;
+    List<String> generateNumberMatchOptions() {
+        List<String> values = new ArrayList<>(NUMBER_MATCH_VALUES);
+        Collections.shuffle(values, RANDOM);
+        return List.copyOf(values.subList(0, 3));
     }
 
-    private int resolvePinLength(AuthenticatorConfigModel config) {
+    String selectNumberMatchValue(List<String> options) {
+        if (options == null || options.isEmpty()) {
+            return null;
+        }
+        return options.get(RANDOM.nextInt(options.size()));
+    }
+
+    int resolvePinLength(AuthenticatorConfigModel config) {
         int defaultValue = PushMfaConstants.DEFAULT_USER_VERIFICATION_PIN_LENGTH;
         if (config == null || config.getConfig() == null) {
             return defaultValue;
@@ -605,10 +609,14 @@ public class PushMfaAuthenticator implements Authenticator {
     }
 
     private String generatePin(int length) {
+        return generatePin(length, RANDOM);
+    }
+
+    String generatePin(int length, Random random) {
         int effectiveLength = Math.max(1, length);
         StringBuilder builder = new StringBuilder(effectiveLength);
         for (int i = 0; i < effectiveLength; i++) {
-            builder.append(RANDOM.nextInt(10));
+            builder.append(random.nextInt(10));
         }
         return builder.toString();
     }
@@ -660,7 +668,7 @@ public class PushMfaAuthenticator implements Authenticator {
         return value;
     }
 
-    private String resolveSameDeviceToken(
+    String resolveSameDeviceToken(
             AuthenticationFlowContext context,
             PushChallenge challenge,
             PushCredentialData credentialData,

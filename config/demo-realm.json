@@ -1,6 +1,7 @@
 {
   "realm": "demo",
   "enabled": true,
+  "sslRequired": "NONE",
   "loginWithEmailAllowed": true,
   "registrationAllowed": false,
   "duplicateEmailsAllowed": false,

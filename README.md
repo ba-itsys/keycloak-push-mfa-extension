@@ -630,13 +630,46 @@ The Integration Tests require a container runtime environment.
 If you encounter the error "Could not find a valid Docker environment", this typically occurs when:
 
 1. Docker is not running
-2. You're using Podman instead of Docker
+2. You're using a non-default Docker socket
 3. The container socket is not accessible
+
+**Docker Desktop:**
+- Ensure Docker Desktop is running: `docker info`
+- If you previously set `DOCKER_HOST`, unset it so Testcontainers can auto-detect:
+  - `unset DOCKER_HOST`
+
+**Colima / OrbStack / Rancher Desktop:**
+Set `DOCKER_HOST` to the socket for your runtime:
+
+```shell
+# Colima
+export DOCKER_HOST=unix://${HOME}/.colima/default/docker.sock
+# OrbStack
+export DOCKER_HOST=unix://${HOME}/.orbstack/run/docker.sock
+# Rancher Desktop
+export DOCKER_HOST=unix://${HOME}/.rd/docker.sock
+
+mvn clean verify
+```
 
 **For Podman users:**
 To run the tests with Podman, configure the Docker compatibility socket:
 
 ```shell
 export DOCKER_HOST=unix://${XDG_RUNTIME_DIR}/podman/podman.sock
+mvn clean verify
+```
+
+**API version mismatch:**
+If you see "client version 1.32 is too old", force a newer Docker API version:
+
+```shell
+mvn -Ddocker.api.version=1.44 clean verify
+```
+
+**Rootless Docker (Linux):**
+
+```shell
+export DOCKER_HOST=unix:///run/user/$(id -u)/docker.sock
 mvn clean verify
 ```

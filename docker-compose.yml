@@ -8,11 +8,11 @@ services:
       - --debug
       - --verbose
       - --features=dpop
+      - --import-realm
     environment:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
       KC_LOG_LEVEL: info,de.arbeitsagentur.keycloak.push:debug
-      JAVA_OPTS_APPEND: -Dkeycloak.migration.dir=/opt/keycloak/data/import -Dkeycloak.migration.strategy=OVERWRITE_EXISTING -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:8787
     ports:
       - "8080:8080"
       - "8787:8787"

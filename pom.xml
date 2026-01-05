@@ -34,6 +34,7 @@
 
   <properties>
     <keycloak.version>26.4.5</keycloak.version>
+    <docker.api.version>1.44</docker.api.version>
     <maven.compiler.release>17</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
@@ -249,6 +250,9 @@
         <version>3.2.5</version>
         <configuration>
           <useModulePath>false</useModulePath>
+          <systemPropertyVariables>
+            <api.version>${docker.api.version}</api.version>
+          </systemPropertyVariables>
         </configuration>
         <executions>
           <execution>

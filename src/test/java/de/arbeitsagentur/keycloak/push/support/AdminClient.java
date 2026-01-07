@@ -6,12 +6,15 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
 
 public final class AdminClient {
 
@@ -66,170 +69,22 @@ public final class AdminClient {
     }
 
     public void configurePushMfaUserVerification(String mode, Integer pinLength) throws Exception {
-        ensureAccessToken();
         String normalizedMode = mode == null || mode.isBlank() ? "none" : mode.trim();
-        JsonNode execution = findExecution(PUSH_FLOW_ALIAS, PUSH_AUTHENTICATOR_ID);
-        if (execution == null) {
-            throw new IllegalStateException("Push MFA authenticator execution not found in flow " + PUSH_FLOW_ALIAS);
+        Map<String, String> updates = new HashMap<>();
+        updates.put(PushMfaConstants.USER_VERIFICATION_CONFIG, normalizedMode);
+        if (pinLength != null) {
+            updates.put(PushMfaConstants.USER_VERIFICATION_PIN_LENGTH_CONFIG, String.valueOf(pinLength));
         }
-        String executionId = execution.path("id").asText(null);
-        if (executionId == null || executionId.isBlank()) {
-            throw new IllegalStateException("Push MFA authenticator execution id missing");
-        }
-
-        String configId = execution.path("authenticationConfig").asText(null);
-        if (configId == null || configId.isBlank()) {
-            configId = execution.path("authenticatorConfig").asText(null);
-        }
-        if (configId != null && configId.isBlank()) {
-            configId = null;
-        }
-
-        if (configId == null) {
-            URI createConfigUri =
-                    baseUri.resolve("/admin/realms/demo/authentication/executions/" + executionId + "/config");
-            ObjectNode configNode = MAPPER.createObjectNode();
-            configNode.put("userVerification", normalizedMode);
-            if (pinLength != null) {
-                configNode.put("userVerificationPinLength", String.valueOf(pinLength));
-            }
-            ObjectNode payload = MAPPER.createObjectNode();
-            payload.put("alias", "push-mfa-authenticator-config");
-            payload.set("config", configNode);
-            HttpResponse<String> response = http.send(
-                    HttpRequest.newBuilder(createConfigUri)
-                            .header("Authorization", "Bearer " + accessToken)
-                            .header("Content-Type", "application/json")
-                            .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
-                            .build(),
-                    HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() != 201) {
-                throw new IllegalStateException(
-                        "Failed to create authenticator config: " + response.statusCode() + " body=" + response.body());
-            }
-        } else {
-            URI configUri = baseUri.resolve("/admin/realms/demo/authentication/config/" + configId);
-            HttpResponse<String> existingResponse = http.send(
-                    HttpRequest.newBuilder(configUri)
-                            .header("Authorization", "Bearer " + accessToken)
-                            .header("Accept", "application/json")
-                            .GET()
-                            .build(),
-                    HttpResponse.BodyHandlers.ofString());
-            if (existingResponse.statusCode() != 200) {
-                throw new IllegalStateException("Failed to read authenticator config: " + existingResponse.statusCode()
-                        + " body=" + existingResponse.body());
-            }
-            JsonNode existing = MAPPER.readTree(existingResponse.body());
-            String alias = existing.path("alias").asText("push-mfa-authenticator-config");
-            ObjectNode configNode = MAPPER.createObjectNode();
-            JsonNode existingConfig = existing.path("config");
-            if (existingConfig.isObject()) {
-                existingConfig.fields().forEachRemaining(entry -> configNode.set(entry.getKey(), entry.getValue()));
-            }
-            configNode.put("userVerification", normalizedMode);
-            if (pinLength != null) {
-                configNode.put("userVerificationPinLength", String.valueOf(pinLength));
-            }
-            ObjectNode payload = MAPPER.createObjectNode();
-            payload.put("id", configId);
-            payload.put("alias", alias);
-            payload.set("config", configNode);
-
-            HttpResponse<String> updateResponse = http.send(
-                    HttpRequest.newBuilder(configUri)
-                            .header("Authorization", "Bearer " + accessToken)
-                            .header("Content-Type", "application/json")
-                            .PUT(HttpRequest.BodyPublishers.ofString(payload.toString()))
-                            .build(),
-                    HttpResponse.BodyHandlers.ofString());
-            if (updateResponse.statusCode() != 204) {
-                throw new IllegalStateException("Failed to update authenticator config: " + updateResponse.statusCode()
-                        + " body=" + updateResponse.body());
-            }
-        }
-
-        clearRealmCaches();
+        updatePushMfaAuthenticatorConfig(updates);
     }
 
     public void configurePushMfaSameDeviceUserVerification(boolean include) throws Exception {
-        ensureAccessToken();
-        JsonNode execution = findExecution(PUSH_FLOW_ALIAS, PUSH_AUTHENTICATOR_ID);
-        if (execution == null) {
-            throw new IllegalStateException("Push MFA authenticator execution not found in flow " + PUSH_FLOW_ALIAS);
-        }
-        String executionId = execution.path("id").asText(null);
-        if (executionId == null || executionId.isBlank()) {
-            throw new IllegalStateException("Push MFA authenticator execution id missing");
-        }
+        updatePushMfaAuthenticatorConfig(
+                Map.of(PushMfaConstants.SAME_DEVICE_INCLUDE_USER_VERIFICATION_CONFIG, String.valueOf(include)));
+    }
 
-        String configId = execution.path("authenticationConfig").asText(null);
-        if (configId == null || configId.isBlank()) {
-            configId = execution.path("authenticatorConfig").asText(null);
-        }
-        if (configId != null && configId.isBlank()) {
-            configId = null;
-        }
-
-        if (configId == null) {
-            URI createConfigUri =
-                    baseUri.resolve("/admin/realms/demo/authentication/executions/" + executionId + "/config");
-            ObjectNode configNode = MAPPER.createObjectNode();
-            configNode.put("sameDeviceIncludeUserVerification", String.valueOf(include));
-            ObjectNode payload = MAPPER.createObjectNode();
-            payload.put("alias", "push-mfa-authenticator-config");
-            payload.set("config", configNode);
-            HttpResponse<String> response = http.send(
-                    HttpRequest.newBuilder(createConfigUri)
-                            .header("Authorization", "Bearer " + accessToken)
-                            .header("Content-Type", "application/json")
-                            .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
-                            .build(),
-                    HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() != 201) {
-                throw new IllegalStateException(
-                        "Failed to create authenticator config: " + response.statusCode() + " body=" + response.body());
-            }
-        } else {
-            URI configUri = baseUri.resolve("/admin/realms/demo/authentication/config/" + configId);
-            HttpResponse<String> existingResponse = http.send(
-                    HttpRequest.newBuilder(configUri)
-                            .header("Authorization", "Bearer " + accessToken)
-                            .header("Accept", "application/json")
-                            .GET()
-                            .build(),
-                    HttpResponse.BodyHandlers.ofString());
-            if (existingResponse.statusCode() != 200) {
-                throw new IllegalStateException("Failed to read authenticator config: " + existingResponse.statusCode()
-                        + " body=" + existingResponse.body());
-            }
-            JsonNode existing = MAPPER.readTree(existingResponse.body());
-            String alias = existing.path("alias").asText("push-mfa-authenticator-config");
-            ObjectNode configNode = MAPPER.createObjectNode();
-            JsonNode existingConfig = existing.path("config");
-            if (existingConfig.isObject()) {
-                existingConfig.fields().forEachRemaining(entry -> configNode.set(entry.getKey(), entry.getValue()));
-            }
-            configNode.put("sameDeviceIncludeUserVerification", String.valueOf(include));
-            ObjectNode payload = MAPPER.createObjectNode();
-            payload.put("id", configId);
-            payload.put("alias", alias);
-            payload.set("config", configNode);
-
-            HttpResponse<String> updateResponse = http.send(
-                    HttpRequest.newBuilder(configUri)
-                            .header("Authorization", "Bearer " + accessToken)
-                            .header("Content-Type", "application/json")
-                            .PUT(HttpRequest.BodyPublishers.ofString(payload.toString()))
-                            .build(),
-                    HttpResponse.BodyHandlers.ofString());
-            if (updateResponse.statusCode() != 204) {
-                throw new IllegalStateException("Failed to update authenticator config: " + updateResponse.statusCode()
-                        + " body=" + updateResponse.body());
-            }
-        }
-
-        clearRealmCaches();
+    public void configurePushMfaLoginChallengeTtlSeconds(long seconds) throws Exception {
+        updatePushMfaAuthenticatorConfig(Map.of(PushMfaConstants.LOGIN_CHALLENGE_TTL_CONFIG, String.valueOf(seconds)));
     }
 
     private String createUser(String username) throws Exception {
@@ -406,5 +261,95 @@ public final class AdminClient {
 
     private String urlEncode(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    private void updatePushMfaAuthenticatorConfig(Map<String, String> updates) throws Exception {
+        ensureAccessToken();
+        JsonNode execution = findExecution(PUSH_FLOW_ALIAS, PUSH_AUTHENTICATOR_ID);
+        if (execution == null) {
+            throw new IllegalStateException("Push MFA authenticator execution not found in flow " + PUSH_FLOW_ALIAS);
+        }
+        String executionId = execution.path("id").asText(null);
+        if (executionId == null || executionId.isBlank()) {
+            throw new IllegalStateException("Push MFA authenticator execution id missing");
+        }
+
+        String configId = execution.path("authenticationConfig").asText(null);
+        if (configId == null || configId.isBlank()) {
+            configId = execution.path("authenticatorConfig").asText(null);
+        }
+        if (configId != null && configId.isBlank()) {
+            configId = null;
+        }
+
+        if (configId == null) {
+            URI createConfigUri =
+                    baseUri.resolve("/admin/realms/demo/authentication/executions/" + executionId + "/config");
+            ObjectNode configNode = MAPPER.createObjectNode();
+            for (Map.Entry<String, String> entry : updates.entrySet()) {
+                if (entry.getValue() != null) {
+                    configNode.put(entry.getKey(), entry.getValue());
+                }
+            }
+            ObjectNode payload = MAPPER.createObjectNode();
+            payload.put("alias", "push-mfa-authenticator-config");
+            payload.set("config", configNode);
+            HttpResponse<String> response = http.send(
+                    HttpRequest.newBuilder(createConfigUri)
+                            .header("Authorization", "Bearer " + accessToken)
+                            .header("Content-Type", "application/json")
+                            .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 201) {
+                throw new IllegalStateException(
+                        "Failed to create authenticator config: " + response.statusCode() + " body=" + response.body());
+            }
+        } else {
+            URI configUri = baseUri.resolve("/admin/realms/demo/authentication/config/" + configId);
+            HttpResponse<String> existingResponse = http.send(
+                    HttpRequest.newBuilder(configUri)
+                            .header("Authorization", "Bearer " + accessToken)
+                            .header("Accept", "application/json")
+                            .GET()
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+            if (existingResponse.statusCode() != 200) {
+                throw new IllegalStateException("Failed to read authenticator config: " + existingResponse.statusCode()
+                        + " body=" + existingResponse.body());
+            }
+            JsonNode existing = MAPPER.readTree(existingResponse.body());
+            String alias = existing.path("alias").asText("push-mfa-authenticator-config");
+            ObjectNode configNode = MAPPER.createObjectNode();
+            JsonNode existingConfig = existing.path("config");
+            if (existingConfig.isObject()) {
+                existingConfig.fields().forEachRemaining(entry -> configNode.set(entry.getKey(), entry.getValue()));
+            }
+            for (Map.Entry<String, String> entry : updates.entrySet()) {
+                if (entry.getValue() == null) {
+                    configNode.remove(entry.getKey());
+                } else {
+                    configNode.put(entry.getKey(), entry.getValue());
+                }
+            }
+            ObjectNode payload = MAPPER.createObjectNode();
+            payload.put("id", configId);
+            payload.put("alias", alias);
+            payload.set("config", configNode);
+
+            HttpResponse<String> updateResponse = http.send(
+                    HttpRequest.newBuilder(configUri)
+                            .header("Authorization", "Bearer " + accessToken)
+                            .header("Content-Type", "application/json")
+                            .PUT(HttpRequest.BodyPublishers.ofString(payload.toString()))
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+            if (updateResponse.statusCode() != 204) {
+                throw new IllegalStateException("Failed to update authenticator config: " + updateResponse.statusCode()
+                        + " body=" + updateResponse.body());
+            }
+        }
+
+        clearRealmCaches();
     }
 }

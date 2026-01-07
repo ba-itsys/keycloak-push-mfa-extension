@@ -218,6 +218,15 @@ public final class BrowserSession {
         return fetch(action, "POST", params).requirePage();
     }
 
+    public HtmlPage retryPushChallenge(HtmlPage page) throws Exception {
+        Element form = page.document().selectFirst("form");
+        if (form == null) {
+            throw new IllegalStateException("Push retry form missing");
+        }
+        URI action = resolve(page.uri(), form.attr("action"));
+        return fetch(action, "POST", Map.of("retry", "true")).requirePage();
+    }
+
     public HtmlPage reload(HtmlPage page) throws Exception {
         return fetch(page.uri(), "GET", null).requirePage();
     }

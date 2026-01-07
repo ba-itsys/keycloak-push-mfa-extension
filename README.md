@@ -638,20 +638,6 @@ If you encounter the error "Could not find a valid Docker environment", this typ
 - If you previously set `DOCKER_HOST`, unset it so Testcontainers can auto-detect:
   - `unset DOCKER_HOST`
 
-**Colima / OrbStack / Rancher Desktop:**
-Set `DOCKER_HOST` to the socket for your runtime:
-
-```shell
-# Colima
-export DOCKER_HOST=unix://${HOME}/.colima/default/docker.sock
-# OrbStack
-export DOCKER_HOST=unix://${HOME}/.orbstack/run/docker.sock
-# Rancher Desktop
-export DOCKER_HOST=unix://${HOME}/.rd/docker.sock
-
-mvn clean verify
-```
-
 **For Podman users:**
 To run the tests with Podman, configure the Docker compatibility socket:
 

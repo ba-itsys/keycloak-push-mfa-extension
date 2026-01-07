@@ -428,6 +428,42 @@ class PushMfaIntegrationIT {
     }
 
     @Test
+    void retryAfterExpiredChallengeIssuesNewLoginChallenge() throws Exception {
+        adminClient.configurePushMfaLoginChallengeTtlSeconds(1);
+        try {
+            DeviceClient deviceClient = enrollDevice();
+            BrowserSession pushSession = new BrowserSession(baseUri);
+
+            HtmlPage loginPage = pushSession.startAuthorization("test-app");
+            HtmlPage waitingPage = pushSession.submitLogin(loginPage, TEST_USERNAME, TEST_PASSWORD);
+            BrowserSession.DeviceChallenge initialChallenge = pushSession.extractDeviceChallenge(waitingPage);
+
+            awaitNoPendingChallenges(deviceClient);
+
+            HtmlPage expiredPage = pushSession.submitPushChallengeForPage(initialChallenge.formAction());
+            String expiredText = expiredPage.document().text().toLowerCase();
+            assertTrue(expiredText.contains("expired"), "Expected expired page but got: " + expiredText);
+
+            HtmlPage retriedPage = pushSession.retryPushChallenge(expiredPage);
+            BrowserSession.DeviceChallenge retriedChallenge = pushSession.extractDeviceChallenge(retriedPage);
+            assertNotEquals(
+                    initialChallenge.challengeId(),
+                    retriedChallenge.challengeId(),
+                    "Retry should issue a new challenge");
+
+            String status = deviceClient.respondToChallenge(
+                    retriedChallenge.confirmToken(),
+                    retriedChallenge.challengeId(),
+                    PushMfaConstants.CHALLENGE_APPROVE);
+            assertEquals("approved", status);
+            pushSession.completePushChallenge(retriedChallenge.formAction());
+        } finally {
+            adminClient.configurePushMfaLoginChallengeTtlSeconds(
+                    PushMfaConstants.DEFAULT_LOGIN_CHALLENGE_TTL.toSeconds());
+        }
+    }
+
+    @Test
     void pendingChallengeBlocksOtherSession() throws Exception {
         DeviceClient deviceClient = enrollDevice();
         BrowserSession firstSession = new BrowserSession(baseUri);
@@ -575,6 +611,19 @@ class PushMfaIntegrationIT {
         deviceClient.completeEnrollment(enrollmentToken);
         enrollmentSession.submitEnrollmentCheck(enrollmentPage);
         return deviceClient;
+    }
+
+    private void awaitNoPendingChallenges(DeviceClient deviceClient) throws Exception {
+        long deadline = System.currentTimeMillis() + 15000L;
+        while (System.currentTimeMillis() < deadline) {
+            JsonNode pending = deviceClient.fetchPendingChallenges();
+            if (pending.isArray() && pending.isEmpty()) {
+                return;
+            }
+            Thread.sleep(250);
+        }
+        JsonNode pending = deviceClient.fetchPendingChallenges();
+        assertEquals(0, pending.size(), () -> "Expected pending challenges to expire but got: " + pending);
     }
 
     /**

@@ -153,7 +153,16 @@ public class PushMfaAuthenticator implements Authenticator {
         String challengeId = ChallengeNoteHelper.firstNonBlank(
                 ChallengeNoteHelper.readChallengeId(authSession), form.getFirst("challengeId"));
 
+        boolean retryRequested = form.containsKey("retry");
         if (challengeId == null) {
+            if (retryRequested) {
+                IssuedChallengeResult issued = issueChallengeFromAction(
+                        context, challengeStore, loginChallengeTtl, maxPendingChallenges, rootSessionId);
+                if (issued != null) {
+                    showWaitingForm(context, issued.challenge(), issued.credentialData(), issued.confirmToken());
+                }
+                return;
+            }
             context.failureChallenge(
                     AuthenticationFlowError.INTERNAL_ERROR,
                     context.form()
@@ -167,10 +176,18 @@ public class PushMfaAuthenticator implements Authenticator {
 
         Optional<PushChallenge> challenge = challengeStore.get(challengeId);
         if (challenge.isEmpty()) {
+            ChallengeNoteHelper.clear(authSession);
+            if (retryRequested) {
+                IssuedChallengeResult issued = issueChallengeFromAction(
+                        context, challengeStore, loginChallengeTtl, maxPendingChallenges, rootSessionId);
+                if (issued != null) {
+                    showWaitingForm(context, issued.challenge(), issued.credentialData(), issued.confirmToken());
+                }
+                return;
+            }
             context.failureChallenge(
                     AuthenticationFlowError.EXPIRED_CODE,
                     context.form().setError("push-mfa-expired").createForm("push-expired.ftl"));
-            ChallengeNoteHelper.clear(authSession);
             return;
         }
 

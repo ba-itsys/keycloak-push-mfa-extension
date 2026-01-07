@@ -1,13 +1,42 @@
 # Keycloak Push MFA Extension
 
+A Keycloak extension that adds push-based multi-factor authentication, similar to passkey primitives.
+
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [High Level Flow](#high-level-flow) — Visual overview of enrollment and login
+- [Keycloak Concepts](#keycloak-concepts-quick-primer) — Quick primer for Keycloak newcomers
+- [Setup Guide](#setup-guide) — Step-by-step configuration instructions
+- [Flow Details](#flow-details) — Technical details of each phase
+- [Custom Keycloak APIs](#custom-keycloak-apis) — REST endpoints for mobile apps
+- [Configuration Reference](#configuration-reference) — All configuration options
+- [App Implementation Notes](#app-implementation-notes) — Guide for mobile app developers
+- [Push Notification SPI](#push-notification-spi) — Implementing custom push providers
+- [Customizing the UI](#customizing-the-keycloak-ui) — Theme customization
+- [Security](#security-guarantees-and-mobile-obligations) — Security model and requirements
+- [Mobile Mock](#mobile-mock-for-push-mfa-enrollment-and-login) — Testing without a real mobile app
+- [Troubleshooting](#troubleshooting) — Common issues and solutions
+
+---
+
+## Quick Start
+
+```bash
+# Build the provider
+mvn -DskipTests package
+
+# Run Keycloak with the demo realm
+docker compose up
+```
+
+- **Keycloak Admin Console:** http://localhost:8080 (login: `admin` / `admin`)
+- **Demo Realm:** `demo` with test user `test` / `test`
+- **Demo Configuration:** See `config/demo-realm.json` for a working example
+
 ## Introduction
 
 This project extends Keycloak with a push-style second factor that mimics passkey primitives. After initial enrollment, the mobile app never receives the real user identifier from Keycloak; instead, it works with a credential id that only the app can map back to the real user. Everything is implemented with standard Keycloak SPIs plus a small JAX-RS resource exposed under `/realms/<realm>/push-mfa`.
-
-- Build the provider: `mvn -DskipTests package`
-- Run Keycloak locally (imports realm + loads provider): `docker compose up`
-- Keycloak admin UI: <http://localhost:8080> (`admin` / `admin`)
-- Test realm: `demo` with the user `test / test`
 
 ## High Level Flow
 
@@ -63,6 +92,188 @@ sequenceDiagram
     Keycloak-->>Browser: SSE Event: { status: "APPROVED" }
     Browser->>Keycloak: Auto-Submit Form (Login Success)
 ```
+
+## Keycloak Concepts (Quick Primer)
+
+If you're new to Keycloak, here's a quick overview of the concepts used in this extension:
+
+| Concept | What it is | How it's used here |
+|---------|-----------|-------------------|
+| **Realm** | An isolated security domain in Keycloak. Each realm has its own users, clients, and settings. | The demo uses a realm called `demo`. |
+| **Authentication Flow** | A sequence of steps a user must complete to log in. Flows are made up of "executions" (authenticators). | We create `browser-push-flow` with username/password + push MFA. |
+| **Authenticator** | A single step in an authentication flow (e.g., password check, OTP verification). | `push-mfa-authenticator` sends push notifications and waits for approval. |
+| **Required Action** | A one-time task a user must complete (e.g., reset password, configure OTP). | `push-mfa-register` handles device enrollment via QR code. |
+| **Client** | An application that uses Keycloak for authentication. | `test-app` (web app) and `push-device-client` (mobile device API). |
+
+## Setup Guide
+
+This section walks you through setting up Push MFA in your Keycloak instance. The demo realm (`config/demo-realm.json`) provides a working example of all these configurations.
+
+### Step 1: Deploy the Extension
+
+1. Build the provider:
+   ```bash
+   mvn -DskipTests package
+   ```
+
+2. Copy the JAR to Keycloak's `providers/` directory, or use Docker Compose (which does this automatically):
+   ```bash
+   docker compose up
+   ```
+
+### Step 2: Enable the Required Action (for Enrollment)
+
+The **Required Action** allows users to enroll their mobile device by scanning a QR code.
+
+**Via Admin Console:**
+1. Go to **Authentication → Required Actions**
+2. Find `Register Push MFA device` in the list
+3. Toggle **Enabled** to ON
+4. (Optional) Toggle **Default Action** to ON if you want all users to enroll automatically
+
+**What the demo realm does** (see `config/demo-realm.json:72-81`):
+```json
+"requiredActions": [
+  {
+    "alias": "push-mfa-register",
+    "name": "Register Push MFA device",
+    "providerId": "push-mfa-register",
+    "enabled": true,
+    "defaultAction": false,  // Set to true to force enrollment for all users
+    "priority": 100
+  }
+]
+```
+
+**To trigger enrollment for a specific user:**
+1. Go to **Users → [select user] → Required Actions**
+2. Add `Register Push MFA device` to the user's pending actions
+
+### Step 3: Create an Authentication Flow (for Login)
+
+The **Authenticator** handles the push notification during login. You need to add it to an authentication flow.
+
+**Via Admin Console:**
+1. Go to **Authentication → Flows**
+2. Click **Create flow** or duplicate the built-in `browser` flow
+3. Add these executions in order:
+   - `Cookie` (ALTERNATIVE) — allows session cookies to skip login
+   - `Identity Provider Redirector` (ALTERNATIVE) — for social/federated login
+   - A **sub-flow** (ALTERNATIVE) containing:
+     - `Username Password Form` (REQUIRED)
+     - `Push MFA Authenticator` (REQUIRED)
+
+**What the demo realm does** (see `config/demo-realm.json:82-131`):
+
+The demo creates two flows:
+
+1. **`browser-push-flow`** (top-level flow):
+   ```
+   ├── Cookie                          [ALTERNATIVE]
+   ├── Identity Provider Redirector    [ALTERNATIVE]
+   └── browser-push-forms (sub-flow)   [ALTERNATIVE]
+   ```
+
+2. **`browser-push-forms`** (sub-flow):
+   ```
+   ├── Username Password Form          [REQUIRED]
+   └── Push MFA Authenticator          [REQUIRED]
+   ```
+
+The sub-flow pattern ensures that push MFA only triggers after successful password authentication.
+
+### Step 4: Bind the Flow to the Realm
+
+**Via Admin Console:**
+1. Go to **Authentication → Flows**
+2. Click the **⋯** menu next to your flow
+3. Select **Bind flow** → **Browser flow**
+
+Or go to **Realm Settings → Authentication** and set **Browser flow** to your custom flow.
+
+**What the demo realm does** (see `config/demo-realm.json:9`):
+```json
+"browserFlow": "browser-push-flow"
+```
+
+### Step 5: Create the Device Client
+
+The mobile app needs a confidential client to obtain DPoP-bound access tokens.
+
+**Via Admin Console:**
+1. Go to **Clients → Create client**
+2. Set:
+   - **Client ID**: `push-device-client`
+   - **Client authentication**: ON
+   - **Service accounts roles**: ON
+   - **Standard flow**: OFF
+   - **Direct access grants**: OFF
+3. In the **Credentials** tab, note the client secret
+4. In the **Advanced** tab, enable **DPoP bound access tokens**
+
+**What the demo realm does** (see `config/demo-realm.json:24-36`):
+```json
+{
+  "clientId": "push-device-client",
+  "publicClient": false,
+  "serviceAccountsEnabled": true,
+  "secret": "device-client-secret",
+  "attributes": {
+    "dpopBoundAccessTokens": "true"
+  }
+}
+```
+
+### Step 6: Configure the Authenticator (Optional)
+
+To customize the authenticator behavior:
+
+**Via Admin Console:**
+1. Go to **Authentication → Flows**
+2. Open your flow and find `Push MFA Authenticator`
+3. Click the **⚙️ gear icon** to configure:
+   - **Login challenge TTL** — how long the push notification is valid
+   - **Max pending challenges** — concurrent logins per user
+   - **User verification** — `none`, `number-match`, or `pin`
+
+**Via CLI:**
+```bash
+# Get the execution ID first
+EXEC_ID=$(kcadm.sh get authentication/flows/browser-push-forms/executions -r demo \
+  --fields id,displayName | jq -r '.[] | select(.displayName=="Push MFA Authenticator") | .id')
+
+# Update configuration
+kcadm.sh create authentication/executions/$EXEC_ID/config -r demo \
+  -s alias=push-mfa-config \
+  -s config.loginChallengeTtlSeconds=180 \
+  -s config.userVerification=number-match
+```
+
+### Step 7: Configure the Required Action (Optional)
+
+To customize enrollment behavior:
+
+**Via Admin Console:**
+1. Go to **Authentication → Required Actions**
+2. Click **Configure** next to `Register Push MFA device`
+3. Set:
+   - **Enrollment challenge TTL** — how long the QR code is valid
+   - **App universal link** — deep link scheme for your mobile app
+
+**Via CLI:**
+```bash
+kcadm.sh update authentication/required-actions/push-mfa-register -r demo \
+  -s "config.enrollmentChallengeTtlSeconds=300" \
+  -s "config.enrollmentAppUniversalLink=myapp://enroll"
+```
+
+---
+
+## Flow Details
+
+The following sections provide detailed technical information about each phase of the enrollment and login flows.
+
+### Enrollment Flow
 
 1. **Enrollment challenge (RequiredAction):** Keycloak renders a QR code that encodes the realm-signed `enrollmentToken` (the default theme emits `my-secure://enroll?token=<enrollmentToken>`, but you can change the URI scheme/payload in your own theme or override the server-side prefix via `--spi-required-action-push-mfa-register-app-uri-prefix=...`). The token is a JWT signed with the realm key and contains user id (`sub`), username, `enrollmentId`, and a Base64URL nonce.
 
@@ -436,51 +647,86 @@ The repository includes thin shell wrappers that simulate a device:
 
 All scripts source `scripts/common.sh`, which centralizes base64 helpers, compact-JWS signing, DPoP proof creation, and token acquisition. The helper expects `scripts/sign_jws.py` to exist (or `COMMON_SIGN_JWS` to point to a compatible signer), so replacing the demo logic with a real implementation only requires swapping in a different signer.
 
-## Configuration Options
+## Configuration Reference
 
-**Where to configure**
-- Admin UI: `Authentication → Flows` (open your flow → execution `Config` for the authenticator) and `Authentication → Required Actions` (select `push-mfa-register` → `Configure`).
-- CLI: use `kcadm.sh` against the realm DB. Example: `kcadm.sh update authentication/executions/${EXEC_ID} -r demo -s "config.loginChallengeTtlSeconds=180" -s "config.maxPendingChallenges=2"` for the authenticator, or `kcadm.sh update authentication/required-actions/push-mfa-register -r demo -s "config.enrollmentChallengeTtlSeconds=300" -s "config.enrollmentAppUniversalLink=my-secure://enroll"`.
-- Environment variables: the authenticator/required-action options live in realm config, so set them via Admin UI or `kcadm.sh`. Server-side hardening limits can be set via system properties/env vars (see below).
+This section provides a comprehensive reference for all configuration options. For step-by-step setup instructions, see the [Setup Guide](#setup-guide) above.
 
-**Authenticator (`push-mfa-authenticator`)**
-- `loginChallengeTtlSeconds` (default: `120`) – TTL for login challenges/confirm tokens.
-- `maxPendingChallenges` (default: `1`) – maximum concurrent pending login challenges per user.
-- `userVerification` (default: `none`) – optional extra verification for approvals:
-  - `none` – no additional verification.
-  - `number-match` – show a number in the browser (range `0`–`99`, no leading zeros) and send 3 options to the device via `/push-mfa/login/pending`; the device must return the selected number as `userVerification` when approving.
-  - `pin` – show a PIN in the browser; the device must return the entered PIN as `userVerification` when approving (length controlled by `userVerificationPinLength`).
-- `userVerificationPinLength` (default: `4`) – PIN length for `userVerification=pin` (max `12`).
-- `sameDeviceIncludeUserVerification` (default: `false`) – include the current user verification answer in the same-device link token rendered on the waiting screen.
-- `loginAppUniversalLink` (default: `my-secure://confirm`) – app/universal link used for same-device login deep links.
+### Where to Configure
 
-**Required Action (`push-mfa-register`)**
-- `enrollmentChallengeTtlSeconds` (default: `120`) – TTL for enrollment challenges/tokens.
-- `enrollmentAppUniversalLink` (default: `my-secure://enroll`) – app/universal link used for same-device enrollment deep links.
+| Configuration Type | Where to Set |
+|-------------------|--------------|
+| **Authenticator options** | Admin Console: **Authentication → Flows → [your flow] → ⚙️ Config** |
+| **Required Action options** | Admin Console: **Authentication → Required Actions → Configure** |
+| **Server-side limits** | Java system properties or environment variables (requires restart) |
 
-**Server-side hardening (`push-mfa`)**
+### Authenticator Options (`push-mfa-authenticator`)
 
-These limits protect the device-facing endpoints under `/realms/demo/push-mfa/...` against DPoP replay and resource exhaustion. Configure them via system properties (recommended, e.g. `JAVA_OPTS_APPEND` in containers) or equivalent environment variables. Values are clamped to safe min/max bounds; invalid values are ignored. A Keycloak restart is required.
+Configure these in the authentication flow execution settings.
 
-Example (container):
+| Option | Default | Description |
+|--------|---------|-------------|
+| `loginChallengeTtlSeconds` | `120` | How long the push notification / QR code is valid (in seconds) |
+| `maxPendingChallenges` | `1` | Maximum concurrent login attempts per user. Set to `1` to prevent parallel logins |
+| `userVerification` | `none` | Extra verification step (see below) |
+| `userVerificationPinLength` | `4` | PIN length when using `pin` verification (max: 12) |
+| `sameDeviceIncludeUserVerification` | `false` | Include verification answer in same-device deep links |
+| `loginAppUniversalLink` | `my-secure://confirm` | Deep link scheme for same-device login |
 
-```
+**User Verification Modes:**
+
+| Mode | Browser Shows | Mobile App Must |
+|------|--------------|-----------------|
+| `none` | Nothing extra | Just tap approve/deny |
+| `number-match` | A number (0–99) | Select the matching number from 3 options |
+| `pin` | A PIN code | Enter the PIN shown in browser |
+
+### Required Action Options (`push-mfa-register`)
+
+Configure these in the Required Actions settings.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `enrollmentChallengeTtlSeconds` | `120` | How long the enrollment QR code is valid (in seconds) |
+| `enrollmentAppUniversalLink` | `my-secure://enroll` | Deep link scheme for same-device enrollment |
+
+### Server-Side Hardening Options
+
+These protect the device-facing endpoints against abuse. Configure via Java system properties (recommended) or environment variables. **Requires Keycloak restart.**
+
+**Example (Docker/container):**
+```bash
 JAVA_OPTS_APPEND="-Dkeycloak.push-mfa.input.maxJwtLength=8192 -Dkeycloak.push-mfa.sse.maxConnections=32"
 ```
 
-- `keycloak.push-mfa.dpop.jtiTtlSeconds` (default: `300`, min: `30`, max: `3600`) – how long used DPoP `jti` values are remembered (replay window).
-- `keycloak.push-mfa.dpop.jtiMaxLength` (default: `128`, min: `16`, max: `512`) – maximum accepted DPoP `jti` length.
-- `keycloak.push-mfa.input.maxJwtLength` (default: `16384`, min: `2048`, max: `131072`) – maximum length for any JWT coming from the device (access token, DPoP proof, enrollment/login tokens).
-- `keycloak.push-mfa.input.maxJwkJsonLength` (default: `8192`, min: `512`, max: `65536`) – maximum length for posted/stored JWK JSON.
-- `keycloak.push-mfa.input.maxUserIdLength` (default: `128`, min: `32`, max: `512`) – maximum length for user ids passed to the device endpoints.
-- `keycloak.push-mfa.input.maxDeviceIdLength` (default: `128`, min: `32`, max: `512`) – maximum length for `deviceId`.
-- `keycloak.push-mfa.input.maxDeviceTypeLength` (default: `64`, min: `16`, max: `256`) – maximum length for `deviceType`.
-- `keycloak.push-mfa.input.maxDeviceLabelLength` (default: `128`, min: `32`, max: `1024`) – maximum length for `deviceLabel`.
-- `keycloak.push-mfa.input.maxCredentialIdLength` (default: `128`, min: `32`, max: `512`) – maximum length for `credId`/`credentialId`.
-- `keycloak.push-mfa.input.maxPushProviderIdLength` (default: `2048`, min: `64`, max: `8192`) – maximum length for `pushProviderId`.
-- `keycloak.push-mfa.input.maxPushProviderTypeLength` (default: `64`, min: `16`, max: `256`) – maximum length for `pushProviderType`.
-- `keycloak.push-mfa.sse.maxConnections` (default: `256`, min: `1`, max: `1024`) – maximum concurrent SSE connections per Keycloak instance (shared across enrollment + login watchers). Rule of thumb: set this to roughly `logins_per_second_per_pod × average_approval_seconds` (plus headroom). For example, with ~10 logins/s per pod and ~15s average approval time, use ~150–250.
-- `keycloak.push-mfa.sse.maxSecretLength` (default: `128`, min: `16`, max: `1024`) – maximum length for the SSE `secret` query parameter.
+#### DPoP Replay Protection
+
+| Property | Default | Range | Description |
+|----------|---------|-------|-------------|
+| `keycloak.push-mfa.dpop.jtiTtlSeconds` | `300` | 30–3600 | How long used `jti` values are remembered |
+| `keycloak.push-mfa.dpop.jtiMaxLength` | `128` | 16–512 | Maximum `jti` string length |
+
+#### Input Size Limits
+
+| Property | Default | Range | Description |
+|----------|---------|-------|-------------|
+| `keycloak.push-mfa.input.maxJwtLength` | `16384` | 2048–131072 | Max JWT length (access tokens, proofs, etc.) |
+| `keycloak.push-mfa.input.maxJwkJsonLength` | `8192` | 512–65536 | Max JWK JSON length |
+| `keycloak.push-mfa.input.maxUserIdLength` | `128` | 32–512 | Max user ID length |
+| `keycloak.push-mfa.input.maxDeviceIdLength` | `128` | 32–512 | Max device ID length |
+| `keycloak.push-mfa.input.maxDeviceTypeLength` | `64` | 16–256 | Max device type length |
+| `keycloak.push-mfa.input.maxDeviceLabelLength` | `128` | 32–1024 | Max device label length |
+| `keycloak.push-mfa.input.maxCredentialIdLength` | `128` | 32–512 | Max credential ID length |
+| `keycloak.push-mfa.input.maxPushProviderIdLength` | `2048` | 64–8192 | Max push provider ID (FCM token, etc.) |
+| `keycloak.push-mfa.input.maxPushProviderTypeLength` | `64` | 16–256 | Max push provider type name |
+
+#### SSE Connection Limits
+
+| Property | Default | Range | Description |
+|----------|---------|-------|-------------|
+| `keycloak.push-mfa.sse.maxConnections` | `256` | 1–1024 | Max concurrent SSE connections per pod |
+| `keycloak.push-mfa.sse.maxSecretLength` | `128` | 16–1024 | Max SSE secret query parameter length |
+
+> **Sizing tip for `maxConnections`:** Use `logins_per_second × average_approval_seconds` plus headroom. Example: 10 logins/s × 15s approval = ~150–250 connections.
 
 ## App Implementation Notes
 

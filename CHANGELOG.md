@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.1](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.3.0...v1.3.1) (2026-01-08)
+
+
+### Bug Fixes
+
+* registering push-mfa credential on account page did not work ([#57](https://github.com/ba-itsys/keycloak-push-mfa-extension/issues/57)) ([59a036b](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/59a036bce6e0e610c84dc11ab1cd2b3b1f8a069f))
+
 ## [1.3.0](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.2.0...v1.3.0) (2025-12-19)
 
 

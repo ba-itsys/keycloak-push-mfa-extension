@@ -69,13 +69,23 @@ public class PushMfaAuthenticatorFactory implements AuthenticatorFactory {
                 "App link (android) or universal link (iOS) for same-device login, e.g., https://push-mfa-app.com/confirm");
         appUniversalLink.setDefaultValue(PushMfaConstants.DEFAULT_APP_UNIVERSAL_LINK + "confirm");
 
+        ProviderConfigProperty autoAddRequiredAction = new ProviderConfigProperty();
+        autoAddRequiredAction.setName(PushMfaConstants.AUTO_ADD_REQUIRED_ACTION_CONFIG);
+        autoAddRequiredAction.setLabel("Auto-add required action");
+        autoAddRequiredAction.setType(ProviderConfigProperty.BOOLEAN_TYPE);
+        autoAddRequiredAction.setHelpText(
+                "Automatically add the push-mfa-register required action when user has no credential. "
+                        + "Disable to allow users to add credentials via account console.");
+        autoAddRequiredAction.setDefaultValue(Boolean.TRUE);
+
         CONFIG_PROPERTIES = List.of(
                 loginTtl,
                 maxPending,
                 userVerification,
                 userVerificationPinLength,
                 sameDeviceUserVerification,
-                appUniversalLink);
+                appUniversalLink,
+                autoAddRequiredAction);
     }
 
     @Override

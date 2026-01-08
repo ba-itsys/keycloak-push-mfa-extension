@@ -28,6 +28,8 @@ import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.authentication.AuthenticationFlowError;
 import org.keycloak.authentication.Authenticator;
 import org.keycloak.credential.CredentialModel;
+import org.keycloak.models.AuthenticationExecutionModel;
+import org.keycloak.models.AuthenticationFlowModel;
 import org.keycloak.models.AuthenticatorConfigModel;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.KeycloakSession;
@@ -321,10 +323,41 @@ public class PushMfaAuthenticator implements Authenticator {
             return;
         }
 
+        if (!shouldAutoAddRequiredAction(session, realm)) {
+            return;
+        }
+
         boolean alreadyRequired = user.getRequiredActionsStream().anyMatch(PushMfaConstants.REQUIRED_ACTION_ID::equals);
         if (!alreadyRequired) {
             user.addRequiredAction(PushMfaConstants.REQUIRED_ACTION_ID);
         }
+    }
+
+    protected boolean shouldAutoAddRequiredAction(KeycloakSession session, RealmModel realm) {
+        AuthenticatorConfigModel config = findAuthenticatorConfig(session, realm);
+        if (config == null || config.getConfig() == null) {
+            return true;
+        }
+        String value = config.getConfig().get(PushMfaConstants.AUTO_ADD_REQUIRED_ACTION_CONFIG);
+        if (StringUtil.isBlank(value)) {
+            return true;
+        }
+        return Boolean.parseBoolean(value.trim());
+    }
+
+    protected AuthenticatorConfigModel findAuthenticatorConfig(KeycloakSession session, RealmModel realm) {
+        for (AuthenticationFlowModel flow : realm.getAuthenticationFlowsStream().toList()) {
+            for (AuthenticationExecutionModel execution :
+                    realm.getAuthenticationExecutionsStream(flow.getId()).toList()) {
+                if (PushMfaConstants.PROVIDER_ID.equals(execution.getAuthenticator())) {
+                    String configId = execution.getAuthenticatorConfig();
+                    if (configId != null) {
+                        return realm.getAuthenticatorConfigById(configId);
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     @Override

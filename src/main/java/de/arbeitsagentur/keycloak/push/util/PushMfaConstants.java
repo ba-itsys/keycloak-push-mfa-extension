@@ -26,6 +26,7 @@ public final class PushMfaConstants {
     public static final String SAME_DEVICE_INCLUDE_USER_VERIFICATION_CONFIG = "sameDeviceIncludeUserVerification";
     public static final String LOGIN_APP_UNIVERSAL_LINK_CONFIG = "loginAppUniversalLink";
     public static final String ENROLLMENT_APP_UNIVERSAL_LINK_CONFIG = "enrollmentAppUniversalLink";
+    public static final String AUTO_ADD_REQUIRED_ACTION_CONFIG = "autoAddRequiredAction";
     public static final String USER_VERIFICATION_NONE = "none";
     public static final String USER_VERIFICATION_NUMBER_MATCH = "number-match";
     public static final String USER_VERIFICATION_PIN = "pin";

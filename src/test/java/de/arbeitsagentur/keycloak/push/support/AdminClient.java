@@ -87,6 +87,19 @@ public final class AdminClient {
         updatePushMfaAuthenticatorConfig(Map.of(PushMfaConstants.LOGIN_CHALLENGE_TTL_CONFIG, String.valueOf(seconds)));
     }
 
+    public void configurePushMfaAutoAddRequiredAction(boolean autoAdd) throws Exception {
+        updatePushMfaAuthenticatorConfig(
+                Map.of(PushMfaConstants.AUTO_ADD_REQUIRED_ACTION_CONFIG, String.valueOf(autoAdd)));
+    }
+
+    public void logoutAllSessions(String username) throws Exception {
+        String userId = findUserId(username);
+        if (userId == null || userId.isBlank()) {
+            throw new IllegalStateException("User not found: " + username);
+        }
+        logoutUser(userId);
+    }
+
     private String createUser(String username) throws Exception {
         URI createUri = baseUri.resolve("/admin/realms/demo/users");
         String payload = MAPPER.createObjectNode()

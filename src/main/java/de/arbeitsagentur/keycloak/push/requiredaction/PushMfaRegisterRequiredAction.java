@@ -11,18 +11,25 @@ import java.net.URISyntaxException;
 import java.security.SecureRandom;
 import java.time.Duration;
 import org.apache.http.client.utils.URIBuilder;
+import org.keycloak.authentication.CredentialRegistrator;
 import org.keycloak.authentication.InitiatedActionSupport;
 import org.keycloak.authentication.RequiredActionContext;
 import org.keycloak.authentication.RequiredActionProvider;
 import org.keycloak.forms.login.LoginFormsProvider;
+import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RequiredActionConfigModel;
 import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.utils.StringUtil;
 
-public class PushMfaRegisterRequiredAction implements RequiredActionProvider {
+public class PushMfaRegisterRequiredAction implements RequiredActionProvider, CredentialRegistrator {
 
     private static final SecureRandom RANDOM = new SecureRandom();
+
+    @Override
+    public String getCredentialType(KeycloakSession session, AuthenticationSessionModel authSession) {
+        return PushMfaConstants.CREDENTIAL_TYPE;
+    }
 
     @Override
     public InitiatedActionSupport initiatedActionSupport() {

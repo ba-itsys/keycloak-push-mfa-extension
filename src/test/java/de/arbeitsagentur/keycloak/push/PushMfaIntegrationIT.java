@@ -1,6 +1,7 @@
 package de.arbeitsagentur.keycloak.push;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -86,6 +87,7 @@ class PushMfaIntegrationIT {
         adminClient.configurePushMfaUserVerification(
                 PushMfaConstants.USER_VERIFICATION_NONE, PushMfaConstants.DEFAULT_USER_VERIFICATION_PIN_LENGTH);
         adminClient.configurePushMfaSameDeviceUserVerification(false);
+        adminClient.configurePushMfaAutoAddRequiredAction(true);
     }
 
     @Test
@@ -560,6 +562,50 @@ class PushMfaIntegrationIT {
             System.err.println("Keycloak container logs:\n" + KEYCLOAK.getLogs());
             throw ex;
         }
+    }
+
+    @Test
+    void accountConsoleCredentialSetupAndLogin() throws Exception {
+        adminClient.configurePushMfaAutoAddRequiredAction(false);
+        adminClient.resetUserState(TEST_USERNAME);
+        DeviceState deviceState = DeviceState.create(DeviceKeyType.RSA);
+        DeviceClient deviceClient = new DeviceClient(baseUri, deviceState);
+
+        BrowserSession session = new BrowserSession(baseUri);
+        HtmlPage loginPage = session.startAuthorization("test-app");
+        BrowserSession.PageOrRedirect afterLogin =
+                session.submitLoginResult(loginPage, TEST_USERNAME, TEST_PASSWORD, null);
+
+        if (afterLogin.page() != null) {
+            boolean isEnrollmentPage = afterLogin.page().document().getElementById("kc-push-token") != null;
+            assertFalse(isEnrollmentPage, "With autoAddRequiredAction=false, user should NOT be forced to enroll");
+        } else {
+            assertTrue(
+                    afterLogin.redirectLocation().contains("callback"),
+                    "Expected redirect to callback, got: " + afterLogin.redirectLocation());
+        }
+
+        HtmlPage credentialSetupPage = session.triggerCredentialSetup("push-mfa-register");
+        String enrollmentToken = session.extractEnrollmentToken(credentialSetupPage);
+        assertNotNull(enrollmentToken, "Enrollment token should be present");
+
+        deviceClient.completeEnrollment(enrollmentToken);
+        session.submitEnrollmentCheck(credentialSetupPage);
+
+        adminClient.logoutAllSessions(TEST_USERNAME);
+
+        BrowserSession pushSession = new BrowserSession(baseUri);
+        HtmlPage pushLogin = pushSession.startAuthorization("test-app");
+        HtmlPage waitingPage = pushSession.submitLogin(pushLogin, TEST_USERNAME, TEST_PASSWORD);
+
+        BrowserSession.DeviceChallenge confirm = pushSession.extractDeviceChallenge(waitingPage);
+        assertNotNull(confirm.confirmToken(), "Should have push challenge");
+
+        String status = deviceClient.respondToChallenge(
+                confirm.confirmToken(), confirm.challengeId(), PushMfaConstants.CHALLENGE_APPROVE);
+        assertEquals("approved", status);
+
+        pushSession.completePushChallenge(confirm.formAction());
     }
 
     @Test

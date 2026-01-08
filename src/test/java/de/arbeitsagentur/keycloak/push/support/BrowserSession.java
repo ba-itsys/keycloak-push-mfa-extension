@@ -359,6 +359,16 @@ public final class BrowserSession {
         return builder.toString();
     }
 
+    public HtmlPage triggerCredentialSetup(String requiredActionId) throws Exception {
+        String state = UUID.randomUUID().toString();
+        String nonce = UUID.randomUUID().toString();
+        String query = String.format(
+                "client_id=test-app&redirect_uri=%s&response_type=code&scope=openid&state=%s&nonce=%s&kc_action=%s",
+                urlEncode(redirectUri), urlEncode(state), urlEncode(nonce), urlEncode(requiredActionId));
+        URI authUri = realmBase.resolve("protocol/openid-connect/auth?" + query);
+        return fetch(authUri, "GET", null).requirePage();
+    }
+
     public record DeviceChallenge(String confirmToken, String challengeId, URI formAction) {}
 
     public record PageOrRedirect(int status, URI uri, HtmlPage page, String redirectLocation) {}

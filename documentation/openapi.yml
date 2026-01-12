@@ -1,0 +1,283 @@
+openapi: 3.0.3
+info:
+  title: Push MFA API
+  description: API for Push-based Multi-Factor Authentication in Keycloak
+  version: 1.0.0
+servers:
+  - url: /realms/{realm}/push-mfa
+    variables:
+      realm:
+        default: demo
+        description: The Keycloak realm name
+paths:
+  /enroll/challenges/{challengeId}/events:
+    get:
+      summary: Stream enrollment events via Server-Sent Events
+      parameters:
+        - name: challengeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: The enrollment challenge ID
+        - name: secret
+          in: query
+          schema:
+            type: string
+            maxLength: 256
+          description: Secret for authentication
+      responses:
+        200:
+          description: Server-Sent Events stream for enrollment status
+          content:
+            text/event-stream:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [PENDING, APPROVED, DENIED, EXPIRED, TOO_MANY_CONNECTIONS, INVALID, NOT_FOUND, FORBIDDEN, INTERRUPTED]
+                  challengeId:
+                    type: string
+                  expiresAt:
+                    type: string
+                  resolvedAt:
+                    type: string
+  /enroll/complete:
+    post:
+      summary: Complete device enrollment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                  description: JWT token for enrollment completion
+              required:
+                - token
+      responses:
+        200:
+          description: Enrollment successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: enrolled
+        400:
+          description: Bad request (e.g., invalid token)
+        403:
+          description: Forbidden (e.g., signature mismatch)
+        404:
+          description: Challenge not found
+  /login/pending:
+    get:
+      summary: List pending login challenges for a user
+      parameters:
+        - name: userId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The user ID
+      security:
+        - DPoP: []
+      responses:
+        200:
+          description: List of pending challenges
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  challenges:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        userId:
+                          type: string
+                        username:
+                          type: string
+                        cid:
+                          type: string
+                        expiresAt:
+                          type: integer
+                          format: int64
+                        clientId:
+                          type: string
+                        clientName:
+                          type: string
+                        userVerification:
+                          type: object
+                          properties:
+                            type:
+                              type: string
+                              enum: [number_match, pin]
+                            numbers:
+                              type: array
+                              items:
+                                type: string
+                            pinLength:
+                              type: integer
+        403:
+          description: Forbidden (e.g., user mismatch)
+  /login/challenges/{cid}/respond:
+    post:
+      summary: Respond to a login challenge
+      parameters:
+        - name: cid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: The challenge ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                  description: JWT token for challenge response
+              required:
+                - token
+      security:
+        - DPoP: []
+      responses:
+        200:
+          description: Challenge response successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [approved, denied]
+        400:
+          description: Bad request (e.g., invalid token or action)
+        403:
+          description: Forbidden (e.g., mismatch)
+        404:
+          description: Challenge not found
+  /login/challenges/{cid}/events:
+    get:
+      summary: Stream login challenge events via Server-Sent Events
+      parameters:
+        - name: cid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: The challenge ID
+        - name: secret
+          in: query
+          schema:
+            type: string
+            maxLength: 256
+          description: Secret for authentication
+      responses:
+        200:
+          description: Server-Sent Events stream for login challenge status
+          content:
+            text/event-stream:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [PENDING, APPROVED, DENIED, EXPIRED, TOO_MANY_CONNECTIONS, INVALID, NOT_FOUND, FORBIDDEN, BAD_TYPE, INTERRUPTED]
+                  challengeId:
+                    type: string
+                  expiresAt:
+                    type: string
+                  clientId:
+                    type: string
+                  resolvedAt:
+                    type: string
+  /device/push-provider:
+    put:
+      summary: Update device push provider
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pushProviderId:
+                  type: string
+                  maxLength: 256
+                pushProviderType:
+                  type: string
+                  maxLength: 256
+              required:
+                - pushProviderId
+      security:
+        - DPoP: []
+      responses:
+        200:
+          description: Push provider updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [updated, unchanged]
+        400:
+          description: Bad request
+        403:
+          description: Forbidden
+  /device/rotate-key:
+    put:
+      summary: Rotate device key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                publicKeyJwk:
+                  type: object
+                  description: JWK public key object
+              required:
+                - publicKeyJwk
+      security:
+        - DPoP: []
+      responses:
+        200:
+          description: Key rotated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: rotated
+        400:
+          description: Bad request (e.g., invalid JWK)
+        403:
+          description: Forbidden
+security:
+  - DPoP: []
+components:
+  securitySchemes:
+    DPoP:
+      type: http
+      scheme: dpop
+      description: Demonstrating Proof-of-Possession (DPoP) bound access token

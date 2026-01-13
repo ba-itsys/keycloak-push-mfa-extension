@@ -21,7 +21,7 @@ public class PendingChallengeGuard {
             String authSessionChallengeId,
             Predicate<PushChallenge> activeSessionPredicate,
             Predicate<PushChallenge> credentialExistsPredicate) {
-        List<PushChallenge> pending = new ArrayList<>(challengeStore.findPendingForUser(realmId, userId));
+        List<PushChallenge> pending = new ArrayList<>(challengeStore.findPendingAuthenticationForUser(realmId, userId));
         pending.removeIf(challenge -> shouldRemove(
                 challenge, rootSessionId, authSessionChallengeId, activeSessionPredicate, credentialExistsPredicate));
 

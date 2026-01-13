@@ -7,6 +7,7 @@ import de.arbeitsagentur.keycloak.push.credential.PushCredentialService;
 import de.arbeitsagentur.keycloak.push.token.PushEnrollmentTokenBuilder;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import jakarta.ws.rs.core.MultivaluedMap;
+import jakarta.ws.rs.core.Response;
 import java.net.URISyntaxException;
 import java.security.SecureRandom;
 import java.time.Duration;
@@ -55,18 +56,7 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Cr
                 challenge,
                 context.getUriInfo().getBaseUri());
 
-        LoginFormsProvider form = context.form();
-        form.setAttribute("pushUsername", context.getUser().getUsername());
-        form.setAttribute("enrollmentToken", enrollmentToken);
-        form.setAttribute("qrPayload", enrollmentToken);
-        form.setAttribute("pushQrUri", buildPushUri(resolveAppUniversalLink(context), enrollmentToken));
-        form.setAttribute("enrollChallengeId", challenge.getId());
-        form.setAttribute("pollingIntervalSeconds", 3);
-        String eventsUrl = buildEnrollmentEventsUrl(context, challenge);
-        if (eventsUrl != null) {
-            form.setAttribute("enrollEventsUrl", eventsUrl);
-        }
-        context.challenge(form.createForm("push-register.ftl"));
+        context.challenge(createForm(context.form(), context, enrollmentToken, challenge));
     }
 
     @Override
@@ -101,18 +91,8 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Cr
                     challenge,
                     context.getUriInfo().getBaseUri());
 
-            LoginFormsProvider form = context.form().setError("push-mfa-registration-missing");
-            form.setAttribute("pushUsername", context.getUser().getUsername());
-            form.setAttribute("enrollmentToken", enrollmentToken);
-            form.setAttribute("qrPayload", enrollmentToken);
-            form.setAttribute("pushQrUri", buildPushUri(resolveAppUniversalLink(context), enrollmentToken));
-            form.setAttribute("enrollChallengeId", challenge.getId());
-            form.setAttribute("pollingIntervalSeconds", 5);
-            String eventsUrl = buildEnrollmentEventsUrl(context, challenge);
-            if (eventsUrl != null) {
-                form.setAttribute("enrollEventsUrl", eventsUrl);
-            }
-            context.challenge(form.createForm("push-register.ftl"));
+            context.challenge(createForm(
+                    context.form().setError("push-mfa-registration-missing"), context, enrollmentToken, challenge));
             return;
         }
 
@@ -123,6 +103,30 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Cr
     @Override
     public void close() {
         // no-op
+    }
+
+    /**
+     * Build the registration form.
+     *
+     * Overridable to customize the form before rendering.
+     * @param form
+     * @param context
+     * @param enrollmentToken
+     * @param challenge
+     * @return
+     */
+    protected Response createForm(
+            LoginFormsProvider form, RequiredActionContext context, String enrollmentToken, PushChallenge challenge) {
+        form.setAttribute("pushUsername", context.getUser().getUsername());
+        form.setAttribute("enrollmentToken", enrollmentToken);
+        form.setAttribute("qrPayload", enrollmentToken);
+        form.setAttribute("pushQrUri", buildPushUri(resolveAppUniversalLink(context), enrollmentToken));
+        form.setAttribute("enrollChallengeId", challenge.getId());
+        String eventsUrl = buildEnrollmentEventsUrl(context, challenge);
+        if (eventsUrl != null) {
+            form.setAttribute("enrollEventsUrl", eventsUrl);
+        }
+        return form.createForm("push-register.ftl");
     }
 
     private PushChallenge fetchOrCreateChallenge(

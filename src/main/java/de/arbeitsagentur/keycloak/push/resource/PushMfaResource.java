@@ -226,7 +226,10 @@ public class PushMfaResource {
 
         // Always query the challenge store to ensure constant-time behavior
         List<LoginChallenge> pending =
-                challengeStore.findPendingForUser(realm().getId(), device.user().getId()).stream()
+                challengeStore
+                        .findPendingAuthenticationForUser(
+                                realm().getId(), device.user().getId())
+                        .stream()
                         .filter(challenge -> challenge.getType() == PushChallenge.Type.AUTHENTICATION)
                         .filter(challenge -> Objects.equals(challenge.getCredentialId(), deviceCredential.getId()))
                         .filter(this::ensureAuthenticationSessionActive)

@@ -12,7 +12,6 @@ import de.arbeitsagentur.keycloak.push.token.PushConfirmTokenBuilder;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.core.UriBuilder;
 import java.net.URISyntaxException;
 import java.security.SecureRandom;
 import java.time.Duration;
@@ -28,6 +27,7 @@ import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.authentication.AuthenticationFlowError;
 import org.keycloak.authentication.Authenticator;
 import org.keycloak.credential.CredentialModel;
+import org.keycloak.forms.login.LoginFormsProvider;
 import org.keycloak.models.AuthenticationExecutionModel;
 import org.keycloak.models.AuthenticationFlowModel;
 import org.keycloak.models.AuthenticatorConfigModel;
@@ -533,20 +533,39 @@ public class PushMfaAuthenticator implements Authenticator {
             PushChallenge challenge,
             PushCredentialData credentialData,
             String confirmToken) {
-        String challengeId = challenge != null ? challenge.getId() : null;
-        String watchSecret = challenge != null ? challenge.getWatchSecret() : null;
-        AuthenticationSessionModel authSession = context.getAuthenticationSession();
-        if (StringUtil.isBlank(watchSecret) && authSession != null) {
-            watchSecret = ChallengeNoteHelper.readWatchSecret(authSession);
-        }
-
         String appUniversalLink = resolveAppUniversalLink(context);
         String sameDeviceToken = resolveSameDeviceToken(context, challenge, credentialData, confirmToken);
         String sameDeviceUri = buildPushUri(appUniversalLink, sameDeviceToken);
 
-        var form = context.form()
-                .setAttribute("challengeId", challengeId)
-                .setAttribute("pollingIntervalSeconds", 5)
+        LoginFormsProvider form = context.form();
+        context.challenge(
+                createForm(form, context, challenge, credentialData, confirmToken, appUniversalLink, sameDeviceUri));
+    }
+
+    /**
+     * Build the login challenge waiting form.
+     *
+     * Overridable to customize the form before rendering.
+     *
+     * @param form
+     * @param context
+     * @param challenge
+     * @param credentialData
+     * @param confirmToken
+     * @param appUniversalLink
+     * @param sameDeviceUri
+     * @return
+     */
+    protected Response createForm(
+            LoginFormsProvider form,
+            AuthenticationFlowContext context,
+            PushChallenge challenge,
+            PushCredentialData credentialData,
+            String confirmToken,
+            String appUniversalLink,
+            String sameDeviceUri) {
+        String challengeId = challenge != null ? challenge.getId() : null;
+        form.setAttribute("challengeId", challengeId)
                 .setAttribute("pushUsername", context.getUser().getUsername())
                 .setAttribute("pushConfirmToken", confirmToken)
                 .setAttribute("pushCredentialId", credentialData != null ? credentialData.getCredentialId() : null)
@@ -564,19 +583,30 @@ public class PushMfaAuthenticator implements Authenticator {
                     .setAttribute("pushUserVerificationValue", challenge.getUserVerificationValue());
         }
 
-        String watchUrl = buildChallengeWatchUrl(context, challengeId, watchSecret);
+        String watchUrl = buildChallengeWatchUrl(context, challenge);
         if (watchUrl != null) {
             form.setAttribute("pushChallengeWatchUrl", watchUrl);
         }
 
-        context.challenge(form.createForm("push-wait.ftl"));
+        return form.createForm("push-wait.ftl");
     }
 
-    private String buildChallengeWatchUrl(AuthenticationFlowContext context, String challengeId, String watchSecret) {
+    private String buildChallengeWatchUrl(AuthenticationFlowContext context, PushChallenge challenge) {
+        if (challenge == null) {
+            return null;
+        }
+        String challengeId = challenge.getId();
+        String watchSecret = challenge.getWatchSecret();
+        if (StringUtil.isBlank(watchSecret)) {
+            AuthenticationSessionModel authSession = context.getAuthenticationSession();
+            if (authSession != null) {
+                watchSecret = ChallengeNoteHelper.readWatchSecret(authSession);
+            }
+        }
         if (StringUtil.isBlank(challengeId) || StringUtil.isBlank(watchSecret)) {
             return null;
         }
-        UriBuilder builder = context.getUriInfo()
+        return context.getUriInfo()
                 .getBaseUriBuilder()
                 .path("realms")
                 .path(context.getRealm().getName())
@@ -585,8 +615,9 @@ public class PushMfaAuthenticator implements Authenticator {
                 .path("challenges")
                 .path(challengeId)
                 .path("events")
-                .queryParam("secret", watchSecret);
-        return builder.build().toString();
+                .queryParam("secret", watchSecret)
+                .build()
+                .toString();
     }
 
     private String resolveClientDisplayName(AuthenticationFlowContext context, String clientId) {

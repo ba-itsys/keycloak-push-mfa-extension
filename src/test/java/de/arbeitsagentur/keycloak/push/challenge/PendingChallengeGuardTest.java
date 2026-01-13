@@ -20,7 +20,7 @@ class PendingChallengeGuardTest {
         PushChallengeStore store = mock(PushChallengeStore.class);
         PushChallenge active = challenge("active", "root-b");
         PushChallenge missingSession = challenge("missing-session", "root-c");
-        when(store.findPendingForUser("realm", "user")).thenReturn(List.of(active, missingSession));
+        when(store.findPendingAuthenticationForUser("realm", "user")).thenReturn(List.of(active, missingSession));
 
         PendingChallengeGuard guard = new PendingChallengeGuard(store);
         PendingChallengeGuard.PendingCheckResult result =
@@ -37,7 +37,7 @@ class PendingChallengeGuardTest {
         PushChallengeStore store = mock(PushChallengeStore.class);
         PushChallenge sameRoot = challenge("same-root", "root-a");
         PushChallenge unknownRoot = challenge("unknown-root", null);
-        when(store.findPendingForUser("realm", "user")).thenReturn(List.of(sameRoot, unknownRoot));
+        when(store.findPendingAuthenticationForUser("realm", "user")).thenReturn(List.of(sameRoot, unknownRoot));
 
         PendingChallengeGuard guard = new PendingChallengeGuard(store);
         PendingChallengeGuard.PendingCheckResult result =
@@ -53,7 +53,7 @@ class PendingChallengeGuardTest {
     void discountsCurrentAuthSessionChallenge() {
         PushChallengeStore store = mock(PushChallengeStore.class);
         PushChallenge current = challenge("current", "root-b");
-        when(store.findPendingForUser("realm", "user")).thenReturn(List.of(current));
+        when(store.findPendingAuthenticationForUser("realm", "user")).thenReturn(List.of(current));
 
         PendingChallengeGuard guard = new PendingChallengeGuard(store);
         PendingChallengeGuard.PendingCheckResult result =

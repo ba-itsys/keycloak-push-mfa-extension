@@ -202,7 +202,7 @@ public class PushChallengeStore {
         singleUse.remove(challengeKey(challengeId));
     }
 
-    public List<PushChallenge> findPendingForUser(String realmId, String userId) {
+    public List<PushChallenge> findPendingAuthenticationForUser(String realmId, String userId) {
         Map<String, String> index = singleUse.get(userIndexKey(realmId, userId));
         if (index == null) {
             return List.of();
@@ -247,11 +247,11 @@ public class PushChallengeStore {
     }
 
     public int countPendingAuthentication(String realmId, String userId) {
-        return findPendingForUser(realmId, userId).size();
+        return findPendingAuthenticationForUser(realmId, userId).size();
     }
 
     public void removeAllAuthentication(String realmId, String userId) {
-        List<PushChallenge> pending = new ArrayList<>(findPendingForUser(realmId, userId));
+        List<PushChallenge> pending = new ArrayList<>(findPendingAuthenticationForUser(realmId, userId));
         for (PushChallenge challenge : pending) {
             remove(challenge.getId());
         }
@@ -272,7 +272,7 @@ public class PushChallengeStore {
     }
 
     private void refreshAuthenticationIndex(String realmId, String userId) {
-        findPendingForUser(realmId, userId);
+        findPendingAuthenticationForUser(realmId, userId);
     }
 
     private void storeAuthenticationIndex(String realmId, String userId, List<PushChallenge> pending) {

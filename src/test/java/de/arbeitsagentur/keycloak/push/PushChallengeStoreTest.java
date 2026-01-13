@@ -38,7 +38,7 @@ class PushChallengeStoreTest {
 
         assertEquals(1, store.countPendingAuthentication(REALM_ID, USER_ID));
         assertContainsChallenge(second.getId());
-        assertFalse(store.findPendingForUser(REALM_ID, USER_ID).stream()
+        assertFalse(store.findPendingAuthenticationForUser(REALM_ID, USER_ID).stream()
                 .anyMatch(challenge -> first.getId().equals(challenge.getId())));
     }
 
@@ -49,7 +49,7 @@ class PushChallengeStoreTest {
 
         assertEquals(1, store.countPendingAuthentication(REALM_ID, USER_ID));
         assertContainsChallenge(second.getId());
-        assertFalse(store.findPendingForUser(REALM_ID, USER_ID).stream()
+        assertFalse(store.findPendingAuthenticationForUser(REALM_ID, USER_ID).stream()
                 .anyMatch(challenge -> first.getId().equals(challenge.getId())));
     }
 
@@ -97,7 +97,7 @@ class PushChallengeStoreTest {
     }
 
     private void assertContainsChallenge(String id) {
-        assertTrue(store.findPendingForUser(REALM_ID, USER_ID).stream()
+        assertTrue(store.findPendingAuthenticationForUser(REALM_ID, USER_ID).stream()
                 .anyMatch(challenge -> id.equals(challenge.getId())));
     }
 

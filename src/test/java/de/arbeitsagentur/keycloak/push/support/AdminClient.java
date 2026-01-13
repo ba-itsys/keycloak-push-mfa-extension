@@ -100,6 +100,15 @@ public final class AdminClient {
         logoutUser(userId);
     }
 
+    public void deleteUserCredentials(String username) throws Exception {
+        ensureAccessToken();
+        String userId = findUserId(username);
+        if (userId == null || userId.isBlank()) {
+            throw new IllegalStateException("User not found: " + username);
+        }
+        deletePushCredentials(userId);
+    }
+
     private String createUser(String username) throws Exception {
         URI createUri = baseUri.resolve("/admin/realms/demo/users");
         String payload = MAPPER.createObjectNode()
@@ -255,6 +264,10 @@ public final class AdminClient {
         return null;
     }
 
+    public void resetAccessToken() {
+        accessToken = null;
+    }
+
     private void ensureAccessToken() throws Exception {
         if (accessToken != null && !accessToken.isBlank()) {
             return;
@@ -265,11 +278,23 @@ public final class AdminClient {
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
-        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
-        assertEquals(200, response.statusCode(), () -> "Admin token request failed: " + response.body());
-        JsonNode json = MAPPER.readTree(response.body());
-        accessToken = json.path("access_token").asText();
-        assertNotNull(accessToken);
+        Exception lastException = null;
+        for (int attempt = 0; attempt < 3; attempt++) {
+            HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 200) {
+                JsonNode json = MAPPER.readTree(response.body());
+                accessToken = json.path("access_token").asText();
+                assertNotNull(accessToken);
+                return;
+            }
+            lastException = new RuntimeException("Admin token request failed: " + response.body());
+            if (response.statusCode() >= 500) {
+                Thread.sleep(1000);
+                continue;
+            }
+            throw lastException;
+        }
+        throw lastException;
     }
 
     private String urlEncode(String value) {

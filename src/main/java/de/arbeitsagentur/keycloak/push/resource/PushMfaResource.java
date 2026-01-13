@@ -217,12 +217,14 @@ public class PushMfaResource {
         String normalizedUserId =
                 PushMfaInputValidator.requireBoundedText(userId, INPUT_LIMITS.maxUserIdLength(), "userId");
         DeviceAssertion device = authenticateDevice(headers, uriInfo, "GET");
-        if (!Objects.equals(device.user().getId(), normalizedUserId)) {
-            throw new ForbiddenException("Device token subject mismatch");
-        }
+
+        // Always perform the same work to prevent timing-based user enumeration attacks.
+        // If userId doesn't match device's user, we still do the DB lookup but return empty list.
+        boolean userIdMatches = Objects.equals(device.user().getId(), normalizedUserId);
 
         CredentialModel deviceCredential = device.credential();
 
+        // Always query the challenge store to ensure constant-time behavior
         List<LoginChallenge> pending =
                 challengeStore.findPendingForUser(realm().getId(), device.user().getId()).stream()
                         .filter(challenge -> challenge.getType() == PushChallenge.Type.AUTHENTICATION)
@@ -237,6 +239,11 @@ public class PushMfaResource {
                                 resolveClientDisplayName(challenge.getClientId()),
                                 buildUserVerificationInfo(challenge)))
                         .toList();
+
+        // Return empty list if userId doesn't match - prevents user enumeration via response codes
+        if (!userIdMatches) {
+            return Response.ok(Map.of("challenges", List.of())).build();
+        }
         return Response.ok(Map.of("challenges", pending)).build();
     }
 

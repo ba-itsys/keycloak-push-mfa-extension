@@ -248,6 +248,36 @@ public final class DeviceClient {
         return accessToken;
     }
 
+    public HttpResponse<String> sendRawChallengeResponse(String challengeId, String loginTokenJwt) throws Exception {
+        ensureAccessToken();
+        URI respondUri = realmBase.resolve("push-mfa/login/challenges/" + challengeId + "/respond");
+        HttpRequest request = HttpRequest.newBuilder(respondUri)
+                .header("Authorization", "DPoP " + accessToken)
+                .header("DPoP", createDpopProof("POST", respondUri))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(
+                        MAPPER.createObjectNode().put("token", loginTokenJwt).toString()))
+                .build();
+        return http.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    public SignedJWT createLoginToken(
+            String challengeId, String credentialId, String deviceId, String action, String userVerification)
+            throws Exception {
+        String normalizedAction =
+                (action == null || action.isBlank()) ? PushMfaConstants.CHALLENGE_APPROVE : action.toLowerCase();
+        JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder()
+                .claim("cid", challengeId)
+                .claim("credId", credentialId)
+                .claim("deviceId", deviceId)
+                .claim("action", normalizedAction)
+                .expirationTime(Date.from(Instant.now().plusSeconds(120)));
+        if (userVerification != null && !userVerification.isBlank()) {
+            builder.claim("userVerification", userVerification);
+        }
+        return sign(builder.build());
+    }
+
     private String urlEncode(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }

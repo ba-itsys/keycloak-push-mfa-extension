@@ -22,6 +22,22 @@ A Keycloak extension that adds push-based multi-factor authentication, similar t
 
 ## Quick Start
 
+### Using Maven (recommended)
+
+Add the dependency to your project:
+
+```xml
+<dependency>
+    <groupId>de.arbeitsagentur.opdt</groupId>
+    <artifactId>keycloak-push-mfa-extension</artifactId>
+    <version>1.3.1</version>
+</dependency>
+```
+
+Copy the JAR to Keycloak's `providers/` directory and restart Keycloak.
+
+### Building from Source
+
 ```bash
 # Build the provider
 mvn -DskipTests package

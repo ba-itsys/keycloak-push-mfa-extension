@@ -1,68 +1,42 @@
 package de.arbeitsagentur.keycloak.push.auth;
 
 import de.arbeitsagentur.keycloak.push.challenge.PendingChallengeGuard;
-import de.arbeitsagentur.keycloak.push.challenge.PendingChallengeGuard.PendingCheckResult;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallenge;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStatus;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStore;
 import de.arbeitsagentur.keycloak.push.credential.PushCredentialData;
 import de.arbeitsagentur.keycloak.push.credential.PushCredentialService;
-import de.arbeitsagentur.keycloak.push.service.PushNotificationService;
 import de.arbeitsagentur.keycloak.push.token.PushConfirmTokenBuilder;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
-import java.net.URISyntaxException;
-import java.security.SecureRandom;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
-import java.util.Random;
-import java.util.stream.IntStream;
-import org.apache.http.client.utils.URIBuilder;
-import org.jboss.logging.Logger;
 import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.authentication.AuthenticationFlowError;
 import org.keycloak.authentication.Authenticator;
 import org.keycloak.credential.CredentialModel;
 import org.keycloak.forms.login.LoginFormsProvider;
-import org.keycloak.models.AuthenticationExecutionModel;
-import org.keycloak.models.AuthenticationFlowModel;
-import org.keycloak.models.AuthenticatorConfigModel;
-import org.keycloak.models.ClientModel;
-import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.RealmModel;
-import org.keycloak.models.UserModel;
+import org.keycloak.models.*;
 import org.keycloak.models.utils.FormMessage;
-import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.utils.StringUtil;
 
 public class PushMfaAuthenticator implements Authenticator {
 
-    private static final Logger LOG = Logger.getLogger(PushMfaAuthenticator.class);
-    private static final SecureRandom RANDOM = new SecureRandom();
-    private static final List<String> NUMBER_MATCH_VALUES =
-            IntStream.range(0, 100).mapToObj(String::valueOf).toList();
-
     @Override
     public void authenticate(AuthenticationFlowContext context) {
-        AuthenticationSessionModel authSession = context.getAuthenticationSession();
         MultivaluedMap<String, String> form = context.getHttpRequest().getDecodedFormParameters();
+        AuthenticationSessionModel authSession = context.getAuthenticationSession();
         String requestChallengeId = ChallengeNoteHelper.firstNonBlank(form.getFirst("challengeId"));
+        String storedChallengeId = ChallengeNoteHelper.readChallengeId(authSession);
         boolean isRefresh = form.containsKey("refresh") || form.containsKey("cancel");
         boolean looksLikePrimaryLogin = form.containsKey("username") || form.containsKey("password");
-        String storedChallengeId = ChallengeNoteHelper.readChallengeId(authSession);
 
         if (!looksLikePrimaryLogin && !StringUtil.isBlank(requestChallengeId)) {
             if (StringUtil.isBlank(storedChallengeId)) {
                 ChallengeNoteHelper.storeChallengeId(authSession, requestChallengeId);
-            } else if (!storedChallengeId.equals(requestChallengeId)) {
-                LOG.warnf(
-                        "Ignoring mismatched push challenge id %s for user %s (stored=%s)",
-                        requestChallengeId, context.getUser().getId(), storedChallengeId);
             }
             action(context);
             return;
@@ -71,240 +45,291 @@ public class PushMfaAuthenticator implements Authenticator {
             action(context);
             return;
         }
-        AuthenticatorConfigModel config = context.getAuthenticatorConfig();
-        Duration loginChallengeTtl = parseDurationSeconds(
-                config, PushMfaConstants.LOGIN_CHALLENGE_TTL_CONFIG, PushMfaConstants.DEFAULT_LOGIN_CHALLENGE_TTL);
-        int maxPendingChallenges = parsePositiveInt(
-                config,
-                PushMfaConstants.MAX_PENDING_AUTH_CHALLENGES_CONFIG,
-                PushMfaConstants.DEFAULT_MAX_PENDING_AUTH_CHALLENGES);
 
-        List<CredentialModel> credentials = PushCredentialService.getActiveCredentials(context.getUser());
-        if (credentials.isEmpty()) {
-            LOG.infof(
-                    "User %s attempted push MFA without registered device",
-                    context.getUser().getId());
+        CredentialAndData cred = resolveCredential(context.getUser());
+        if (cred == null) {
             context.success();
             return;
         }
-
-        CredentialModel credential = credentials.get(0);
-        PushCredentialData credentialData = PushCredentialService.readCredentialData(credential);
-        if (credentialData == null || credentialData.getCredentialId() == null) {
-            LOG.warn("Push credential missing credential id; skipping push MFA");
-            context.success();
+        if (checkPendingChallengeLimit(context, null)) {
             return;
         }
-
-        PushChallengeStore challengeStore = new PushChallengeStore(context.getSession());
-        String rootSessionId = context.getAuthenticationSession().getParentSession() != null
-                ? context.getAuthenticationSession().getParentSession().getId()
-                : null;
-        String authSessionChallenge = ChallengeNoteHelper.readChallengeId(authSession);
-        PendingChallengeGuard guard = new PendingChallengeGuard(challengeStore);
-        PendingCheckResult pending = guard.cleanAndCount(
-                context.getRealm().getId(),
-                context.getUser().getId(),
-                rootSessionId,
-                authSessionChallenge,
-                challenge -> isAuthenticationSessionActive(context, challenge),
-                challenge -> resolveCredentialForChallenge(context.getUser(), challenge) != null);
-
-        if (pending.pendingCount() >= maxPendingChallenges && authSessionChallenge == null && !isRefresh) {
-            LOG.warnf(
-                    "User %s already has %d pending push challenges (limit %d); refusing new one. method=%s,authNote=%s,rootSession=%s,Pending=%s",
-                    context.getUser().getId(),
-                    pending.pendingCount(),
-                    maxPendingChallenges,
-                    context.getHttpRequest().getHttpMethod(),
-                    authSessionChallenge,
-                    rootSessionId,
-                    pending.pending().stream()
-                            .map(ch -> ch.getId() + "/" + ch.getRootSessionId())
-                            .toList());
-            context.failureChallenge(
-                    AuthenticationFlowError.GENERIC_AUTHENTICATION_ERROR,
-                    context.form()
-                            .setError("push-mfa-too-many-challenges")
-                            .createErrorPage(Response.Status.TOO_MANY_REQUESTS));
-            return;
-        }
-        ClientModel client = context.getAuthenticationSession().getClient();
-        String clientId = client != null ? client.getClientId() : null;
-
-        IssuedChallenge issued = issueNewChallenge(
-                context, challengeStore, credentialData, credential, loginChallengeTtl, clientId, rootSessionId);
-        showWaitingForm(context, issued.challenge(), credentialData, issued.confirmToken());
+        issueAndShowChallenge(context, cred.credential, cred.data);
     }
 
     @Override
     public void action(AuthenticationFlowContext context) {
-        AuthenticatorConfigModel config = context.getAuthenticatorConfig();
-        Duration loginChallengeTtl = parseDurationSeconds(
-                config, PushMfaConstants.LOGIN_CHALLENGE_TTL_CONFIG, PushMfaConstants.DEFAULT_LOGIN_CHALLENGE_TTL);
-        int maxPendingChallenges = parsePositiveInt(
-                config,
-                PushMfaConstants.MAX_PENDING_AUTH_CHALLENGES_CONFIG,
-                PushMfaConstants.DEFAULT_MAX_PENDING_AUTH_CHALLENGES);
-        PushChallengeStore challengeStore = new PushChallengeStore(context.getSession());
+        PushChallengeStore store = new PushChallengeStore(context.getSession());
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
-        String rootSessionId = authSession.getParentSession() != null
-                ? authSession.getParentSession().getId()
-                : null;
         MultivaluedMap<String, String> form = context.getHttpRequest().getDecodedFormParameters();
         String challengeId = ChallengeNoteHelper.firstNonBlank(
                 ChallengeNoteHelper.readChallengeId(authSession), form.getFirst("challengeId"));
 
         boolean retryRequested = form.containsKey("retry");
-        if (challengeId == null) {
-            if (retryRequested) {
-                IssuedChallengeResult issued = issueChallengeFromAction(
-                        context, challengeStore, loginChallengeTtl, maxPendingChallenges, rootSessionId);
-                if (issued != null) {
-                    showWaitingForm(context, issued.challenge(), issued.credentialData(), issued.confirmToken());
-                }
-                return;
-            }
-            context.failureChallenge(
-                    AuthenticationFlowError.INTERNAL_ERROR,
-                    context.form()
-                            .setError("push-mfa-missing-challenge")
-                            .createErrorPage(Response.Status.INTERNAL_SERVER_ERROR));
-            return;
-        }
-
         boolean refreshRequested = form.containsKey("refresh");
         boolean cancelRequested = form.containsKey("cancel");
 
-        Optional<PushChallenge> challenge = challengeStore.get(challengeId);
+        if (challengeId == null) {
+            if (retryRequested) {
+                retryChallenge(context, store);
+            } else {
+                showError(context, "push-mfa-missing-challenge", Response.Status.INTERNAL_SERVER_ERROR);
+            }
+            return;
+        }
+
+        Optional<PushChallenge> challenge = store.get(challengeId);
         if (challenge.isEmpty()) {
             ChallengeNoteHelper.clear(authSession);
             if (retryRequested) {
-                IssuedChallengeResult issued = issueChallengeFromAction(
-                        context, challengeStore, loginChallengeTtl, maxPendingChallenges, rootSessionId);
-                if (issued != null) {
-                    showWaitingForm(context, issued.challenge(), issued.credentialData(), issued.confirmToken());
-                }
-                return;
+                retryChallenge(context, store);
+            } else {
+                showExpiredError(context);
             }
-            context.failureChallenge(
-                    AuthenticationFlowError.EXPIRED_CODE,
-                    context.form().setError("push-mfa-expired").createForm("push-expired.ftl"));
             return;
         }
 
         PushChallenge current = challenge.get();
-        if (!isExpectedChallenge(context, current, rootSessionId)) {
-            LOG.warnf(
-                    "Rejecting push challenge %s for user %s because it does not match current session (challengeUser=%s,type=%s,root=%s,expectedRoot=%s)",
-                    challengeId,
-                    context.getUser().getId(),
-                    current.getUserId(),
-                    current.getType(),
-                    current.getRootSessionId(),
-                    rootSessionId);
+        if (!isExpectedChallenge(context, current)) {
             ChallengeNoteHelper.clear(authSession);
             if (cancelRequested) {
                 context.forkWithErrorMessage(new FormMessage("push-mfa-cancelled-message"));
-                return;
-            }
-            IssuedChallengeResult issued = issueChallengeFromAction(
-                    context, challengeStore, loginChallengeTtl, maxPendingChallenges, rootSessionId);
-            if (issued != null) {
-                showWaitingForm(context, issued.challenge(), issued.credentialData(), issued.confirmToken());
+            } else {
+                retryChallenge(context, store);
             }
             return;
         }
 
         if (cancelRequested) {
-            challengeStore.resolve(challengeId, PushChallengeStatus.DENIED);
-            challengeStore.remove(challengeId);
+            store.resolve(challengeId, PushChallengeStatus.DENIED);
+            store.remove(challengeId);
             ChallengeNoteHelper.clear(authSession);
             context.forkWithErrorMessage(new FormMessage("push-mfa-cancelled-message"));
             return;
         }
 
         if (refreshRequested && current.getStatus() == PushChallengeStatus.PENDING) {
-            challengeStore.removeWithoutIndex(challengeId);
+            store.removeWithoutIndex(challengeId);
             ChallengeNoteHelper.clear(authSession);
-
-            PendingChallengeGuard guard = new PendingChallengeGuard(challengeStore);
-            PendingCheckResult pending = guard.cleanAndCount(
-                    context.getRealm().getId(),
-                    context.getUser().getId(),
-                    rootSessionId,
-                    challengeId,
-                    ch -> isAuthenticationSessionActive(context, ch),
-                    ch -> resolveCredentialForChallenge(context.getUser(), ch) != null);
-            if (pending.pendingCount() >= maxPendingChallenges) {
-                context.failureChallenge(
-                        AuthenticationFlowError.GENERIC_AUTHENTICATION_ERROR,
-                        context.form()
-                                .setError("push-mfa-too-many-challenges")
-                                .createErrorPage(Response.Status.TOO_MANY_REQUESTS));
-                return;
-            }
-
-            List<CredentialModel> credentials = PushCredentialService.getActiveCredentials(context.getUser());
-            if (credentials.isEmpty()) {
-                context.success();
-                return;
-            }
-            CredentialModel credential = credentials.get(0);
-            PushCredentialData credentialData = PushCredentialService.readCredentialData(credential);
-            if (credentialData == null || credentialData.getCredentialId() == null) {
-                context.success();
-                return;
-            }
-
-            ClientModel client = authSession.getClient();
-            String clientId = client != null ? client.getClientId() : null;
-            IssuedChallenge issued = issueNewChallenge(
-                    context, challengeStore, credentialData, credential, loginChallengeTtl, clientId, rootSessionId);
-            showWaitingForm(context, issued.challenge(), credentialData, issued.confirmToken());
+            retryChallenge(context, store);
             return;
         }
-        switch (current.getStatus()) {
+
+        handleStatus(context, store, current);
+    }
+
+    private void handleStatus(AuthenticationFlowContext context, PushChallengeStore store, PushChallenge ch) {
+        AuthenticationSessionModel authSession = context.getAuthenticationSession();
+        switch (ch.getStatus()) {
             case APPROVED -> {
-                challengeStore.remove(challengeId);
+                store.remove(ch.getId());
                 ChallengeNoteHelper.clear(authSession);
                 context.success();
             }
             case DENIED -> {
-                challengeStore.remove(challengeId);
+                store.remove(ch.getId());
                 ChallengeNoteHelper.clear(authSession);
-                context.failureChallenge(
-                        AuthenticationFlowError.INVALID_CREDENTIALS,
-                        context.form().setError("push-mfa-denied").createForm("push-denied.ftl"));
+                showDeniedError(context);
             }
             case EXPIRED -> {
-                challengeStore.remove(challengeId);
+                store.remove(ch.getId());
                 ChallengeNoteHelper.clear(authSession);
-                context.failureChallenge(
-                        AuthenticationFlowError.EXPIRED_CODE,
-                        context.form().setError("push-mfa-expired").createForm("push-expired.ftl"));
+                showExpiredError(context);
             }
-            case PENDING -> {
-                CredentialModel credentialModel = resolveCredentialForChallenge(context.getUser(), current);
-                PushCredentialData credentialData =
-                        credentialModel == null ? null : PushCredentialService.readCredentialData(credentialModel);
-                String clientId = current.getClientId();
-                String clientDisplayName = resolveClientDisplayName(context, clientId);
-                String confirmToken =
-                        (credentialModel == null || credentialData == null || credentialData.getCredentialId() == null)
-                                ? null
-                                : PushConfirmTokenBuilder.build(
-                                        context.getSession(),
-                                        context.getRealm(),
-                                        credentialData.getCredentialId(),
-                                        current.getId(),
-                                        current.getExpiresAt(),
-                                        context.getUriInfo().getBaseUri());
-
-                showWaitingForm(context, current, credentialData, confirmToken);
-            }
-            default -> throw new IllegalStateException("Unhandled push challenge status: " + current.getStatus());
+            case PENDING -> showWaitingFormForExisting(context, ch);
         }
+    }
+
+    private void retryChallenge(AuthenticationFlowContext context, PushChallengeStore store) {
+        if (checkPendingChallengeLimit(context, null)) {
+            return;
+        }
+        CredentialAndData cred = resolveCredential(context.getUser());
+        if (cred == null) {
+            context.success();
+            return;
+        }
+        issueAndShowChallenge(context, cred.credential, cred.data);
+    }
+
+    private void issueAndShowChallenge(
+            AuthenticationFlowContext context, CredentialModel cred, PushCredentialData data) {
+        PushChallengeStore store = new PushChallengeStore(context.getSession());
+        Duration ttl = AuthenticatorConfigHelper.parseDurationSeconds(
+                context.getAuthenticatorConfig(),
+                PushMfaConstants.LOGIN_CHALLENGE_TTL_CONFIG,
+                PushMfaConstants.DEFAULT_LOGIN_CHALLENGE_TTL);
+        ClientModel client = context.getAuthenticationSession().getClient();
+        String clientId = client != null ? client.getClientId() : null;
+        String rootSessionId = getRootSessionId(context);
+
+        ChallengeIssuer.IssuedChallenge issued =
+                ChallengeIssuer.issue(context, store, data, cred, ttl, clientId, rootSessionId);
+        showWaitingForm(context, issued.challenge(), data, issued.confirmToken());
+    }
+
+    private void showWaitingFormForExisting(AuthenticationFlowContext context, PushChallenge ch) {
+        CredentialModel cred = resolveCredentialForChallenge(context.getUser(), ch);
+        PushCredentialData data = cred != null ? PushCredentialService.readCredentialData(cred) : null;
+        String confirmToken = (data != null && data.getCredentialId() != null)
+                ? PushConfirmTokenBuilder.build(
+                        context.getSession(),
+                        context.getRealm(),
+                        data.getCredentialId(),
+                        ch.getId(),
+                        ch.getExpiresAt(),
+                        context.getUriInfo().getBaseUri())
+                : null;
+        showWaitingForm(context, ch, data, confirmToken);
+    }
+
+    private void showWaitingForm(
+            AuthenticationFlowContext context, PushChallenge ch, PushCredentialData data, String token) {
+        String appLink = AuthenticatorConfigHelper.resolveAppUniversalLink(context.getAuthenticatorConfig(), "confirm");
+        String sameDeviceToken = ChallengeUrlBuilder.buildSameDeviceToken(context, ch, data, token);
+        String sameDeviceUri = ChallengeUrlBuilder.buildPushUri(appLink, sameDeviceToken);
+        context.challenge(createForm(context.form(), context, ch, data, token, appLink, sameDeviceUri));
+    }
+
+    protected Response createForm(
+            LoginFormsProvider form,
+            AuthenticationFlowContext context,
+            PushChallenge ch,
+            PushCredentialData data,
+            String token,
+            String appLink,
+            String sameDeviceUri) {
+        form.setAttribute("challengeId", ch != null ? ch.getId() : null)
+                .setAttribute("pushUsername", context.getUser().getUsername())
+                .setAttribute("pushConfirmToken", token)
+                .setAttribute("pushCredentialId", data != null ? data.getCredentialId() : null)
+                .setAttribute("pushMessageVersion", String.valueOf(PushMfaConstants.PUSH_MESSAGE_VERSION))
+                .setAttribute("pushMessageType", String.valueOf(PushMfaConstants.PUSH_MESSAGE_TYPE))
+                .setAttribute("appUniversalLink", appLink)
+                .setAttribute("pushSameDeviceUri", sameDeviceUri);
+
+        if (ch != null
+                && ch.getUserVerificationMode() != PushChallenge.UserVerificationMode.NONE
+                && !StringUtil.isBlank(ch.getUserVerificationValue())) {
+            form.setAttribute(
+                            "pushUserVerificationMode",
+                            ch.getUserVerificationMode().name())
+                    .setAttribute("pushUserVerificationValue", ch.getUserVerificationValue());
+        }
+        String watchUrl = ChallengeUrlBuilder.buildWatchUrl(context, ch);
+        if (watchUrl != null) {
+            form.setAttribute("pushChallengeWatchUrl", watchUrl);
+        }
+        return form.createForm("push-wait.ftl");
+    }
+
+    private boolean checkPendingChallengeLimit(AuthenticationFlowContext context, String excludeId) {
+        PushChallengeStore store = new PushChallengeStore(context.getSession());
+        int maxPending = AuthenticatorConfigHelper.parsePositiveInt(
+                context.getAuthenticatorConfig(),
+                PushMfaConstants.MAX_PENDING_AUTH_CHALLENGES_CONFIG,
+                PushMfaConstants.DEFAULT_MAX_PENDING_AUTH_CHALLENGES);
+        String rootSessionId = getRootSessionId(context);
+
+        PendingChallengeGuard guard = new PendingChallengeGuard(store);
+        var pending = guard.cleanAndCount(
+                context.getRealm().getId(),
+                context.getUser().getId(),
+                rootSessionId,
+                excludeId,
+                ch -> isAuthSessionActive(context, ch),
+                ch -> resolveCredentialForChallenge(context.getUser(), ch) != null);
+
+        if (pending.pendingCount() >= maxPending) {
+            context.failureChallenge(
+                    AuthenticationFlowError.GENERIC_AUTHENTICATION_ERROR,
+                    context.form()
+                            .setError("push-mfa-too-many-challenges")
+                            .createErrorPage(Response.Status.TOO_MANY_REQUESTS));
+            return true;
+        }
+        return false;
+    }
+
+    private boolean isExpectedChallenge(AuthenticationFlowContext context, PushChallenge ch) {
+        if (ch == null) {
+            return false;
+        }
+        if (!context.getRealm().getId().equals(ch.getRealmId())) {
+            return false;
+        }
+        if (!context.getUser().getId().equals(ch.getUserId())) {
+            return false;
+        }
+        if (ch.getType() != PushChallenge.Type.AUTHENTICATION) {
+            return false;
+        }
+        String rootSessionId = getRootSessionId(context);
+        String challengeRoot = ch.getRootSessionId();
+        if (!StringUtil.isBlank(challengeRoot) && !StringUtil.isBlank(rootSessionId)) {
+            return challengeRoot.equals(rootSessionId);
+        }
+        return true;
+    }
+
+    private boolean isAuthSessionActive(AuthenticationFlowContext context, PushChallenge ch) {
+        String rootSession = ch.getRootSessionId();
+        if (StringUtil.isBlank(rootSession)) {
+            return true;
+        }
+        return context.getSession()
+                        .authenticationSessions()
+                        .getRootAuthenticationSession(context.getRealm(), rootSession)
+                != null;
+    }
+
+    private record CredentialAndData(CredentialModel credential, PushCredentialData data) {}
+
+    private CredentialAndData resolveCredential(UserModel user) {
+        List<CredentialModel> credentials = PushCredentialService.getActiveCredentials(user);
+        if (credentials.isEmpty()) {
+            return null;
+        }
+        CredentialModel cred = credentials.get(0);
+        PushCredentialData data = PushCredentialService.readCredentialData(cred);
+        if (data == null || data.getCredentialId() == null) {
+            return null;
+        }
+        return new CredentialAndData(cred, data);
+    }
+
+    private CredentialModel resolveCredentialForChallenge(UserModel user, PushChallenge ch) {
+        if (ch.getCredentialId() != null) {
+            CredentialModel byId = PushCredentialService.getCredentialById(user, ch.getCredentialId());
+            if (byId != null) {
+                return byId;
+            }
+        }
+        List<CredentialModel> credentials = PushCredentialService.getActiveCredentials(user);
+        return credentials.isEmpty() ? null : credentials.get(0);
+    }
+
+    private String getRootSessionId(AuthenticationFlowContext context) {
+        var parent = context.getAuthenticationSession().getParentSession();
+        return parent != null ? parent.getId() : null;
+    }
+
+    private void showError(AuthenticationFlowContext context, String errorKey, Response.Status status) {
+        context.failureChallenge(
+                AuthenticationFlowError.INTERNAL_ERROR,
+                context.form().setError(errorKey).createErrorPage(status));
+    }
+
+    private void showExpiredError(AuthenticationFlowContext context) {
+        context.failureChallenge(
+                AuthenticationFlowError.EXPIRED_CODE,
+                context.form().setError("push-mfa-expired").createForm("push-expired.ftl"));
+    }
+
+    private void showDeniedError(AuthenticationFlowContext context) {
+        context.failureChallenge(
+                AuthenticationFlowError.INVALID_CREDENTIALS,
+                context.form().setError("push-mfa-denied").createForm("push-denied.ftl"));
     }
 
     @Override
@@ -322,488 +347,14 @@ public class PushMfaAuthenticator implements Authenticator {
         if (!PushCredentialService.getActiveCredentials(user).isEmpty()) {
             return;
         }
-
-        if (!shouldAutoAddRequiredAction(session, realm)) {
+        if (!RequiredActionHelper.shouldAutoAddRequiredAction(session, realm)) {
             return;
         }
-
-        boolean alreadyRequired = user.getRequiredActionsStream().anyMatch(PushMfaConstants.REQUIRED_ACTION_ID::equals);
-        if (!alreadyRequired) {
+        if (user.getRequiredActionsStream().noneMatch(PushMfaConstants.REQUIRED_ACTION_ID::equals)) {
             user.addRequiredAction(PushMfaConstants.REQUIRED_ACTION_ID);
         }
     }
 
-    protected boolean shouldAutoAddRequiredAction(KeycloakSession session, RealmModel realm) {
-        AuthenticatorConfigModel config = findAuthenticatorConfig(session, realm);
-        if (config == null || config.getConfig() == null) {
-            return true;
-        }
-        String value = config.getConfig().get(PushMfaConstants.AUTO_ADD_REQUIRED_ACTION_CONFIG);
-        if (StringUtil.isBlank(value)) {
-            return true;
-        }
-        return Boolean.parseBoolean(value.trim());
-    }
-
-    protected AuthenticatorConfigModel findAuthenticatorConfig(KeycloakSession session, RealmModel realm) {
-        for (AuthenticationFlowModel flow : realm.getAuthenticationFlowsStream().toList()) {
-            for (AuthenticationExecutionModel execution :
-                    realm.getAuthenticationExecutionsStream(flow.getId()).toList()) {
-                if (PushMfaConstants.PROVIDER_ID.equals(execution.getAuthenticator())) {
-                    String configId = execution.getAuthenticatorConfig();
-                    if (configId != null) {
-                        return realm.getAuthenticatorConfigById(configId);
-                    }
-                }
-            }
-        }
-        return null;
-    }
-
     @Override
-    public void close() {
-        // no-op
-    }
-
-    private CredentialModel resolveCredentialForChallenge(UserModel user, PushChallenge challenge) {
-        if (challenge.getCredentialId() != null) {
-            CredentialModel byId = PushCredentialService.getCredentialById(user, challenge.getCredentialId());
-            if (byId != null) {
-                return byId;
-            }
-            LOG.warnf(
-                    "Credential %s referenced by challenge %s not found for user %s",
-                    challenge.getCredentialId(), challenge.getId(), user.getId());
-        }
-        List<CredentialModel> credentials = PushCredentialService.getActiveCredentials(user);
-        return credentials.isEmpty() ? null : credentials.get(0);
-    }
-
-    private boolean isAuthenticationSessionActive(AuthenticationFlowContext context, PushChallenge challenge) {
-        String rootSession = challenge.getRootSessionId();
-        if (StringUtil.isBlank(rootSession)) {
-            return true;
-        }
-        return context.getSession()
-                        .authenticationSessions()
-                        .getRootAuthenticationSession(context.getRealm(), rootSession)
-                != null;
-    }
-
-    private boolean isExpectedChallenge(
-            AuthenticationFlowContext context, PushChallenge challenge, String rootSessionId) {
-        if (challenge == null || context.getUser() == null || context.getRealm() == null) {
-            return false;
-        }
-        if (!context.getRealm().getId().equals(challenge.getRealmId())) {
-            return false;
-        }
-        if (!context.getUser().getId().equals(challenge.getUserId())) {
-            return false;
-        }
-        if (challenge.getType() != PushChallenge.Type.AUTHENTICATION) {
-            return false;
-        }
-        String challengeRoot = challenge.getRootSessionId();
-        if (!StringUtil.isBlank(challengeRoot) && !StringUtil.isBlank(rootSessionId)) {
-            return challengeRoot.equals(rootSessionId);
-        }
-        return true;
-    }
-
-    private record IssuedChallengeResult(
-            PushChallenge challenge, PushCredentialData credentialData, String confirmToken) {}
-
-    private IssuedChallengeResult issueChallengeFromAction(
-            AuthenticationFlowContext context,
-            PushChallengeStore challengeStore,
-            Duration loginChallengeTtl,
-            int maxPendingChallenges,
-            String rootSessionId) {
-        PendingChallengeGuard guard = new PendingChallengeGuard(challengeStore);
-        PendingCheckResult pending = guard.cleanAndCount(
-                context.getRealm().getId(),
-                context.getUser().getId(),
-                rootSessionId,
-                null,
-                challenge -> isAuthenticationSessionActive(context, challenge),
-                challenge -> resolveCredentialForChallenge(context.getUser(), challenge) != null);
-
-        if (pending.pendingCount() >= maxPendingChallenges) {
-            context.failureChallenge(
-                    AuthenticationFlowError.GENERIC_AUTHENTICATION_ERROR,
-                    context.form()
-                            .setError("push-mfa-too-many-challenges")
-                            .createErrorPage(Response.Status.TOO_MANY_REQUESTS));
-            return null;
-        }
-
-        List<CredentialModel> credentials = PushCredentialService.getActiveCredentials(context.getUser());
-        if (credentials.isEmpty()) {
-            context.success();
-            return null;
-        }
-
-        CredentialModel credential = credentials.get(0);
-        PushCredentialData credentialData = PushCredentialService.readCredentialData(credential);
-        if (credentialData == null || credentialData.getCredentialId() == null) {
-            context.success();
-            return null;
-        }
-
-        ClientModel client = context.getAuthenticationSession().getClient();
-        String clientId = client != null ? client.getClientId() : null;
-
-        IssuedChallenge issued = issueNewChallenge(
-                context, challengeStore, credentialData, credential, loginChallengeTtl, clientId, rootSessionId);
-        return new IssuedChallengeResult(issued.challenge(), credentialData, issued.confirmToken());
-    }
-
-    private IssuedChallenge issueNewChallenge(
-            AuthenticationFlowContext context,
-            PushChallengeStore challengeStore,
-            PushCredentialData credentialData,
-            CredentialModel credential,
-            Duration challengeTtl,
-            String clientId,
-            String rootSessionId) {
-        String watchSecret = KeycloakModelUtils.generateId();
-        PushChallenge.UserVerificationMode userVerificationMode =
-                resolveUserVerificationMode(context.getAuthenticatorConfig());
-        String userVerificationValue = null;
-        List<String> userVerificationOptions = List.of();
-        switch (userVerificationMode) {
-            case NUMBER_MATCH -> {
-                userVerificationOptions = generateNumberMatchOptions();
-                userVerificationValue = selectNumberMatchValue(userVerificationOptions);
-            }
-            case PIN -> userVerificationValue = generatePin(resolvePinLength(context.getAuthenticatorConfig()));
-            case NONE -> {
-                // no user verification
-            }
-        }
-        PushChallenge pushChallenge = challengeStore.create(
-                context.getRealm().getId(),
-                context.getUser().getId(),
-                new byte[0],
-                PushChallenge.Type.AUTHENTICATION,
-                challengeTtl,
-                credential.getId(),
-                clientId,
-                watchSecret,
-                rootSessionId,
-                userVerificationMode,
-                userVerificationValue,
-                userVerificationOptions);
-
-        AuthenticationSessionModel authSession = context.getAuthenticationSession();
-        ChallengeNoteHelper.storeChallengeId(authSession, pushChallenge.getId());
-        ChallengeNoteHelper.storeWatchSecret(authSession, watchSecret);
-
-        String confirmToken = PushConfirmTokenBuilder.build(
-                context.getSession(),
-                context.getRealm(),
-                credentialData.getCredentialId(),
-                pushChallenge.getId(),
-                pushChallenge.getExpiresAt(),
-                context.getUriInfo().getBaseUri());
-
-        LOG.debugf(
-                "Push message prepared {version=%d,type=%d,credentialId=%s}",
-                PushMfaConstants.PUSH_MESSAGE_VERSION,
-                PushMfaConstants.PUSH_MESSAGE_TYPE,
-                credentialData.getCredentialId());
-
-        PushNotificationService.notifyDevice(
-                context.getSession(),
-                context.getRealm(),
-                context.getUser(),
-                clientId,
-                confirmToken,
-                credentialData.getCredentialId(),
-                pushChallenge.getId(),
-                credentialData.getPushProviderType(),
-                credentialData.getPushProviderId());
-
-        return new IssuedChallenge(pushChallenge, confirmToken);
-    }
-
-    private void showWaitingForm(
-            AuthenticationFlowContext context,
-            PushChallenge challenge,
-            PushCredentialData credentialData,
-            String confirmToken) {
-        String appUniversalLink = resolveAppUniversalLink(context);
-        String sameDeviceToken = resolveSameDeviceToken(context, challenge, credentialData, confirmToken);
-        String sameDeviceUri = buildPushUri(appUniversalLink, sameDeviceToken);
-
-        LoginFormsProvider form = context.form();
-        context.challenge(
-                createForm(form, context, challenge, credentialData, confirmToken, appUniversalLink, sameDeviceUri));
-    }
-
-    /**
-     * Build the login challenge waiting form.
-     *
-     * Overridable to customize the form before rendering.
-     *
-     * @param form
-     * @param context
-     * @param challenge
-     * @param credentialData
-     * @param confirmToken
-     * @param appUniversalLink
-     * @param sameDeviceUri
-     * @return
-     */
-    protected Response createForm(
-            LoginFormsProvider form,
-            AuthenticationFlowContext context,
-            PushChallenge challenge,
-            PushCredentialData credentialData,
-            String confirmToken,
-            String appUniversalLink,
-            String sameDeviceUri) {
-        String challengeId = challenge != null ? challenge.getId() : null;
-        form.setAttribute("challengeId", challengeId)
-                .setAttribute("pushUsername", context.getUser().getUsername())
-                .setAttribute("pushConfirmToken", confirmToken)
-                .setAttribute("pushCredentialId", credentialData != null ? credentialData.getCredentialId() : null)
-                .setAttribute("pushMessageVersion", String.valueOf(PushMfaConstants.PUSH_MESSAGE_VERSION))
-                .setAttribute("pushMessageType", String.valueOf(PushMfaConstants.PUSH_MESSAGE_TYPE))
-                .setAttribute("appUniversalLink", appUniversalLink)
-                .setAttribute("pushSameDeviceUri", sameDeviceUri);
-
-        if (challenge != null
-                && challenge.getUserVerificationMode() != PushChallenge.UserVerificationMode.NONE
-                && !StringUtil.isBlank(challenge.getUserVerificationValue())) {
-            form.setAttribute(
-                            "pushUserVerificationMode",
-                            challenge.getUserVerificationMode().name())
-                    .setAttribute("pushUserVerificationValue", challenge.getUserVerificationValue());
-        }
-
-        String watchUrl = buildChallengeWatchUrl(context, challenge);
-        if (watchUrl != null) {
-            form.setAttribute("pushChallengeWatchUrl", watchUrl);
-        }
-
-        return form.createForm("push-wait.ftl");
-    }
-
-    private String buildChallengeWatchUrl(AuthenticationFlowContext context, PushChallenge challenge) {
-        if (challenge == null) {
-            return null;
-        }
-        String challengeId = challenge.getId();
-        String watchSecret = challenge.getWatchSecret();
-        if (StringUtil.isBlank(watchSecret)) {
-            AuthenticationSessionModel authSession = context.getAuthenticationSession();
-            if (authSession != null) {
-                watchSecret = ChallengeNoteHelper.readWatchSecret(authSession);
-            }
-        }
-        if (StringUtil.isBlank(challengeId) || StringUtil.isBlank(watchSecret)) {
-            return null;
-        }
-        return context.getUriInfo()
-                .getBaseUriBuilder()
-                .path("realms")
-                .path(context.getRealm().getName())
-                .path("push-mfa")
-                .path("login")
-                .path("challenges")
-                .path(challengeId)
-                .path("events")
-                .queryParam("secret", watchSecret)
-                .build()
-                .toString();
-    }
-
-    private String resolveClientDisplayName(AuthenticationFlowContext context, String clientId) {
-        if (clientId == null) {
-            return null;
-        }
-        ClientModel byClientId = context.getSession().clients().getClientByClientId(context.getRealm(), clientId);
-        return extractClientDisplayName(byClientId);
-    }
-
-    private String extractClientDisplayName(ClientModel client) {
-        if (client == null) {
-            return null;
-        }
-        String name = client.getName();
-        if (StringUtil.isBlank(name)) {
-            return null;
-        }
-        return name;
-    }
-
-    private PushChallenge.UserVerificationMode resolveUserVerificationMode(AuthenticatorConfigModel config) {
-        if (config == null || config.getConfig() == null) {
-            return PushChallenge.UserVerificationMode.NONE;
-        }
-        String rawValue = config.getConfig().get(PushMfaConstants.USER_VERIFICATION_CONFIG);
-        if (StringUtil.isBlank(rawValue)) {
-            return PushChallenge.UserVerificationMode.NONE;
-        }
-        String normalized = rawValue.trim().toLowerCase();
-        return switch (normalized) {
-            case PushMfaConstants.USER_VERIFICATION_NUMBER_MATCH, "number_match", "numbermatch" -> PushChallenge
-                    .UserVerificationMode.NUMBER_MATCH;
-            case PushMfaConstants.USER_VERIFICATION_PIN -> PushChallenge.UserVerificationMode.PIN;
-            default -> PushChallenge.UserVerificationMode.NONE;
-        };
-    }
-
-    List<String> generateNumberMatchOptions() {
-        List<String> values = new ArrayList<>(NUMBER_MATCH_VALUES);
-        Collections.shuffle(values, RANDOM);
-        return List.copyOf(values.subList(0, 3));
-    }
-
-    String selectNumberMatchValue(List<String> options) {
-        if (options == null || options.isEmpty()) {
-            return null;
-        }
-        return options.get(RANDOM.nextInt(options.size()));
-    }
-
-    int resolvePinLength(AuthenticatorConfigModel config) {
-        int defaultValue = PushMfaConstants.DEFAULT_USER_VERIFICATION_PIN_LENGTH;
-        if (config == null || config.getConfig() == null) {
-            return defaultValue;
-        }
-        String rawValue = config.getConfig().get(PushMfaConstants.USER_VERIFICATION_PIN_LENGTH_CONFIG);
-        if (StringUtil.isBlank(rawValue)) {
-            return defaultValue;
-        }
-        try {
-            int configured = Integer.parseInt(rawValue.trim());
-            if (configured <= 0) {
-                return defaultValue;
-            }
-            return Math.min(configured, 12);
-        } catch (NumberFormatException ex) {
-            return defaultValue;
-        }
-    }
-
-    private String generatePin(int length) {
-        return generatePin(length, RANDOM);
-    }
-
-    String generatePin(int length, Random random) {
-        int effectiveLength = Math.max(1, length);
-        StringBuilder builder = new StringBuilder(effectiveLength);
-        for (int i = 0; i < effectiveLength; i++) {
-            builder.append(random.nextInt(10));
-        }
-        return builder.toString();
-    }
-
-    private Duration parseDurationSeconds(AuthenticatorConfigModel config, String key, Duration defaultValue) {
-        if (config == null || config.getConfig() == null) {
-            return defaultValue;
-        }
-        String value = config.getConfig().get(key);
-        if (StringUtil.isBlank(value)) {
-            return defaultValue;
-        }
-        try {
-            long seconds = Long.parseLong(value.trim());
-            return seconds > 0 ? Duration.ofSeconds(seconds) : defaultValue;
-        } catch (NumberFormatException ex) {
-            return defaultValue;
-        }
-    }
-
-    private int parsePositiveInt(AuthenticatorConfigModel config, String key, int defaultValue) {
-        if (config == null || config.getConfig() == null) {
-            return defaultValue;
-        }
-        String value = config.getConfig().get(key);
-        if (StringUtil.isBlank(value)) {
-            return defaultValue;
-        }
-        try {
-            int parsed = Integer.parseInt(value.trim());
-            return parsed > 0 ? parsed : defaultValue;
-        } catch (NumberFormatException ex) {
-            return defaultValue;
-        }
-    }
-
-    private String resolveAppUniversalLink(AuthenticationFlowContext context) {
-        AuthenticatorConfigModel config = context.getAuthenticatorConfig();
-        if (config == null || config.getConfig() == null) {
-            return PushMfaConstants.DEFAULT_APP_UNIVERSAL_LINK + "confirm";
-        }
-        String value = config.getConfig().get(PushMfaConstants.LOGIN_APP_UNIVERSAL_LINK_CONFIG);
-        if (StringUtil.isBlank(value)) {
-            value = config.getConfig().get(PushMfaConstants.APP_UNIVERSAL_LINK_CONFIG);
-        }
-        if (StringUtil.isBlank(value)) {
-            return PushMfaConstants.DEFAULT_APP_UNIVERSAL_LINK + "confirm";
-        }
-        return value;
-    }
-
-    String resolveSameDeviceToken(
-            AuthenticationFlowContext context,
-            PushChallenge challenge,
-            PushCredentialData credentialData,
-            String confirmToken) {
-        if (StringUtil.isBlank(confirmToken)
-                || !shouldIncludeUserVerificationInSameDeviceToken(context.getAuthenticatorConfig())
-                || challenge == null) {
-            return confirmToken;
-        }
-        String userVerification = challenge.getUserVerificationValue();
-        if (StringUtil.isBlank(userVerification)) {
-            return confirmToken;
-        }
-        return PushConfirmTokenBuilder.build(
-                context.getSession(),
-                context.getRealm(),
-                credentialData.getCredentialId(),
-                challenge.getId(),
-                challenge.getExpiresAt(),
-                context.getUriInfo().getBaseUri(),
-                userVerification);
-    }
-
-    private boolean shouldIncludeUserVerificationInSameDeviceToken(AuthenticatorConfigModel config) {
-        return parseBoolean(config, PushMfaConstants.SAME_DEVICE_INCLUDE_USER_VERIFICATION_CONFIG, false);
-    }
-
-    private boolean parseBoolean(AuthenticatorConfigModel config, String key, boolean defaultValue) {
-        if (config == null || config.getConfig() == null) {
-            return defaultValue;
-        }
-        String value = config.getConfig().get(key);
-        if (StringUtil.isBlank(value)) {
-            return defaultValue;
-        }
-        return Boolean.parseBoolean(value.trim());
-    }
-
-    private String buildPushUri(String appUniversalLink, String token) {
-        if (StringUtil.isBlank(token)) {
-            return null;
-        }
-        if (StringUtil.isBlank(appUniversalLink)) {
-            return token;
-        }
-        try {
-            URIBuilder uriBuilder = new URIBuilder(appUniversalLink);
-            uriBuilder.addParameter("token", token);
-            return uriBuilder.toString();
-        } catch (URISyntaxException e) {
-            // noop - fallback to just the token
-        }
-        return token;
-    }
-
-    private record IssuedChallenge(PushChallenge challenge, String confirmToken) {}
+    public void close() {}
 }

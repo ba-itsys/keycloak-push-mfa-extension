@@ -1,5 +1,6 @@
 package de.arbeitsagentur.keycloak.push.requiredaction;
 
+import de.arbeitsagentur.keycloak.push.auth.ChallengeUrlBuilder;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallenge;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStatus;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStore;
@@ -8,10 +9,8 @@ import de.arbeitsagentur.keycloak.push.token.PushEnrollmentTokenBuilder;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
-import java.net.URISyntaxException;
 import java.security.SecureRandom;
 import java.time.Duration;
-import org.apache.http.client.utils.URIBuilder;
 import org.keycloak.authentication.CredentialRegistrator;
 import org.keycloak.authentication.InitiatedActionSupport;
 import org.keycloak.authentication.RequiredActionContext;
@@ -120,7 +119,8 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Cr
         form.setAttribute("pushUsername", context.getUser().getUsername());
         form.setAttribute("enrollmentToken", enrollmentToken);
         form.setAttribute("qrPayload", enrollmentToken);
-        form.setAttribute("pushQrUri", buildPushUri(resolveAppUniversalLink(context), enrollmentToken));
+        form.setAttribute(
+                "pushQrUri", ChallengeUrlBuilder.buildPushUri(resolveAppUniversalLink(context), enrollmentToken));
         form.setAttribute("enrollChallengeId", challenge.getId());
         String eventsUrl = buildEnrollmentEventsUrl(context, challenge);
         if (eventsUrl != null) {
@@ -192,20 +192,6 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Cr
             authSession.setAuthNote(PushMfaConstants.ENROLL_SSE_TOKEN_NOTE, ensured.getWatchSecret());
         }
         return ensured;
-    }
-
-    private String buildPushUri(String appUniversalLink, String enrollmentToken) {
-        if (StringUtil.isBlank(appUniversalLink)) {
-            return enrollmentToken;
-        }
-        try {
-            URIBuilder uriBuilder = new URIBuilder(appUniversalLink);
-            uriBuilder.addParameter("token", enrollmentToken);
-            return uriBuilder.toString();
-        } catch (URISyntaxException e) {
-            // noop - fallback to just the token
-        }
-        return enrollmentToken;
     }
 
     private String buildEnrollmentEventsUrl(RequiredActionContext context, PushChallenge challenge) {

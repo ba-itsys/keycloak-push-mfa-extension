@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.2](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.3.1...v1.3.2) (2026-01-13)
+
+
+### Documentation
+
+* add openApi spec for PushMfaResource ([#60](https://github.com/ba-itsys/keycloak-push-mfa-extension/issues/60)) ([a4403bc](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/a4403bc6c71917c70d4dc24dd8bd430ce7c69e7e))
+
 ## [1.3.1](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.3.0...v1.3.1) (2026-01-08)
 
 

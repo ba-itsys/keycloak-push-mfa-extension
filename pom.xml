@@ -121,6 +121,20 @@
 
   <build>
     <finalName>keycloak-push-mfa-extension</finalName>
+
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+      </resource>
+      <resource>
+        <targetPath>documentation</targetPath>
+        <directory>documentation</directory>
+      </resource>
+      <resource>
+        <targetPath>mock</targetPath>
+        <directory>mock</directory>
+      </resource>
+    </resources>
     <pluginManagement>
       <plugins>
         <!-- Attach sources JAR -->
@@ -271,6 +285,19 @@
     <profile>
       <id>publish</id>
       <build>
+        <resources>
+          <resource>
+            <directory>src/main/resources</directory>
+          </resource>
+          <resource>
+            <targetPath>documentation</targetPath>
+            <directory>documentation</directory>
+          </resource>
+          <resource>
+            <targetPath>mock</targetPath>
+            <directory>mock</directory>
+          </resource>
+        </resources>
         <plugins>
           <plugin>
             <groupId>org.apache.maven.plugins</groupId>

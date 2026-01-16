@@ -847,6 +847,8 @@ This folder is not part of the core Keycloak provider but is included for develo
 
 ## Setup and Usage
 
+A working mock is available in the artifact in the mock folder.
+
 ### Prerequisites
 - Node.js (compatible with @types/node 22.7.5).
 - npm for package management.

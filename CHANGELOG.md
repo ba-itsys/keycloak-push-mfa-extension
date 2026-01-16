@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.3.2...v1.4.0) (2026-01-16)
+
+
+### Bug Fixes
+
+* adds documentation ([191c969](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/191c9696cbdec2b858f5aa7ca02796d07c0b2d2f))
+
 ## [1.3.2](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.3.1...v1.3.2) (2026-01-13)
 
 

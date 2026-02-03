@@ -39,16 +39,18 @@ class PushMfaResourceUserVerificationTest {
 
     @Test
     void verifyUserVerificationRejectsPinWithoutLeadingZeros() {
-        PushMfaResource resource = buildResource();
+        KeycloakSession session = buildMockSession();
+        PushMfaResource resource = new PushMfaResource(session);
         PushChallenge challenge = buildPinChallenge("0123");
         ObjectNode payload = MAPPER.createObjectNode().put("userVerification", "123");
 
-        assertThrows(ForbiddenException.class, () -> resource.verifyUserVerification(challenge, payload));
+        assertThrows(ForbiddenException.class, () -> resource.verifyUserVerification(session, challenge, payload));
     }
 
     @Test
     void buildUserVerificationInfoForPinOmitsValue() {
-        PushMfaResource resource = buildResource();
+        KeycloakSession session = buildMockSession();
+        PushMfaResource resource = new PushMfaResource(session);
         PushChallenge challenge = buildPinChallenge("012345");
 
         PushMfaResource.UserVerificationInfo info = resource.buildUserVerificationInfo(challenge);
@@ -57,11 +59,11 @@ class PushMfaResourceUserVerificationTest {
         assertNull(info.numbers());
     }
 
-    private PushMfaResource buildResource() {
+    private KeycloakSession buildMockSession() {
         KeycloakSession session = Mockito.mock(KeycloakSession.class);
         SingleUseObjectProvider singleUse = Mockito.mock(SingleUseObjectProvider.class);
         Mockito.when(session.singleUseObjects()).thenReturn(singleUse);
-        return new PushMfaResource(session);
+        return session;
     }
 
     private PushChallenge buildPinChallenge(String pin) {

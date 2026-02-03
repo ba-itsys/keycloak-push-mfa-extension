@@ -1,0 +1,48 @@
+/*
+ * Copyright 2026 Bundesagentur für Arbeit
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package de.arbeitsagentur.keycloak.push.spi.event;
+
+import java.time.Instant;
+
+/**
+ * Base interface for all Push MFA events.
+ *
+ * <p>This is a sealed interface that permits only the specific event types
+ * defined in this package, enabling exhaustive pattern matching in Java 17+.
+ */
+public sealed interface PushMfaEvent
+        permits ChallengeCreatedEvent,
+                ChallengeAcceptedEvent,
+                ChallengeDeniedEvent,
+                ChallengeResponseInvalidEvent,
+                EnrollmentCompletedEvent,
+                KeyRotatedEvent,
+                KeyRotationDeniedEvent,
+                DpopAuthenticationFailedEvent {
+
+    /** Event type identifier for logging and routing purposes. */
+    String eventType();
+
+    /** Realm ID where the event occurred. */
+    String realmId();
+
+    /** User ID associated with the event. */
+    String userId();
+
+    /** Timestamp when the event occurred. */
+    Instant timestamp();
+}

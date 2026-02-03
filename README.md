@@ -13,6 +13,7 @@ A Keycloak extension that adds push-based multi-factor authentication, similar t
 - [Configuration Reference](#configuration-reference) — All configuration options
 - [App Implementation Notes](#app-implementation-notes) — Guide for mobile app developers
 - [Push Notification SPI](#push-notification-spi) — Implementing custom push providers
+- [Push MFA Event SPI](#push-mfa-event-spi) — Reacting to push MFA events
 - [Customizing the UI](#customizing-the-keycloak-ui) — Theme customization
 - [Security](#security-guarantees-and-mobile-obligations) — Security model and requirements
 - [Mobile Mock](#mobile-mock-for-push-mfa-enrollment-and-login) — Testing without a real mobile app
@@ -799,6 +800,135 @@ META-INF/services/de.arbeitsagentur.keycloak.push.spi.PushNotificationSenderFact
 Finally, you must store your factory id (for example, `pushProviderType=fcm`) with each credential during enrollment. The runtime resolves the sender solely from that `pushProviderType`, falling back to the built-in `log` sender if it is blank. Demo scripts keep sending `pushProviderType=log`, so they continue using the logging behavior unless you change their configuration.
 
 With these primitives an actual mobile app UI or automation can be layered on top without depending on helper shell scripts.
+
+## Push MFA Event SPI
+
+The extension provides an event SPI that allows you to react to push MFA lifecycle events. This is useful for audit logging, metrics collection, security monitoring, or triggering external workflows.
+
+### Available Events
+
+| Event | When Fired | Key Data |
+|-------|------------|----------|
+| `ChallengeCreatedEvent` | New authentication or enrollment challenge issued | `challengeId`, `challengeType`, `userId`, `clientId`, `userVerificationMode` |
+| `ChallengeAcceptedEvent` | User approved the challenge on their device | `challengeId`, `challengeType`, `userId`, `deviceId` |
+| `ChallengeDeniedEvent` | User denied the challenge on their device | `challengeId`, `challengeType`, `userId`, `deviceId` |
+| `ChallengeResponseInvalidEvent` | Response validation failed (bad signature, wrong PIN, etc.) | `challengeId`, `userId`, `reason` |
+| `EnrollmentCompletedEvent` | Device enrollment finished successfully | `challengeId`, `userId`, `credentialId`, `deviceId`, `deviceType` |
+| `KeyRotatedEvent` | Device key was successfully rotated | `userId`, `credentialId`, `deviceId` |
+| `KeyRotationDeniedEvent` | Key rotation request failed validation | `userId`, `credentialId`, `reason` |
+| `DpopAuthenticationFailedEvent` | DPoP authentication failed for device API request | `userId`, `credentialId`, `reason`, `httpMethod`, `requestPath` |
+
+All events include `realmId`, `userId` (may be null for early auth failures), and `timestamp`.
+
+### Built-in Listeners
+
+The extension ships with two default listeners that are active out of the box:
+
+#### Keycloak Event Bridge (`keycloak-event-bridge`)
+
+This listener bridges Push MFA events to Keycloak's standard event system, making them visible in:
+
+- **Keycloak Admin Console** (Events tab)
+- **Keycloak Event Store** (database, queryable via Admin API)
+- **Standard Keycloak EventListenerProviders** (for SIEM integration, webhooks, etc.)
+
+Event type mappings to Keycloak events:
+
+| Push MFA Event | Keycloak EventType | Error Code |
+|----------------|-------------------|------------|
+| `ChallengeCreatedEvent` | `CUSTOM_REQUIRED_ACTION` | - |
+| `ChallengeAcceptedEvent` | `LOGIN` | - |
+| `ChallengeDeniedEvent` | `LOGIN_ERROR` | `push_mfa_challenge_denied` |
+| `ChallengeResponseInvalidEvent` | `LOGIN_ERROR` | `push_mfa_invalid_response` |
+| `EnrollmentCompletedEvent` | `CUSTOM_REQUIRED_ACTION` | - |
+| `KeyRotatedEvent` | `UPDATE_CREDENTIAL` | - |
+| `KeyRotationDeniedEvent` | `UPDATE_CREDENTIAL_ERROR` | `push_mfa_key_rotation_denied` |
+| `DpopAuthenticationFailedEvent` | `LOGIN_ERROR` | `push_mfa_dpop_auth_failed` |
+
+All bridged events include a `push_mfa_event_type` detail with the original event type name, plus event-specific details prefixed with `push_mfa_` (e.g., `push_mfa_challenge_id`, `push_mfa_device_id`).
+
+#### Logging Listener (`log`)
+
+Logs all events at INFO level with DEBUG details. Configure Keycloak's logging to see the output:
+
+```properties
+quarkus.log.category."de.arbeitsagentur.keycloak.push.spi.event".level=DEBUG
+```
+
+### Multiple Active Listeners
+
+The Push MFA Event SPI supports multiple active listeners simultaneously. All registered listeners receive every event, wrapped in exception handling to prevent one failing listener from affecting others. This means you can:
+
+- Use the built-in Keycloak bridge for Admin Console visibility
+- Use the logging listener for debugging
+- Add your own custom listeners for metrics, webhooks, or external integrations
+
+All listeners are discovered via the standard Java ServiceLoader mechanism.
+
+### Implementing a Custom Event Listener
+
+Create a listener that implements `PushMfaEventListener`:
+
+```java
+public class MyEventListener implements PushMfaEventListener {
+
+    @Override
+    public void onEvent(PushMfaEvent event) {
+        // Called for ALL events - useful for generic logging/metrics
+        System.out.println("Event: " + event.eventType() + " user=" + event.userId());
+    }
+
+    @Override
+    public void onChallengeAccepted(ChallengeAcceptedEvent event) {
+        // Called specifically for accepted challenges
+        auditLog.info("User {} approved login from device {}",
+            event.userId(), event.deviceId());
+    }
+
+    @Override
+    public void onChallengeResponseInvalid(ChallengeResponseInvalidEvent event) {
+        // Security alert: potential attack
+        securityMonitor.alert("Invalid response for user {}: {}",
+            event.userId(), event.reason());
+    }
+
+    // Override only the events you care about - all methods have default empty implementations
+}
+```
+
+Create a matching factory:
+
+```java
+public class MyEventListenerFactory implements PushMfaEventListenerFactory {
+
+    @Override
+    public PushMfaEventListener create(KeycloakSession session) {
+        return new MyEventListener();
+    }
+
+    @Override
+    public String getId() {
+        return "my-event-listener";
+    }
+
+    // init/postInit/close can remain empty
+}
+```
+
+Register the factory via the service loader file:
+
+```
+META-INF/services/de.arbeitsagentur.keycloak.push.spi.event.PushMfaEventListenerFactory
+```
+
+Your custom listener will run alongside the built-in listeners (Keycloak event bridge and logging).
+
+### Thread Safety
+
+- Events are fired synchronously on the request thread
+- Each listener is wrapped in exception handling to prevent one failing listener from affecting others
+- Event objects are immutable Java records, safe to pass between threads
+- For heavy processing (webhooks, external APIs), implement async handling in your listener
 
 ## Customizing the Keycloak UI
 

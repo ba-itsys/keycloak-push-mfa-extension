@@ -21,12 +21,15 @@ import de.arbeitsagentur.keycloak.push.challenge.PushChallenge;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStatus;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStore;
 import de.arbeitsagentur.keycloak.push.credential.PushCredentialService;
+import de.arbeitsagentur.keycloak.push.spi.event.ChallengeCreatedEvent;
+import de.arbeitsagentur.keycloak.push.spi.event.PushMfaEventService;
 import de.arbeitsagentur.keycloak.push.token.PushEnrollmentTokenBuilder;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
 import java.security.SecureRandom;
 import java.time.Duration;
+import java.time.Instant;
 import org.keycloak.authentication.CredentialRegistrator;
 import org.keycloak.authentication.InitiatedActionSupport;
 import org.keycloak.authentication.RequiredActionContext;
@@ -180,6 +183,19 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Cr
                     watchSecret,
                     null);
             authSession.setAuthNote(PushMfaConstants.ENROLL_CHALLENGE_NOTE, challenge.getId());
+
+            PushMfaEventService.fire(
+                    context.getSession(),
+                    new ChallengeCreatedEvent(
+                            challenge.getRealmId(),
+                            challenge.getUserId(),
+                            challenge.getId(),
+                            challenge.getType(),
+                            challenge.getCredentialId(),
+                            challenge.getClientId(),
+                            challenge.getUserVerificationMode(),
+                            challenge.getExpiresAt(),
+                            Instant.now()));
         }
 
         return challenge;

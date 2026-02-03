@@ -23,6 +23,13 @@ import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStatus;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStore;
 import de.arbeitsagentur.keycloak.push.credential.PushCredentialData;
 import de.arbeitsagentur.keycloak.push.credential.PushCredentialService;
+import de.arbeitsagentur.keycloak.push.spi.event.ChallengeAcceptedEvent;
+import de.arbeitsagentur.keycloak.push.spi.event.ChallengeDeniedEvent;
+import de.arbeitsagentur.keycloak.push.spi.event.ChallengeResponseInvalidEvent;
+import de.arbeitsagentur.keycloak.push.spi.event.EnrollmentCompletedEvent;
+import de.arbeitsagentur.keycloak.push.spi.event.KeyRotatedEvent;
+import de.arbeitsagentur.keycloak.push.spi.event.KeyRotationDeniedEvent;
+import de.arbeitsagentur.keycloak.push.spi.event.PushMfaEventService;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConfig;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import de.arbeitsagentur.keycloak.push.util.PushMfaInputValidator;
@@ -166,6 +173,15 @@ public class PushMfaResource {
         PushMfaKeyUtil.ensureKeyMatchesAlgorithm(deviceKey, algorithm.name());
 
         if (!PushSignatureVerifier.verify(deviceResponse, deviceKey)) {
+            PushMfaEventService.fire(
+                    session,
+                    new ChallengeResponseInvalidEvent(
+                            challenge.getRealmId(),
+                            challenge.getUserId(),
+                            challenge.getId(),
+                            null,
+                            "Invalid enrollment token signature",
+                            Instant.now()));
             throw new ForbiddenException("Invalid enrollment token signature");
         }
 
@@ -184,6 +200,18 @@ public class PushMfaResource {
 
         PushCredentialService.createCredential(user, label, data);
         challengeStore.resolve(challenge.getId(), PushChallengeStatus.APPROVED);
+
+        PushMfaEventService.fire(
+                session,
+                new EnrollmentCompletedEvent(
+                        challenge.getRealmId(),
+                        challenge.getUserId(),
+                        challenge.getId(),
+                        data.getCredentialId(),
+                        data.getDeviceId(),
+                        data.getDeviceType(),
+                        Instant.now()));
+
         return Response.ok(Map.of("status", "enrolled")).build();
     }
 
@@ -279,6 +307,15 @@ public class PushMfaResource {
         KeyWrapper publicKey = PushMfaKeyUtil.keyWrapperFromString(data.getPublicKeyJwk());
         PushMfaKeyUtil.ensureKeyMatchesAlgorithm(publicKey, algorithm.name());
         if (!PushSignatureVerifier.verify(loginResponse, publicKey)) {
+            PushMfaEventService.fire(
+                    session,
+                    new ChallengeResponseInvalidEvent(
+                            challenge.getRealmId(),
+                            challenge.getUserId(),
+                            challenge.getId(),
+                            challenge.getCredentialId(),
+                            "Invalid authentication token signature",
+                            Instant.now()));
             throw new ForbiddenException("Invalid authentication token signature");
         }
 
@@ -292,14 +329,40 @@ public class PushMfaResource {
 
         if (PushMfaConstants.CHALLENGE_DENY.equals(tokenAction)) {
             challengeStore.resolve(challengeId, PushChallengeStatus.DENIED);
+
+            PushMfaEventService.fire(
+                    session,
+                    new ChallengeDeniedEvent(
+                            challenge.getRealmId(),
+                            challenge.getUserId(),
+                            challenge.getId(),
+                            challenge.getType(),
+                            challenge.getCredentialId(),
+                            challenge.getClientId(),
+                            data.getDeviceId(),
+                            Instant.now()));
+
             return Response.ok(Map.of("status", "denied")).build();
         }
         if (!PushMfaConstants.CHALLENGE_APPROVE.equals(tokenAction)) {
             throw new BadRequestException("Unsupported action: " + tokenAction);
         }
 
-        verifyUserVerification(challenge, payload);
+        verifyUserVerification(session, challenge, payload);
         challengeStore.resolve(challengeId, PushChallengeStatus.APPROVED);
+
+        PushMfaEventService.fire(
+                session,
+                new ChallengeAcceptedEvent(
+                        challenge.getRealmId(),
+                        challenge.getUserId(),
+                        challenge.getId(),
+                        challenge.getType(),
+                        challenge.getCredentialId(),
+                        challenge.getClientId(),
+                        data.getDeviceId(),
+                        Instant.now()));
+
         return Response.ok(Map.of("status", "approved")).build();
     }
 
@@ -376,33 +439,56 @@ public class PushMfaResource {
             throw new BadRequestException("Request body required");
         }
         DpopAuthenticator.DeviceAssertion device = dpopAuth.authenticate(headers, uriInfo, "PUT");
-        JsonNode jwkNode = Optional.ofNullable(request.publicKeyJwk())
-                .orElseThrow(() -> new BadRequestException("Request missing publicKeyJwk"));
-        if (!jwkNode.isObject()) {
-            throw new BadRequestException("publicKeyJwk must be an object");
+
+        try {
+            JsonNode jwkNode = Optional.ofNullable(request.publicKeyJwk())
+                    .orElseThrow(() -> new BadRequestException("Request missing publicKeyJwk"));
+            if (!jwkNode.isObject()) {
+                throw new BadRequestException("publicKeyJwk must be an object");
+            }
+            PushMfaInputValidator.ensurePublicJwk(jwkNode, "publicKeyJwk");
+            String jwkJson = jwkNode.toString();
+            PushMfaInputValidator.requireMaxLength(jwkJson, CONFIG.input().maxJwkJsonLength(), "publicKeyJwk");
+
+            KeyWrapper newKey = PushMfaKeyUtil.keyWrapperFromNode(jwkNode);
+            String normalizedAlgorithm = PushMfaKeyUtil.requireAlgorithmFromJwk(jwkNode, "rotate-key request");
+            PushMfaKeyUtil.ensureKeyMatchesAlgorithm(newKey, normalizedAlgorithm);
+
+            PushCredentialData current = device.credentialData();
+            PushCredentialData updated = new PushCredentialData(
+                    jwkJson,
+                    Instant.now().toEpochMilli(),
+                    current.getDeviceType(),
+                    current.getPushProviderId(),
+                    current.getPushProviderType(),
+                    current.getCredentialId(),
+                    current.getDeviceId());
+            PushCredentialService.updateCredential(device.user(), device.credential(), updated);
+
+            PushMfaEventService.fire(
+                    session,
+                    new KeyRotatedEvent(
+                            realm().getId(),
+                            device.user().getId(),
+                            device.credential().getId(),
+                            current.getDeviceId(),
+                            Instant.now()));
+
+            LOG.infof(
+                    "Rotated device key for %s (user=%s)",
+                    current.getDeviceId(), device.user().getId());
+            return Response.ok(Map.of("status", "rotated")).build();
+        } catch (BadRequestException ex) {
+            PushMfaEventService.fire(
+                    session,
+                    new KeyRotationDeniedEvent(
+                            realm().getId(),
+                            device.user().getId(),
+                            device.credential().getId(),
+                            ex.getMessage(),
+                            Instant.now()));
+            throw ex;
         }
-        PushMfaInputValidator.ensurePublicJwk(jwkNode, "publicKeyJwk");
-        String jwkJson = jwkNode.toString();
-        PushMfaInputValidator.requireMaxLength(jwkJson, CONFIG.input().maxJwkJsonLength(), "publicKeyJwk");
-
-        KeyWrapper newKey = PushMfaKeyUtil.keyWrapperFromNode(jwkNode);
-        String normalizedAlgorithm = PushMfaKeyUtil.requireAlgorithmFromJwk(jwkNode, "rotate-key request");
-        PushMfaKeyUtil.ensureKeyMatchesAlgorithm(newKey, normalizedAlgorithm);
-
-        PushCredentialData current = device.credentialData();
-        PushCredentialData updated = new PushCredentialData(
-                jwkJson,
-                Instant.now().toEpochMilli(),
-                current.getDeviceType(),
-                current.getPushProviderId(),
-                current.getPushProviderType(),
-                current.getCredentialId(),
-                current.getDeviceId());
-        PushCredentialService.updateCredential(device.user(), device.credential(), updated);
-        LOG.infof(
-                "Rotated device key for %s (user=%s)",
-                current.getDeviceId(), device.user().getId());
-        return Response.ok(Map.of("status", "rotated")).build();
     }
 
     private RealmModel realm() {
@@ -496,7 +582,7 @@ public class PushMfaResource {
         };
     }
 
-    void verifyUserVerification(PushChallenge challenge, JsonNode payload) {
+    void verifyUserVerification(KeycloakSession session, PushChallenge challenge, JsonNode payload) {
         if (challenge == null) {
             return;
         }
@@ -522,6 +608,15 @@ public class PushMfaResource {
             throw new BadRequestException("Missing user verification");
         }
         if (!Objects.equals(expected, provided.trim())) {
+            PushMfaEventService.fire(
+                    session,
+                    new ChallengeResponseInvalidEvent(
+                            challenge.getRealmId(),
+                            challenge.getUserId(),
+                            challenge.getId(),
+                            challenge.getCredentialId(),
+                            "User verification mismatch",
+                            Instant.now()));
             throw new ForbiddenException("User verification mismatch");
         }
     }

@@ -1,1 +1,2 @@
 de.arbeitsagentur.keycloak.push.spi.PushNotificationSpi
+de.arbeitsagentur.keycloak.push.spi.event.PushMfaEventSpi

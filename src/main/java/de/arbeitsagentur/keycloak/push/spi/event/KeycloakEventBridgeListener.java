@@ -1,0 +1,229 @@
+/*
+ * Copyright 2026 Bundesagentur für Arbeit
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package de.arbeitsagentur.keycloak.push.spi.event;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.function.Consumer;
+import org.jboss.logging.Logger;
+import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
+import org.keycloak.events.Details;
+import org.keycloak.events.EventBuilder;
+import org.keycloak.events.EventType;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.RealmModel;
+import org.keycloak.models.UserModel;
+
+/**
+ * Bridges Push MFA events to Keycloak's standard event system.
+ *
+ * <p>Events become visible in Admin Console, Event Store, and standard EventListenerProviders.
+ */
+class KeycloakEventBridgeListener implements PushMfaEventListener {
+
+    private static final Logger LOG = Logger.getLogger(KeycloakEventBridgeListener.class);
+
+    static final String DETAIL_EVENT_TYPE = "push_mfa_event_type";
+    static final String DETAIL_CHALLENGE_ID = "push_mfa_challenge_id";
+    static final String DETAIL_CHALLENGE_TYPE = "push_mfa_challenge_type";
+    static final String DETAIL_CREDENTIAL_ID = "push_mfa_credential_id";
+    static final String DETAIL_DEVICE_ID = "push_mfa_device_id";
+    static final String DETAIL_DEVICE_TYPE = "push_mfa_device_type";
+    static final String DETAIL_USER_VERIFICATION = "push_mfa_user_verification";
+    static final String DETAIL_REASON = "push_mfa_reason";
+    static final String DETAIL_HTTP_METHOD = "push_mfa_http_method";
+    static final String DETAIL_REQUEST_PATH = "push_mfa_request_path";
+
+    static final String ERROR_CHALLENGE_DENIED = "push_mfa_challenge_denied";
+    static final String ERROR_INVALID_RESPONSE = "push_mfa_invalid_response";
+    static final String ERROR_KEY_ROTATION_DENIED = "push_mfa_key_rotation_denied";
+    static final String ERROR_DPOP_AUTH_FAILED = "push_mfa_dpop_auth_failed";
+
+    private final KeycloakSession session;
+    private final Consumer<KeycloakEvent> eventSender;
+
+    KeycloakEventBridgeListener(KeycloakSession session) {
+        this(session, event -> sendEvent(session, event));
+    }
+
+    /** Constructor for testing - allows injecting a custom event sender. */
+    KeycloakEventBridgeListener(KeycloakSession session, Consumer<KeycloakEvent> eventSender) {
+        this.session = session;
+        this.eventSender = eventSender;
+    }
+
+    @Override
+    public void onChallengeCreated(ChallengeCreatedEvent event) {
+        var details = new EventDetails()
+                .add(DETAIL_EVENT_TYPE, ChallengeCreatedEvent.EVENT_TYPE)
+                .add(DETAIL_CHALLENGE_ID, event.challengeId())
+                .add(DETAIL_CHALLENGE_TYPE, event.challengeType())
+                .add(DETAIL_CREDENTIAL_ID, event.credentialId())
+                .add(DETAIL_USER_VERIFICATION, event.userVerificationMode());
+
+        emit(event.realmId(), event.userId(), event.clientId(), EventType.CUSTOM_REQUIRED_ACTION, null, details);
+    }
+
+    @Override
+    public void onChallengeAccepted(ChallengeAcceptedEvent event) {
+        var details = new EventDetails()
+                .add(DETAIL_EVENT_TYPE, ChallengeAcceptedEvent.EVENT_TYPE)
+                .add(DETAIL_CHALLENGE_ID, event.challengeId())
+                .add(DETAIL_CHALLENGE_TYPE, event.challengeType())
+                .add(DETAIL_CREDENTIAL_ID, event.credentialId())
+                .add(DETAIL_DEVICE_ID, event.deviceId());
+
+        emit(event.realmId(), event.userId(), event.clientId(), EventType.LOGIN, null, details);
+    }
+
+    @Override
+    public void onChallengeDenied(ChallengeDeniedEvent event) {
+        var details = new EventDetails()
+                .add(DETAIL_EVENT_TYPE, ChallengeDeniedEvent.EVENT_TYPE)
+                .add(DETAIL_CHALLENGE_ID, event.challengeId())
+                .add(DETAIL_CHALLENGE_TYPE, event.challengeType())
+                .add(DETAIL_CREDENTIAL_ID, event.credentialId())
+                .add(DETAIL_DEVICE_ID, event.deviceId());
+
+        emit(event.realmId(), event.userId(), event.clientId(), EventType.LOGIN_ERROR, ERROR_CHALLENGE_DENIED, details);
+    }
+
+    @Override
+    public void onChallengeResponseInvalid(ChallengeResponseInvalidEvent event) {
+        var details = new EventDetails()
+                .add(DETAIL_EVENT_TYPE, ChallengeResponseInvalidEvent.EVENT_TYPE)
+                .add(DETAIL_CHALLENGE_ID, event.challengeId())
+                .add(DETAIL_CREDENTIAL_ID, event.credentialId())
+                .add(DETAIL_REASON, event.reason());
+
+        emit(event.realmId(), event.userId(), null, EventType.LOGIN_ERROR, ERROR_INVALID_RESPONSE, details);
+    }
+
+    @Override
+    public void onEnrollmentCompleted(EnrollmentCompletedEvent event) {
+        var details = new EventDetails()
+                .add(DETAIL_EVENT_TYPE, EnrollmentCompletedEvent.EVENT_TYPE)
+                .add(DETAIL_CHALLENGE_ID, event.challengeId())
+                .add(DETAIL_CREDENTIAL_ID, event.credentialId())
+                .add(DETAIL_DEVICE_ID, event.deviceId())
+                .add(DETAIL_DEVICE_TYPE, event.deviceType());
+
+        emit(event.realmId(), event.userId(), null, EventType.CUSTOM_REQUIRED_ACTION, null, details);
+    }
+
+    @Override
+    public void onKeyRotated(KeyRotatedEvent event) {
+        var details = new EventDetails()
+                .add(Details.CREDENTIAL_TYPE, PushMfaConstants.CREDENTIAL_TYPE)
+                .add(DETAIL_EVENT_TYPE, KeyRotatedEvent.EVENT_TYPE)
+                .add(DETAIL_CREDENTIAL_ID, event.credentialId())
+                .add(DETAIL_DEVICE_ID, event.deviceId());
+
+        emit(event.realmId(), event.userId(), null, EventType.UPDATE_CREDENTIAL, null, details);
+    }
+
+    @Override
+    public void onKeyRotationDenied(KeyRotationDeniedEvent event) {
+        var details = new EventDetails()
+                .add(Details.CREDENTIAL_TYPE, PushMfaConstants.CREDENTIAL_TYPE)
+                .add(DETAIL_EVENT_TYPE, KeyRotationDeniedEvent.EVENT_TYPE)
+                .add(DETAIL_CREDENTIAL_ID, event.credentialId())
+                .add(DETAIL_REASON, event.reason());
+
+        emit(event.realmId(), event.userId(), null, EventType.UPDATE_CREDENTIAL_ERROR, ERROR_KEY_ROTATION_DENIED, details);
+    }
+
+    @Override
+    public void onDpopAuthenticationFailed(DpopAuthenticationFailedEvent event) {
+        var details = new EventDetails()
+                .add(DETAIL_EVENT_TYPE, DpopAuthenticationFailedEvent.EVENT_TYPE)
+                .add(DETAIL_CREDENTIAL_ID, event.credentialId())
+                .add(DETAIL_REASON, event.reason())
+                .add(DETAIL_HTTP_METHOD, event.httpMethod())
+                .add(DETAIL_REQUEST_PATH, event.requestPath());
+
+        emit(event.realmId(), event.userId(), null, EventType.LOGIN_ERROR, ERROR_DPOP_AUTH_FAILED, details);
+    }
+
+    private void emit(String realmId, String userId, String clientId, EventType type, String error, EventDetails details) {
+        if (realmId == null) {
+            LOG.debug("Cannot emit Keycloak event: realmId is null");
+            return;
+        }
+        if (session.realms().getRealm(realmId) == null) {
+            LOG.debugf("Cannot emit Keycloak event: realm not found for id=%s", realmId);
+            return;
+        }
+        eventSender.accept(new KeycloakEvent(realmId, userId, clientId, type, error, details.map));
+    }
+
+    private static void sendEvent(KeycloakSession session, KeycloakEvent event) {
+        RealmModel realm = session.realms().getRealm(event.realmId());
+        if (realm == null) {
+            return;
+        }
+
+        EventBuilder builder = new EventBuilder(realm, session, session.getContext().getConnection());
+        builder.event(event.eventType());
+
+        event.details().forEach((key, value) -> {
+            if (value != null) {
+                builder.detail(key, value);
+            }
+        });
+
+        if (event.clientId() != null) {
+            builder.client(event.clientId());
+        }
+
+        if (event.userId() != null) {
+            UserModel user = session.users().getUserById(realm, event.userId());
+            if (user != null) {
+                builder.user(user);
+            } else {
+                builder.user(event.userId());
+            }
+        }
+
+        if (event.error() != null) {
+            builder.error(event.error());
+        } else {
+            builder.success();
+        }
+    }
+
+    /** Helper for building detail maps with null handling. */
+    private static class EventDetails {
+        final Map<String, String> map = new HashMap<>();
+
+        EventDetails add(String key, Object value) {
+            if (value != null) {
+                map.put(key, value instanceof Enum<?> e ? e.name() : value.toString());
+            }
+            return this;
+        }
+    }
+
+    /** Keycloak event data for testability. */
+    record KeycloakEvent(
+            String realmId,
+            String userId,
+            String clientId,
+            EventType eventType,
+            String error,
+            Map<String, String> details) {}
+}

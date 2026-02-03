@@ -1,0 +1,2 @@
+de.arbeitsagentur.keycloak.push.spi.event.KeycloakEventBridgeListenerFactory
+de.arbeitsagentur.keycloak.push.spi.event.LoggingPushMfaEventListenerFactory

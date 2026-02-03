@@ -20,9 +20,12 @@ import de.arbeitsagentur.keycloak.push.challenge.PushChallenge;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStore;
 import de.arbeitsagentur.keycloak.push.credential.PushCredentialData;
 import de.arbeitsagentur.keycloak.push.service.PushNotificationService;
+import de.arbeitsagentur.keycloak.push.spi.event.ChallengeCreatedEvent;
+import de.arbeitsagentur.keycloak.push.spi.event.PushMfaEventService;
 import de.arbeitsagentur.keycloak.push.token.PushConfirmTokenBuilder;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import org.jboss.logging.Logger;
 import org.keycloak.authentication.AuthenticationFlowContext;
@@ -82,6 +85,19 @@ public final class ChallengeIssuer {
                 userVerificationMode,
                 userVerificationValue,
                 userVerificationOptions);
+
+        PushMfaEventService.fire(
+                context.getSession(),
+                new ChallengeCreatedEvent(
+                        pushChallenge.getRealmId(),
+                        pushChallenge.getUserId(),
+                        pushChallenge.getId(),
+                        pushChallenge.getType(),
+                        pushChallenge.getCredentialId(),
+                        pushChallenge.getClientId(),
+                        pushChallenge.getUserVerificationMode(),
+                        pushChallenge.getExpiresAt(),
+                        Instant.now()));
 
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
         ChallengeNoteHelper.storeChallengeId(authSession, pushChallenge.getId());

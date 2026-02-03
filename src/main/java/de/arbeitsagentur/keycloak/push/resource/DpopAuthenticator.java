@@ -19,6 +19,8 @@ package de.arbeitsagentur.keycloak.push.resource;
 import com.fasterxml.jackson.databind.JsonNode;
 import de.arbeitsagentur.keycloak.push.credential.PushCredentialData;
 import de.arbeitsagentur.keycloak.push.credential.PushCredentialService;
+import de.arbeitsagentur.keycloak.push.spi.event.DpopAuthenticationFailedEvent;
+import de.arbeitsagentur.keycloak.push.spi.event.PushMfaEventService;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConfig;
 import de.arbeitsagentur.keycloak.push.util.PushMfaInputValidator;
 import de.arbeitsagentur.keycloak.push.util.PushMfaKeyUtil;
@@ -72,106 +74,143 @@ public final class DpopAuthenticator {
     public record DeviceAssertion(UserModel user, CredentialModel credential, PushCredentialData credentialData) {}
 
     public DeviceAssertion authenticate(HttpHeaders headers, UriInfo uriInfo, String httpMethod) {
-        String accessTokenString = requireAccessToken(headers);
-        AccessToken accessToken = authenticateAccessToken(accessTokenString);
-        String proof = requireDpopProof(headers);
-        TokenLogHelper.logJwt("dpop-proof", proof);
+        AuthContext ctx = new AuthContext(httpMethod, uriInfo.getPath());
 
-        JWSInput dpop;
         try {
-            dpop = new JWSInput(proof);
-        } catch (Exception ex) {
-            throw new BadRequestException("Invalid DPoP proof");
+            String accessTokenString = requireAccessToken(headers);
+            AccessToken accessToken = authenticateAccessToken(accessTokenString);
+            String proof = requireDpopProof(headers);
+            TokenLogHelper.logJwt("dpop-proof", proof);
+
+            JWSInput dpop;
+            try {
+                dpop = new JWSInput(proof);
+            } catch (Exception ex) {
+                throw new BadRequestException("Invalid DPoP proof");
+            }
+
+            Algorithm algorithm = dpop.getHeader().getAlgorithm();
+            PushMfaKeyUtil.requireSupportedAlgorithm(algorithm, "DPoP proof");
+
+            String typ = dpop.getHeader().getType();
+            if (typ == null || !"dpop+jwt".equalsIgnoreCase(typ)) {
+                throw new BadRequestException("DPoP proof missing typ=dpop+jwt");
+            }
+
+            JsonNode payload;
+            try {
+                payload = JsonSerialization.mapper.readTree(dpop.getContent());
+            } catch (Exception ex) {
+                throw new BadRequestException("Unable to parse DPoP proof");
+            }
+
+            String htm = PushMfaInputValidator.require(jsonText(payload, "htm"), "htm");
+            if (!httpMethod.equalsIgnoreCase(htm)) {
+                throw new ForbiddenException("DPoP proof htm mismatch");
+            }
+
+            String htu = PushMfaInputValidator.require(jsonText(payload, "htu"), "htu");
+            String actualHtu = uriInfo.getRequestUri().toString();
+            if (!actualHtu.equals(htu)) {
+                throw new ForbiddenException("DPoP proof htu mismatch");
+            }
+
+            long iat = payload.path("iat").asLong(Long.MIN_VALUE);
+            if (iat == Long.MIN_VALUE) {
+                throw new BadRequestException("DPoP proof missing iat");
+            }
+            long now = Instant.now().getEpochSecond();
+            if (Math.abs(now - iat) > 120) {
+                throw new BadRequestException("DPoP proof expired");
+            }
+
+            String jti = PushMfaInputValidator.require(jsonText(payload, "jti"), "jti");
+            PushMfaInputValidator.requireMaxLength(jti, dpopLimits.jtiMaxLength(), "jti");
+
+            String tokenSubject = PushMfaInputValidator.requireBoundedText(
+                    jsonText(payload, "sub"), inputLimits.maxUserIdLength(), "sub");
+            String tokenDeviceId = PushMfaInputValidator.requireBoundedText(
+                    jsonText(payload, "deviceId"), inputLimits.maxDeviceIdLength(), "deviceId");
+
+            ctx.userId = tokenSubject;
+
+            UserModel user = getUser(tokenSubject);
+
+            List<CredentialModel> credentials = PushCredentialService.getActiveCredentials(user);
+            if (credentials.isEmpty()) {
+                throw new ForbiddenException("Device not registered for user");
+            }
+
+            CredentialModel credential = credentials.stream()
+                    .filter(model -> {
+                        PushCredentialData credentialData = PushCredentialService.readCredentialData(model);
+                        return credentialData != null && tokenDeviceId.equals(credentialData.getDeviceId());
+                    })
+                    .findFirst()
+                    .orElseThrow(() -> new ForbiddenException("Device not registered for user"));
+
+            ctx.credentialId = credential.getId();
+
+            PushCredentialData credentialData = PushCredentialService.readCredentialData(credential);
+            if (credentialData == null
+                    || credentialData.getPublicKeyJwk() == null
+                    || credentialData.getPublicKeyJwk().isBlank()) {
+                throw new BadRequestException("Stored credential missing JWK");
+            }
+
+            KeyWrapper keyWrapper = PushMfaKeyUtil.keyWrapperFromString(credentialData.getPublicKeyJwk());
+            PushMfaKeyUtil.ensureKeyMatchesAlgorithm(keyWrapper, algorithm.name());
+
+            if (!PushSignatureVerifier.verify(dpop, keyWrapper)) {
+                throw new ForbiddenException("Invalid DPoP proof signature");
+            }
+
+            AccessToken.Confirmation confirmation = accessToken.getConfirmation();
+            if (confirmation == null
+                    || confirmation.getKeyThumbprint() == null
+                    || confirmation.getKeyThumbprint().isBlank()) {
+                throw new ForbiddenException("Access token missing DPoP binding");
+            }
+            String expectedJkt = PushMfaKeyUtil.computeJwkThumbprint(credentialData.getPublicKeyJwk());
+            if (!Objects.equals(expectedJkt, confirmation.getKeyThumbprint())) {
+                throw new ForbiddenException("Access token DPoP binding mismatch");
+            }
+
+            if (!markDpopJtiUsed(realm().getId(), expectedJkt, jti)) {
+                throw new ForbiddenException("DPoP proof replay detected");
+            }
+
+            return new DeviceAssertion(user, credential, credentialData);
+        } catch (BadRequestException | ForbiddenException | NotAuthorizedException | NotFoundException ex) {
+            fireAuthFailedEvent(ctx, ex.getMessage());
+            throw ex;
         }
+    }
 
-        Algorithm algorithm = dpop.getHeader().getAlgorithm();
-        PushMfaKeyUtil.requireSupportedAlgorithm(algorithm, "DPoP proof");
+    /** Mutable context for tracking auth progress (used for event reporting). */
+    private static class AuthContext {
+        final String httpMethod;
+        final String requestPath;
+        String userId;
+        String credentialId;
 
-        String typ = dpop.getHeader().getType();
-        if (typ == null || !"dpop+jwt".equalsIgnoreCase(typ)) {
-            throw new BadRequestException("DPoP proof missing typ=dpop+jwt");
+        AuthContext(String httpMethod, String requestPath) {
+            this.httpMethod = httpMethod;
+            this.requestPath = requestPath;
         }
+    }
 
-        JsonNode payload;
-        try {
-            payload = JsonSerialization.mapper.readTree(dpop.getContent());
-        } catch (Exception ex) {
-            throw new BadRequestException("Unable to parse DPoP proof");
-        }
-
-        String htm = PushMfaInputValidator.require(jsonText(payload, "htm"), "htm");
-        if (!httpMethod.equalsIgnoreCase(htm)) {
-            throw new ForbiddenException("DPoP proof htm mismatch");
-        }
-
-        String htu = PushMfaInputValidator.require(jsonText(payload, "htu"), "htu");
-        String actualHtu = uriInfo.getRequestUri().toString();
-        if (!actualHtu.equals(htu)) {
-            throw new ForbiddenException("DPoP proof htu mismatch");
-        }
-
-        long iat = payload.path("iat").asLong(Long.MIN_VALUE);
-        if (iat == Long.MIN_VALUE) {
-            throw new BadRequestException("DPoP proof missing iat");
-        }
-        long now = Instant.now().getEpochSecond();
-        if (Math.abs(now - iat) > 120) {
-            throw new BadRequestException("DPoP proof expired");
-        }
-
-        String jti = PushMfaInputValidator.require(jsonText(payload, "jti"), "jti");
-        PushMfaInputValidator.requireMaxLength(jti, dpopLimits.jtiMaxLength(), "jti");
-
-        String tokenSubject = PushMfaInputValidator.requireBoundedText(
-                jsonText(payload, "sub"), inputLimits.maxUserIdLength(), "sub");
-        String tokenDeviceId = PushMfaInputValidator.requireBoundedText(
-                jsonText(payload, "deviceId"), inputLimits.maxDeviceIdLength(), "deviceId");
-
-        UserModel user = getUser(tokenSubject);
-
-        List<CredentialModel> credentials = PushCredentialService.getActiveCredentials(user);
-        if (credentials.isEmpty()) {
-            throw new ForbiddenException("Device not registered for user");
-        }
-
-        CredentialModel credential = credentials.stream()
-                .filter(model -> {
-                    PushCredentialData credentialData = PushCredentialService.readCredentialData(model);
-                    return credentialData != null && tokenDeviceId.equals(credentialData.getDeviceId());
-                })
-                .findFirst()
-                .orElseThrow(() -> new ForbiddenException("Device not registered for user"));
-
-        PushCredentialData credentialData = PushCredentialService.readCredentialData(credential);
-        if (credentialData == null
-                || credentialData.getPublicKeyJwk() == null
-                || credentialData.getPublicKeyJwk().isBlank()) {
-            throw new BadRequestException("Stored credential missing JWK");
-        }
-
-        KeyWrapper keyWrapper = PushMfaKeyUtil.keyWrapperFromString(credentialData.getPublicKeyJwk());
-        PushMfaKeyUtil.ensureKeyMatchesAlgorithm(keyWrapper, algorithm.name());
-
-        if (!PushSignatureVerifier.verify(dpop, keyWrapper)) {
-            throw new ForbiddenException("Invalid DPoP proof signature");
-        }
-
-        AccessToken.Confirmation confirmation = accessToken.getConfirmation();
-        if (confirmation == null
-                || confirmation.getKeyThumbprint() == null
-                || confirmation.getKeyThumbprint().isBlank()) {
-            throw new ForbiddenException("Access token missing DPoP binding");
-        }
-        String expectedJkt = PushMfaKeyUtil.computeJwkThumbprint(credentialData.getPublicKeyJwk());
-        if (!Objects.equals(expectedJkt, confirmation.getKeyThumbprint())) {
-            throw new ForbiddenException("Access token DPoP binding mismatch");
-        }
-
-        if (!markDpopJtiUsed(realm().getId(), expectedJkt, jti)) {
-            throw new ForbiddenException("DPoP proof replay detected");
-        }
-
-        return new DeviceAssertion(user, credential, credentialData);
+    private void fireAuthFailedEvent(AuthContext ctx, String reason) {
+        PushMfaEventService.fire(
+                session,
+                new DpopAuthenticationFailedEvent(
+                        realm().getId(),
+                        ctx.userId,
+                        ctx.credentialId,
+                        reason,
+                        ctx.httpMethod,
+                        ctx.requestPath,
+                        Instant.now()));
     }
 
     private String requireAccessToken(HttpHeaders headers) {

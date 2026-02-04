@@ -20,6 +20,12 @@ Powers the "waiting for approval" screen. It subscribes to the challenge SSE end
 
 Swap the layout or remove the token preview altogether; just ensure the `data-push-*` attributes remain if you still rely on `KeycloakPushMfa.initLoginPage(...)`.
 
+### Rate Limit Waiting UI
+
+**Template:** `templates/push-wait-required.ftl`
+
+Displays a countdown when the user must wait before retrying (when [Wait Challenge Rate Limiting](spi-reference.md#wait-challenge-rate-limiting) is enabled). Shows remaining wait time and a disabled retry button that enables when the wait expires.
+
 ### Terminal Pages
 
 **Templates:**

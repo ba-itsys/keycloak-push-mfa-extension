@@ -14,8 +14,9 @@
  * limitations under the License.
  */
 
-package de.arbeitsagentur.keycloak.push.spi;
+package de.arbeitsagentur.keycloak.push.spi.pushnotification;
 
+import de.arbeitsagentur.keycloak.push.spi.PushNotificationSender;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import de.arbeitsagentur.keycloak.push.util.TokenLogHelper;
 import org.jboss.logging.Logger;

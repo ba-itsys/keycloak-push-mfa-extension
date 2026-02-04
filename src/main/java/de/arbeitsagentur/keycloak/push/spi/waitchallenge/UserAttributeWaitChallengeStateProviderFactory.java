@@ -16,6 +16,8 @@
 
 package de.arbeitsagentur.keycloak.push.spi.waitchallenge;
 
+import de.arbeitsagentur.keycloak.push.spi.WaitChallengeStateProvider;
+import de.arbeitsagentur.keycloak.push.spi.WaitChallengeStateProviderFactory;
 import org.keycloak.Config;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;

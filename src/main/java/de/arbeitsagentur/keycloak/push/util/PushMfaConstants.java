@@ -52,8 +52,8 @@ public final class PushMfaConstants {
     public static final String DEFAULT_APP_UNIVERSAL_LINK = "my-secure://";
 
     public static final int NONCE_BYTES_SIZE = 32;
-    public static final Duration DEFAULT_LOGIN_CHALLENGE_TTL = Duration.ofSeconds(120);
-    public static final Duration DEFAULT_ENROLLMENT_CHALLENGE_TTL = Duration.ofSeconds(120);
+    public static final Duration DEFAULT_LOGIN_CHALLENGE_TTL = Duration.ofSeconds(240);
+    public static final Duration DEFAULT_ENROLLMENT_CHALLENGE_TTL = Duration.ofSeconds(240);
     public static final int DEFAULT_MAX_PENDING_AUTH_CHALLENGES = 1;
     public static final int DEFAULT_USER_VERIFICATION_PIN_LENGTH = 4;
 

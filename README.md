@@ -1,5 +1,7 @@
 # Keycloak Push MFA Extension
 
+[![Maven Central](https://img.shields.io/maven-central/v/de.arbeitsagentur.opdt/keycloak-push-mfa-extension)](https://central.sonatype.com/artifact/de.arbeitsagentur.opdt/keycloak-push-mfa-extension)
+
 A Keycloak extension that adds push-based multi-factor authentication, similar to passkey primitives.
 
 ## Quick Start
@@ -12,7 +14,8 @@ Add the dependency to your project:
 <dependency>
     <groupId>de.arbeitsagentur.opdt</groupId>
     <artifactId>keycloak-push-mfa-extension</artifactId>
-    <version>1.3.1</version>
+    <!-- Check the badge above or Maven Central for the latest version -->
+    <version>1.5.0</version>
 </dependency>
 ```
 

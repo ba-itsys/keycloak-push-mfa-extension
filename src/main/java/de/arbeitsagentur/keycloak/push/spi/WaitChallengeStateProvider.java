@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package de.arbeitsagentur.keycloak.push.spi.waitchallenge;
+package de.arbeitsagentur.keycloak.push.spi;
 
 import de.arbeitsagentur.keycloak.push.challenge.WaitChallengeState;
 import java.time.Duration;

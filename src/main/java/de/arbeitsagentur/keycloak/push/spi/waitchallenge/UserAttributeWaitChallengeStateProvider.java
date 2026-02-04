@@ -19,6 +19,7 @@ package de.arbeitsagentur.keycloak.push.spi.waitchallenge;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import de.arbeitsagentur.keycloak.push.challenge.WaitChallengeState;
+import de.arbeitsagentur.keycloak.push.spi.WaitChallengeStateProvider;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;

@@ -16,6 +16,7 @@
 
 package de.arbeitsagentur.keycloak.push.spi.event;
 
+import de.arbeitsagentur.keycloak.push.spi.PushMfaEventListener;
 import org.jboss.logging.Logger;
 
 /**

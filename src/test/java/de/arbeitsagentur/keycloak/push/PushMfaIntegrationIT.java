@@ -434,9 +434,11 @@ class PushMfaIntegrationIT {
         long refreshedTtlSeconds =
                 refreshedClaims.getExpirationTime().toInstant().getEpochSecond()
                         - refreshedClaims.getIssueTime().toInstant().getEpochSecond();
+        long expectedTtl = PushMfaConstants.DEFAULT_LOGIN_CHALLENGE_TTL.toSeconds();
         assertTrue(
-                refreshedTtlSeconds >= 100 && refreshedTtlSeconds <= 140,
-                "Refreshed challenge should use the standard TTL");
+                refreshedTtlSeconds >= expectedTtl - 20 && refreshedTtlSeconds <= expectedTtl + 20,
+                "Refreshed challenge should use the standard TTL (expected ~" + expectedTtl + "s, got "
+                        + refreshedTtlSeconds + "s)");
         assertEquals(
                 refreshedClaims.getExpirationTime().toInstant().getEpochSecond(),
                 pendingExpires,

@@ -16,7 +16,7 @@ Configure these in the authentication flow execution settings.
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `loginChallengeTtlSeconds` | `120` | How long the push notification / QR code is valid (in seconds) |
+| `loginChallengeTtlSeconds` | `240` | How long the login challenge / push notification is valid (in seconds) |
 | `maxPendingChallenges` | `1` | Maximum concurrent login attempts per user. Set to `1` to prevent parallel logins |
 | `userVerification` | `none` | Extra verification step (see below) |
 | `userVerificationPinLength` | `4` | PIN length when using `pin` verification (max: 12) |
@@ -41,7 +41,7 @@ Configure these in the Required Actions settings.
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `enrollmentChallengeTtlSeconds` | `120` | How long the enrollment QR code is valid (in seconds) |
+| `enrollmentChallengeTtlSeconds` | `240` | How long the enrollment QR code is valid (in seconds) |
 | `enrollmentAppUniversalLink` | `my-secure://enroll` | Deep link scheme for same-device enrollment |
 
 ## Server-Side Hardening Options

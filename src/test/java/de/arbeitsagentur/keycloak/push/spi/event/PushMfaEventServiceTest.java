@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import de.arbeitsagentur.keycloak.push.challenge.PushChallenge;
+import de.arbeitsagentur.keycloak.push.spi.PushMfaEventListener;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;

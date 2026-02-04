@@ -14,8 +14,10 @@
  * limitations under the License.
  */
 
-package de.arbeitsagentur.keycloak.push.spi;
+package de.arbeitsagentur.keycloak.push.spi.pushnotification;
 
+import de.arbeitsagentur.keycloak.push.spi.PushNotificationSender;
+import de.arbeitsagentur.keycloak.push.spi.PushNotificationSenderFactory;
 import org.keycloak.Config;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;

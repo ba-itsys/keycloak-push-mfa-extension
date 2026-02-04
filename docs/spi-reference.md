@@ -162,7 +162,7 @@ public class MyEventListenerFactory implements PushMfaEventListenerFactory {
 Register the factory via the service loader file:
 
 ```
-META-INF/services/de.arbeitsagentur.keycloak.push.spi.event.PushMfaEventListenerFactory
+META-INF/services/de.arbeitsagentur.keycloak.push.spi.PushMfaEventListenerFactory
 ```
 
 Your custom listener will run alongside the built-in listeners (Keycloak event bridge and logging).
@@ -214,7 +214,8 @@ With default settings (base=10s, max=3600s):
 | 6 | 320 seconds (~5 min) |
 | 7 | 640 seconds (~10 min) |
 | 8 | 1280 seconds (~21 min) |
-| 9+ | 3600 seconds (capped at 1 hour) |
+| 9 | 2560 seconds (~42 min) |
+| 10+ | 3600 seconds (capped at 1 hour) |
 
 ### Storage Provider SPI
 
@@ -264,7 +265,7 @@ You can implement your own storage backend by:
 
 1. Implementing `WaitChallengeStateProvider` interface
 2. Implementing `WaitChallengeStateProviderFactory` interface with a unique provider ID
-3. Registering your factory via ServiceLoader in `META-INF/services/de.arbeitsagentur.keycloak.push.spi.waitchallenge.WaitChallengeStateProviderFactory`
+3. Registering your factory via ServiceLoader in `META-INF/services/de.arbeitsagentur.keycloak.push.spi.WaitChallengeStateProviderFactory`
 
 ### Interaction with Max Pending Challenges
 

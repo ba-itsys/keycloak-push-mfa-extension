@@ -14,8 +14,17 @@
  * limitations under the License.
  */
 
-package de.arbeitsagentur.keycloak.push.spi.event;
+package de.arbeitsagentur.keycloak.push.spi;
 
+import de.arbeitsagentur.keycloak.push.spi.event.ChallengeAcceptedEvent;
+import de.arbeitsagentur.keycloak.push.spi.event.ChallengeCreatedEvent;
+import de.arbeitsagentur.keycloak.push.spi.event.ChallengeDeniedEvent;
+import de.arbeitsagentur.keycloak.push.spi.event.ChallengeResponseInvalidEvent;
+import de.arbeitsagentur.keycloak.push.spi.event.DpopAuthenticationFailedEvent;
+import de.arbeitsagentur.keycloak.push.spi.event.EnrollmentCompletedEvent;
+import de.arbeitsagentur.keycloak.push.spi.event.KeyRotatedEvent;
+import de.arbeitsagentur.keycloak.push.spi.event.KeyRotationDeniedEvent;
+import de.arbeitsagentur.keycloak.push.spi.event.PushMfaEvent;
 import org.keycloak.provider.Provider;
 
 /**

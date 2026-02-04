@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package de.arbeitsagentur.keycloak.push.spi.event;
+package de.arbeitsagentur.keycloak.push.spi;
 
 import org.keycloak.provider.Provider;
 import org.keycloak.provider.ProviderFactory;

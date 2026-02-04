@@ -23,7 +23,7 @@ import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStore;
 import de.arbeitsagentur.keycloak.push.challenge.WaitChallengeState;
 import de.arbeitsagentur.keycloak.push.credential.PushCredentialData;
 import de.arbeitsagentur.keycloak.push.credential.PushCredentialService;
-import de.arbeitsagentur.keycloak.push.spi.waitchallenge.WaitChallengeStateProvider;
+import de.arbeitsagentur.keycloak.push.spi.WaitChallengeStateProvider;
 import de.arbeitsagentur.keycloak.push.token.PushConfirmTokenBuilder;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import jakarta.ws.rs.core.MultivaluedMap;

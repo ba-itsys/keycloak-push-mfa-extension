@@ -320,21 +320,35 @@ public final class AdminClient {
     }
 
     private void clearRealmCaches() throws Exception {
+        ensureAccessToken();
+
         URI clearRealmCache = baseUri.resolve("/admin/realms/demo/clear-realm-cache");
-        HttpRequest realmCacheRequest = HttpRequest.newBuilder(clearRealmCache)
-                .header("Authorization", "Bearer " + accessToken)
-                .POST(HttpRequest.BodyPublishers.noBody())
-                .build();
-        HttpResponse<String> realmResponse = http.send(realmCacheRequest, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> realmResponse = sendWithRetry(clearRealmCache);
         assertEquals(204, realmResponse.statusCode(), () -> "Realm cache clear failed: " + realmResponse.body());
 
         URI clearUserCache = baseUri.resolve("/admin/realms/demo/clear-user-cache");
-        HttpRequest userCacheRequest = HttpRequest.newBuilder(clearUserCache)
+        HttpResponse<String> userResponse = sendWithRetry(clearUserCache);
+        assertEquals(204, userResponse.statusCode(), () -> "User cache clear failed: " + userResponse.body());
+    }
+
+    private HttpResponse<String> sendWithRetry(URI uri) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(uri)
                 .header("Authorization", "Bearer " + accessToken)
                 .POST(HttpRequest.BodyPublishers.noBody())
                 .build();
-        HttpResponse<String> userResponse = http.send(userCacheRequest, HttpResponse.BodyHandlers.ofString());
-        assertEquals(204, userResponse.statusCode(), () -> "User cache clear failed: " + userResponse.body());
+        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+
+        // Handle token expiration by refreshing and retrying once
+        if (response.statusCode() == 401) {
+            accessToken = null;
+            ensureAccessToken();
+            request = HttpRequest.newBuilder(uri)
+                    .header("Authorization", "Bearer " + accessToken)
+                    .POST(HttpRequest.BodyPublishers.noBody())
+                    .build();
+            response = http.send(request, HttpResponse.BodyHandlers.ofString());
+        }
+        return response;
     }
 
     private JsonNode readCredentials(String userId) throws Exception {

@@ -65,22 +65,15 @@ public final class PushMfaEventService {
     }
 
     private static void dispatchToSpecificHandler(PushMfaEventListener listener, PushMfaEvent event) {
-        if (event instanceof ChallengeCreatedEvent e) {
-            listener.onChallengeCreated(e);
-        } else if (event instanceof ChallengeAcceptedEvent e) {
-            listener.onChallengeAccepted(e);
-        } else if (event instanceof ChallengeDeniedEvent e) {
-            listener.onChallengeDenied(e);
-        } else if (event instanceof ChallengeResponseInvalidEvent e) {
-            listener.onChallengeResponseInvalid(e);
-        } else if (event instanceof EnrollmentCompletedEvent e) {
-            listener.onEnrollmentCompleted(e);
-        } else if (event instanceof KeyRotatedEvent e) {
-            listener.onKeyRotated(e);
-        } else if (event instanceof KeyRotationDeniedEvent e) {
-            listener.onKeyRotationDenied(e);
-        } else if (event instanceof DpopAuthenticationFailedEvent e) {
-            listener.onDpopAuthenticationFailed(e);
+        switch (event) {
+            case ChallengeCreatedEvent e -> listener.onChallengeCreated(e);
+            case ChallengeAcceptedEvent e -> listener.onChallengeAccepted(e);
+            case ChallengeDeniedEvent e -> listener.onChallengeDenied(e);
+            case ChallengeResponseInvalidEvent e -> listener.onChallengeResponseInvalid(e);
+            case EnrollmentCompletedEvent e -> listener.onEnrollmentCompleted(e);
+            case KeyRotatedEvent e -> listener.onKeyRotated(e);
+            case KeyRotationDeniedEvent e -> listener.onKeyRotationDenied(e);
+            case DpopAuthenticationFailedEvent e -> listener.onDpopAuthenticationFailed(e);
         }
     }
 }

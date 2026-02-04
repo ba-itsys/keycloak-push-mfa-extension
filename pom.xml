@@ -33,9 +33,9 @@
   </scm>
 
   <properties>
-    <keycloak.version>26.4.5</keycloak.version>
+    <keycloak.version>26.5.2</keycloak.version>
     <docker.api.version>1.44</docker.api.version>
-    <maven.compiler.release>17</maven.compiler.release>
+    <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
 

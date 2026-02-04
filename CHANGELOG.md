@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.0](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.4.0...v1.5.0) (2026-02-04)
+
+
+### Features
+
+* **events:** add event listener spi + keycloak event bridge ([b789da8](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/b789da859115277c3335a30f2a514e993d9cdfa5))
+* **security:** add optional wait challenge ([c40c15d](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/c40c15d07a582bde925617ec54e5f569fbe7a1e0))
+
 ## [1.4.0](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.3.2...v1.4.0) (2026-01-16)
 
 

@@ -425,8 +425,7 @@ public class PushMfaAuthenticator implements Authenticator {
     }
 
     private WaitChallengeStateProvider getWaitChallengeStateProvider(AuthenticationFlowContext context) {
-        String providerId = AuthenticatorConfigHelper.getWaitChallengeStorageProvider(context.getAuthenticatorConfig());
-        return context.getSession().getProvider(WaitChallengeStateProvider.class, providerId);
+        return context.getSession().getProvider(WaitChallengeStateProvider.class);
     }
 
     private void showWaitRequiredError(AuthenticationFlowContext context, Duration remainingWait) {

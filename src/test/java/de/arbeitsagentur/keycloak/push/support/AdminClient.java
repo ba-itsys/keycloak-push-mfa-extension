@@ -113,14 +113,13 @@ public final class AdminClient {
                 Map.of(PushMfaConstants.AUTO_ADD_REQUIRED_ACTION_CONFIG, String.valueOf(autoAdd)));
     }
 
-    public void configurePushMfaWaitChallenge(
-            boolean enabled, int baseSeconds, int maxSeconds, int resetHours, String storageProvider) throws Exception {
+    public void configurePushMfaWaitChallenge(boolean enabled, int baseSeconds, int maxSeconds, int resetHours)
+            throws Exception {
         Map<String, String> config = new HashMap<>();
         config.put(PushMfaConstants.WAIT_CHALLENGE_ENABLED_CONFIG, String.valueOf(enabled));
         config.put(PushMfaConstants.WAIT_CHALLENGE_BASE_SECONDS_CONFIG, String.valueOf(baseSeconds));
         config.put(PushMfaConstants.WAIT_CHALLENGE_MAX_SECONDS_CONFIG, String.valueOf(maxSeconds));
         config.put(PushMfaConstants.WAIT_CHALLENGE_RESET_HOURS_CONFIG, String.valueOf(resetHours));
-        config.put(PushMfaConstants.WAIT_CHALLENGE_STORAGE_PROVIDER_CONFIG, storageProvider);
         updatePushMfaAuthenticatorConfig(config);
     }
 
@@ -144,9 +143,6 @@ public final class AdminClient {
         config.put(
                 PushMfaConstants.WAIT_CHALLENGE_RESET_HOURS_CONFIG,
                 String.valueOf(PushMfaConstants.DEFAULT_WAIT_CHALLENGE_RESET_HOURS));
-        config.put(
-                PushMfaConstants.WAIT_CHALLENGE_STORAGE_PROVIDER_CONFIG,
-                PushMfaConstants.DEFAULT_WAIT_CHALLENGE_STORAGE_PROVIDER);
         updatePushMfaAuthenticatorConfig(config);
     }
 

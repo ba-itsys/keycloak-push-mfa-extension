@@ -681,25 +681,15 @@ class PushMfaIntegrationIT {
     }
 
     @Test
-    void waitChallengeBlocksImmediateRetryWithSingleUseObjectStorage() throws Exception {
-        waitChallengeBlocksImmediateRetry(
-                WAIT_CHALLENGE_USER_1, PushMfaConstants.WAIT_CHALLENGE_STORAGE_SINGLE_USE_OBJECT);
-    }
-
-    @Test
-    void waitChallengeBlocksImmediateRetryWithUserAttributeStorage() throws Exception {
-        waitChallengeBlocksImmediateRetry(
-                WAIT_CHALLENGE_USER_2, PushMfaConstants.WAIT_CHALLENGE_STORAGE_USER_ATTRIBUTE);
-    }
-
-    private void waitChallengeBlocksImmediateRetry(String username, String storageProvider) throws Exception {
+    void waitChallengeBlocksImmediateRetry() throws Exception {
+        String username = WAIT_CHALLENGE_USER_1;
         // Enroll device BEFORE enabling wait challenge to avoid creating wait state during enrollment
         DeviceClient deviceClient = enrollDevice(username, WAIT_CHALLENGE_PASSWORD, DeviceKeyType.RSA);
 
         // Now enable wait challenge after enrollment is complete
         // Increase max pending to handle any leftover challenges from previous tests
         adminClient.configurePushMfaMaxPendingChallenges(10);
-        adminClient.configurePushMfaWaitChallenge(true, 2, 10, 1, storageProvider);
+        adminClient.configurePushMfaWaitChallenge(true, 2, 10, 1);
         adminClient.configurePushMfaLoginChallengeTtlSeconds(2);
         try {
             BrowserSession pushSession = new BrowserSession(baseUri);
@@ -743,8 +733,7 @@ class PushMfaIntegrationIT {
         // Now enable wait challenge after enrollment is complete
         // Increase max pending to handle any leftover challenges from previous tests
         adminClient.configurePushMfaMaxPendingChallenges(10);
-        adminClient.configurePushMfaWaitChallenge(
-                true, 1, 60, 1, PushMfaConstants.WAIT_CHALLENGE_STORAGE_USER_ATTRIBUTE);
+        adminClient.configurePushMfaWaitChallenge(true, 1, 60, 1);
         adminClient.configurePushMfaLoginChallengeTtlSeconds(2);
         try {
 
@@ -801,8 +790,7 @@ class PushMfaIntegrationIT {
         // Increase max pending to handle any leftover challenges from previous tests
         adminClient.configurePushMfaMaxPendingChallenges(10);
         // Use 2 second base wait for testability
-        adminClient.configurePushMfaWaitChallenge(
-                true, 2, 60, 1, PushMfaConstants.WAIT_CHALLENGE_STORAGE_USER_ATTRIBUTE);
+        adminClient.configurePushMfaWaitChallenge(true, 2, 60, 1);
         adminClient.configurePushMfaLoginChallengeTtlSeconds(2);
         try {
             BrowserSession pushSession = new BrowserSession(baseUri);
@@ -866,9 +854,7 @@ class PushMfaIntegrationIT {
         // Increase max pending to handle any leftover challenges from previous tests
         adminClient.configurePushMfaMaxPendingChallenges(10);
         // Use very short wait times for testing (1s base, 10s max, 1s reset period for testing)
-        // Using user-attribute storage for persistence
-        adminClient.configurePushMfaWaitChallenge(
-                true, 1, 10, 1, PushMfaConstants.WAIT_CHALLENGE_STORAGE_USER_ATTRIBUTE);
+        adminClient.configurePushMfaWaitChallenge(true, 1, 10, 1);
         adminClient.configurePushMfaLoginChallengeTtlSeconds(1);
         try {
             // First unapproved challenge - creates 1s wait
@@ -966,8 +952,7 @@ class PushMfaIntegrationIT {
         // Increase max pending to handle any leftover challenges from previous tests
         adminClient.configurePushMfaMaxPendingChallenges(10);
         // Use short wait times for testing
-        adminClient.configurePushMfaWaitChallenge(
-                true, 1, 60, 1, PushMfaConstants.WAIT_CHALLENGE_STORAGE_USER_ATTRIBUTE);
+        adminClient.configurePushMfaWaitChallenge(true, 1, 60, 1);
         adminClient.configurePushMfaLoginChallengeTtlSeconds(1);
         try {
             // Build up wait counter with multiple unapproved challenges

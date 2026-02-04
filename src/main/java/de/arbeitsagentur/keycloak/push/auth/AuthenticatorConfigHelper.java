@@ -150,12 +150,4 @@ public final class AuthenticatorConfigHelper {
                 PushMfaConstants.DEFAULT_WAIT_CHALLENGE_RESET_HOURS);
         return Duration.ofHours(hours);
     }
-
-    public static String getWaitChallengeStorageProvider(AuthenticatorConfigModel config) {
-        String value = getConfigValue(config, PushMfaConstants.WAIT_CHALLENGE_STORAGE_PROVIDER_CONFIG);
-        if (value == null) {
-            return PushMfaConstants.DEFAULT_WAIT_CHALLENGE_STORAGE_PROVIDER;
-        }
-        return value;
-    }
 }

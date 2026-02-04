@@ -22,10 +22,12 @@ import org.keycloak.models.KeycloakSessionFactory;
 
 /**
  * Factory for {@link SingleUseObjectWaitChallengeStateProvider}.
+ *
+ * <p>This is the default provider, selected when no explicit provider is configured.
  */
 public class SingleUseObjectWaitChallengeStateProviderFactory implements WaitChallengeStateProviderFactory {
 
-    public static final String ID = "single-use-object";
+    public static final String ID = "default";
 
     @Override
     public WaitChallengeStateProvider create(KeycloakSession session) {

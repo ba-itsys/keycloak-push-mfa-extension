@@ -125,18 +125,6 @@ public class PushMfaAuthenticatorFactory implements AuthenticatorFactory {
         waitChallengeReset.setHelpText("Time in hours after which the wait counter resets automatically.");
         waitChallengeReset.setDefaultValue(String.valueOf(PushMfaConstants.DEFAULT_WAIT_CHALLENGE_RESET_HOURS));
 
-        ProviderConfigProperty waitChallengeStorage = new ProviderConfigProperty();
-        waitChallengeStorage.setName(PushMfaConstants.WAIT_CHALLENGE_STORAGE_PROVIDER_CONFIG);
-        waitChallengeStorage.setLabel("Wait challenge storage provider");
-        waitChallengeStorage.setType(ProviderConfigProperty.LIST_TYPE);
-        waitChallengeStorage.setOptions(List.of(
-                PushMfaConstants.WAIT_CHALLENGE_STORAGE_SINGLE_USE_OBJECT,
-                PushMfaConstants.WAIT_CHALLENGE_STORAGE_USER_ATTRIBUTE));
-        waitChallengeStorage.setHelpText("Storage backend for wait challenge state. "
-                + "'single-use-object': Fast, in-memory, lost on restart. "
-                + "'user-attribute': Persisted in DB, survives restarts.");
-        waitChallengeStorage.setDefaultValue(PushMfaConstants.DEFAULT_WAIT_CHALLENGE_STORAGE_PROVIDER);
-
         CONFIG_PROPERTIES = List.of(
                 loginTtl,
                 maxPending,
@@ -148,8 +136,7 @@ public class PushMfaAuthenticatorFactory implements AuthenticatorFactory {
                 waitChallengeEnabled,
                 waitChallengeBase,
                 waitChallengeMax,
-                waitChallengeReset,
-                waitChallengeStorage);
+                waitChallengeReset);
     }
 
     @Override

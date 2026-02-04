@@ -64,14 +64,9 @@ public final class PushMfaConstants {
     public static final String WAIT_CHALLENGE_BASE_SECONDS_CONFIG = "waitChallengeBaseSeconds";
     public static final String WAIT_CHALLENGE_MAX_SECONDS_CONFIG = "waitChallengeMaxSeconds";
     public static final String WAIT_CHALLENGE_RESET_HOURS_CONFIG = "waitChallengeResetHours";
-    public static final String WAIT_CHALLENGE_STORAGE_PROVIDER_CONFIG = "waitChallengeStorageProvider";
 
     public static final boolean DEFAULT_WAIT_CHALLENGE_ENABLED = false;
     public static final int DEFAULT_WAIT_CHALLENGE_BASE_SECONDS = 10;
     public static final int DEFAULT_WAIT_CHALLENGE_MAX_SECONDS = 3600;
     public static final int DEFAULT_WAIT_CHALLENGE_RESET_HOURS = 24;
-    public static final String DEFAULT_WAIT_CHALLENGE_STORAGE_PROVIDER = "single-use-object";
-
-    public static final String WAIT_CHALLENGE_STORAGE_SINGLE_USE_OBJECT = "single-use-object";
-    public static final String WAIT_CHALLENGE_STORAGE_USER_ATTRIBUTE = "user-attribute";
 }

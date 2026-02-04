@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.5.1](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.5.0...v1.5.1) (2026-02-04)
+
+
+### Bug Fixes
+
+* **waitchallenge:** use keycloak spi mechanism to select storage provider ([f040cd8](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/f040cd88a0bf7b4f9265bbe461164fa4a22e6880))
+
+
+### Documentation
+
+* **structure:** split README into multiple, more concise docs ([99745cd](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/99745cd2c4e73b95be224d7fb518b7b8106a6e01))
+
 ## [1.5.0](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.4.0...v1.5.0) (2026-02-04)
 
 

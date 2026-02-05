@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.2](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.5.1...v1.5.2) (2026-02-05)
+
+
+### Bug Fixes
+
+* add security tests, fix docs, refactor for extensibility ([045a883](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/045a88328aa576a9d3ba3116441b8510ea3493ca))
+* update default challenge ttl, fix readme inconsistencies, refactor class structure ([52d1072](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/52d107275b6cbf2e3ad5f5259c9fc04f87c13b33))
+
 ## [1.5.1](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.5.0...v1.5.1) (2026-02-04)
 
 

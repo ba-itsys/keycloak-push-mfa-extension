@@ -38,22 +38,6 @@ class KeycloakEventBridgeListener implements PushMfaEventListener {
 
     private static final Logger LOG = Logger.getLogger(KeycloakEventBridgeListener.class);
 
-    static final String DETAIL_EVENT_TYPE = "push_mfa_event_type";
-    static final String DETAIL_CHALLENGE_ID = "push_mfa_challenge_id";
-    static final String DETAIL_CHALLENGE_TYPE = "push_mfa_challenge_type";
-    static final String DETAIL_CREDENTIAL_ID = "push_mfa_credential_id";
-    static final String DETAIL_DEVICE_ID = "push_mfa_device_id";
-    static final String DETAIL_DEVICE_TYPE = "push_mfa_device_type";
-    static final String DETAIL_USER_VERIFICATION = "push_mfa_user_verification";
-    static final String DETAIL_REASON = "push_mfa_reason";
-    static final String DETAIL_HTTP_METHOD = "push_mfa_http_method";
-    static final String DETAIL_REQUEST_PATH = "push_mfa_request_path";
-
-    static final String ERROR_CHALLENGE_DENIED = "push_mfa_challenge_denied";
-    static final String ERROR_INVALID_RESPONSE = "push_mfa_invalid_response";
-    static final String ERROR_KEY_ROTATION_DENIED = "push_mfa_key_rotation_denied";
-    static final String ERROR_DPOP_AUTH_FAILED = "push_mfa_dpop_auth_failed";
-
     private final KeycloakSession session;
     private final Consumer<KeycloakEvent> eventSender;
 
@@ -70,11 +54,11 @@ class KeycloakEventBridgeListener implements PushMfaEventListener {
     @Override
     public void onChallengeCreated(ChallengeCreatedEvent event) {
         var details = new EventDetails()
-                .add(DETAIL_EVENT_TYPE, ChallengeCreatedEvent.EVENT_TYPE)
-                .add(DETAIL_CHALLENGE_ID, event.challengeId())
-                .add(DETAIL_CHALLENGE_TYPE, event.challengeType())
-                .add(DETAIL_CREDENTIAL_ID, event.credentialId())
-                .add(DETAIL_USER_VERIFICATION, event.userVerificationMode());
+                .add(PushMfaEventDetails.EVENT_TYPE, PushMfaEventDetails.EventTypes.CHALLENGE_CREATED)
+                .add(PushMfaEventDetails.CHALLENGE_ID, event.challengeId())
+                .add(PushMfaEventDetails.CHALLENGE_TYPE, event.challengeType())
+                .add(PushMfaEventDetails.CREDENTIAL_ID, event.credentialId())
+                .add(PushMfaEventDetails.USER_VERIFICATION, event.userVerificationMode());
 
         emit(event.realmId(), event.userId(), event.clientId(), EventType.CUSTOM_REQUIRED_ACTION, null, details);
     }
@@ -82,11 +66,11 @@ class KeycloakEventBridgeListener implements PushMfaEventListener {
     @Override
     public void onChallengeAccepted(ChallengeAcceptedEvent event) {
         var details = new EventDetails()
-                .add(DETAIL_EVENT_TYPE, ChallengeAcceptedEvent.EVENT_TYPE)
-                .add(DETAIL_CHALLENGE_ID, event.challengeId())
-                .add(DETAIL_CHALLENGE_TYPE, event.challengeType())
-                .add(DETAIL_CREDENTIAL_ID, event.credentialId())
-                .add(DETAIL_DEVICE_ID, event.deviceId());
+                .add(PushMfaEventDetails.EVENT_TYPE, PushMfaEventDetails.EventTypes.CHALLENGE_ACCEPTED)
+                .add(PushMfaEventDetails.CHALLENGE_ID, event.challengeId())
+                .add(PushMfaEventDetails.CHALLENGE_TYPE, event.challengeType())
+                .add(PushMfaEventDetails.CREDENTIAL_ID, event.credentialId())
+                .add(PushMfaEventDetails.DEVICE_ID, event.deviceId());
 
         emit(event.realmId(), event.userId(), event.clientId(), EventType.LOGIN, null, details);
     }
@@ -94,45 +78,58 @@ class KeycloakEventBridgeListener implements PushMfaEventListener {
     @Override
     public void onChallengeDenied(ChallengeDeniedEvent event) {
         var details = new EventDetails()
-                .add(DETAIL_EVENT_TYPE, ChallengeDeniedEvent.EVENT_TYPE)
-                .add(DETAIL_CHALLENGE_ID, event.challengeId())
-                .add(DETAIL_CHALLENGE_TYPE, event.challengeType())
-                .add(DETAIL_CREDENTIAL_ID, event.credentialId())
-                .add(DETAIL_DEVICE_ID, event.deviceId());
+                .add(PushMfaEventDetails.EVENT_TYPE, PushMfaEventDetails.EventTypes.CHALLENGE_DENIED)
+                .add(PushMfaEventDetails.CHALLENGE_ID, event.challengeId())
+                .add(PushMfaEventDetails.CHALLENGE_TYPE, event.challengeType())
+                .add(PushMfaEventDetails.CREDENTIAL_ID, event.credentialId())
+                .add(PushMfaEventDetails.DEVICE_ID, event.deviceId());
 
-        emit(event.realmId(), event.userId(), event.clientId(), EventType.LOGIN_ERROR, ERROR_CHALLENGE_DENIED, details);
+        emit(
+                event.realmId(),
+                event.userId(),
+                event.clientId(),
+                EventType.LOGIN_ERROR,
+                PushMfaEventDetails.ErrorCodes.CHALLENGE_DENIED,
+                details);
     }
 
     @Override
     public void onChallengeResponseInvalid(ChallengeResponseInvalidEvent event) {
         var details = new EventDetails()
-                .add(DETAIL_EVENT_TYPE, ChallengeResponseInvalidEvent.EVENT_TYPE)
-                .add(DETAIL_CHALLENGE_ID, event.challengeId())
-                .add(DETAIL_CREDENTIAL_ID, event.credentialId())
-                .add(DETAIL_REASON, event.reason());
+                .add(PushMfaEventDetails.EVENT_TYPE, PushMfaEventDetails.EventTypes.CHALLENGE_RESPONSE_INVALID)
+                .add(PushMfaEventDetails.CHALLENGE_ID, event.challengeId())
+                .add(PushMfaEventDetails.CREDENTIAL_ID, event.credentialId())
+                .add(PushMfaEventDetails.REASON, event.reason());
 
-        emit(event.realmId(), event.userId(), null, EventType.LOGIN_ERROR, ERROR_INVALID_RESPONSE, details);
+        emit(
+                event.realmId(),
+                event.userId(),
+                null,
+                EventType.LOGIN_ERROR,
+                PushMfaEventDetails.ErrorCodes.INVALID_RESPONSE,
+                details);
     }
 
     @Override
     public void onEnrollmentCompleted(EnrollmentCompletedEvent event) {
         var details = new EventDetails()
-                .add(DETAIL_EVENT_TYPE, EnrollmentCompletedEvent.EVENT_TYPE)
-                .add(DETAIL_CHALLENGE_ID, event.challengeId())
-                .add(DETAIL_CREDENTIAL_ID, event.credentialId())
-                .add(DETAIL_DEVICE_ID, event.deviceId())
-                .add(DETAIL_DEVICE_TYPE, event.deviceType());
+                .add(Details.CREDENTIAL_TYPE, PushMfaConstants.CREDENTIAL_TYPE)
+                .add(PushMfaEventDetails.EVENT_TYPE, PushMfaEventDetails.EventTypes.ENROLLMENT_COMPLETED)
+                .add(PushMfaEventDetails.CHALLENGE_ID, event.challengeId())
+                .add(PushMfaEventDetails.CREDENTIAL_ID, event.credentialId())
+                .add(PushMfaEventDetails.DEVICE_ID, event.deviceId())
+                .add(PushMfaEventDetails.DEVICE_TYPE, event.deviceType());
 
-        emit(event.realmId(), event.userId(), null, EventType.CUSTOM_REQUIRED_ACTION, null, details);
+        emit(event.realmId(), event.userId(), null, EventType.UPDATE_CREDENTIAL, null, details);
     }
 
     @Override
     public void onKeyRotated(KeyRotatedEvent event) {
         var details = new EventDetails()
                 .add(Details.CREDENTIAL_TYPE, PushMfaConstants.CREDENTIAL_TYPE)
-                .add(DETAIL_EVENT_TYPE, KeyRotatedEvent.EVENT_TYPE)
-                .add(DETAIL_CREDENTIAL_ID, event.credentialId())
-                .add(DETAIL_DEVICE_ID, event.deviceId());
+                .add(PushMfaEventDetails.EVENT_TYPE, PushMfaEventDetails.EventTypes.KEY_ROTATED)
+                .add(PushMfaEventDetails.CREDENTIAL_ID, event.credentialId())
+                .add(PushMfaEventDetails.DEVICE_ID, event.deviceId());
 
         emit(event.realmId(), event.userId(), null, EventType.UPDATE_CREDENTIAL, null, details);
     }
@@ -141,29 +138,35 @@ class KeycloakEventBridgeListener implements PushMfaEventListener {
     public void onKeyRotationDenied(KeyRotationDeniedEvent event) {
         var details = new EventDetails()
                 .add(Details.CREDENTIAL_TYPE, PushMfaConstants.CREDENTIAL_TYPE)
-                .add(DETAIL_EVENT_TYPE, KeyRotationDeniedEvent.EVENT_TYPE)
-                .add(DETAIL_CREDENTIAL_ID, event.credentialId())
-                .add(DETAIL_REASON, event.reason());
+                .add(PushMfaEventDetails.EVENT_TYPE, PushMfaEventDetails.EventTypes.KEY_ROTATION_DENIED)
+                .add(PushMfaEventDetails.CREDENTIAL_ID, event.credentialId())
+                .add(PushMfaEventDetails.REASON, event.reason());
 
         emit(
                 event.realmId(),
                 event.userId(),
                 null,
                 EventType.UPDATE_CREDENTIAL_ERROR,
-                ERROR_KEY_ROTATION_DENIED,
+                PushMfaEventDetails.ErrorCodes.KEY_ROTATION_DENIED,
                 details);
     }
 
     @Override
     public void onDpopAuthenticationFailed(DpopAuthenticationFailedEvent event) {
         var details = new EventDetails()
-                .add(DETAIL_EVENT_TYPE, DpopAuthenticationFailedEvent.EVENT_TYPE)
-                .add(DETAIL_CREDENTIAL_ID, event.credentialId())
-                .add(DETAIL_REASON, event.reason())
-                .add(DETAIL_HTTP_METHOD, event.httpMethod())
-                .add(DETAIL_REQUEST_PATH, event.requestPath());
+                .add(PushMfaEventDetails.EVENT_TYPE, PushMfaEventDetails.EventTypes.DPOP_AUTHENTICATION_FAILED)
+                .add(PushMfaEventDetails.CREDENTIAL_ID, event.credentialId())
+                .add(PushMfaEventDetails.REASON, event.reason())
+                .add(PushMfaEventDetails.HTTP_METHOD, event.httpMethod())
+                .add(PushMfaEventDetails.REQUEST_PATH, event.requestPath());
 
-        emit(event.realmId(), event.userId(), null, EventType.LOGIN_ERROR, ERROR_DPOP_AUTH_FAILED, details);
+        emit(
+                event.realmId(),
+                event.userId(),
+                null,
+                EventType.LOGIN_ERROR,
+                PushMfaEventDetails.ErrorCodes.DPOP_AUTH_FAILED,
+                details);
     }
 
     private void emit(

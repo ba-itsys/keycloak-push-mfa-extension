@@ -16,6 +16,7 @@
 
 package de.arbeitsagentur.keycloak.push.spi.event;
 
+import static de.arbeitsagentur.keycloak.push.spi.event.PushMfaEventDetails.EventTypes;
 import static org.junit.jupiter.api.Assertions.*;
 
 import de.arbeitsagentur.keycloak.push.challenge.PushChallenge;
@@ -47,7 +48,7 @@ class PushMfaEventTest {
                 TIMESTAMP);
 
         assertEquals(ChallengeCreatedEvent.EVENT_TYPE, event.eventType());
-        assertEquals("CHALLENGE_CREATED", event.eventType());
+        assertEquals(EventTypes.CHALLENGE_CREATED, event.eventType());
         assertEquals(REALM_ID, event.realmId());
         assertEquals(USER_ID, event.userId());
         assertEquals(CHALLENGE_ID, event.challengeId());
@@ -90,7 +91,7 @@ class PushMfaEventTest {
                 TIMESTAMP);
 
         assertEquals(ChallengeAcceptedEvent.EVENT_TYPE, event.eventType());
-        assertEquals("CHALLENGE_ACCEPTED", event.eventType());
+        assertEquals(EventTypes.CHALLENGE_ACCEPTED, event.eventType());
         assertEquals(DEVICE_ID, event.deviceId());
     }
 
@@ -107,7 +108,7 @@ class PushMfaEventTest {
                 TIMESTAMP);
 
         assertEquals(ChallengeDeniedEvent.EVENT_TYPE, event.eventType());
-        assertEquals("CHALLENGE_DENIED", event.eventType());
+        assertEquals(EventTypes.CHALLENGE_DENIED, event.eventType());
     }
 
     @Test
@@ -117,7 +118,7 @@ class PushMfaEventTest {
                 new ChallengeResponseInvalidEvent(REALM_ID, USER_ID, CHALLENGE_ID, CREDENTIAL_ID, reason, TIMESTAMP);
 
         assertEquals(ChallengeResponseInvalidEvent.EVENT_TYPE, event.eventType());
-        assertEquals("CHALLENGE_RESPONSE_INVALID", event.eventType());
+        assertEquals(EventTypes.CHALLENGE_RESPONSE_INVALID, event.eventType());
         assertEquals(reason, event.reason());
     }
 
@@ -128,7 +129,7 @@ class PushMfaEventTest {
                 REALM_ID, USER_ID, CHALLENGE_ID, CREDENTIAL_ID, DEVICE_ID, deviceType, TIMESTAMP);
 
         assertEquals(EnrollmentCompletedEvent.EVENT_TYPE, event.eventType());
-        assertEquals("ENROLLMENT_COMPLETED", event.eventType());
+        assertEquals(EventTypes.ENROLLMENT_COMPLETED, event.eventType());
         assertEquals(deviceType, event.deviceType());
     }
 
@@ -137,7 +138,7 @@ class PushMfaEventTest {
         KeyRotatedEvent event = new KeyRotatedEvent(REALM_ID, USER_ID, CREDENTIAL_ID, DEVICE_ID, TIMESTAMP);
 
         assertEquals(KeyRotatedEvent.EVENT_TYPE, event.eventType());
-        assertEquals("KEY_ROTATED", event.eventType());
+        assertEquals(EventTypes.KEY_ROTATED, event.eventType());
     }
 
     @Test
@@ -146,7 +147,7 @@ class PushMfaEventTest {
         KeyRotationDeniedEvent event = new KeyRotationDeniedEvent(REALM_ID, USER_ID, CREDENTIAL_ID, reason, TIMESTAMP);
 
         assertEquals(KeyRotationDeniedEvent.EVENT_TYPE, event.eventType());
-        assertEquals("KEY_ROTATION_DENIED", event.eventType());
+        assertEquals(EventTypes.KEY_ROTATION_DENIED, event.eventType());
         assertEquals(reason, event.reason());
     }
 
@@ -159,7 +160,7 @@ class PushMfaEventTest {
                 REALM_ID, USER_ID, CREDENTIAL_ID, reason, httpMethod, requestPath, TIMESTAMP);
 
         assertEquals(DpopAuthenticationFailedEvent.EVENT_TYPE, event.eventType());
-        assertEquals("DPOP_AUTHENTICATION_FAILED", event.eventType());
+        assertEquals(EventTypes.DPOP_AUTHENTICATION_FAILED, event.eventType());
         assertEquals(reason, event.reason());
         assertEquals(httpMethod, event.httpMethod());
         assertEquals(requestPath, event.requestPath());

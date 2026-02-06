@@ -16,17 +16,19 @@
 
 package de.arbeitsagentur.keycloak.push.spi.event;
 
-import static de.arbeitsagentur.keycloak.push.spi.event.KeycloakEventBridgeListener.*;
+import static de.arbeitsagentur.keycloak.push.spi.event.PushMfaEventDetails.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import de.arbeitsagentur.keycloak.push.challenge.PushChallenge;
 import de.arbeitsagentur.keycloak.push.spi.event.KeycloakEventBridgeListener.KeycloakEvent;
+import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.keycloak.events.Details;
 import org.keycloak.events.EventType;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
@@ -77,9 +79,9 @@ class KeycloakEventBridgeListenerTest {
         assertEquals("user-1", event.userId());
         assertEquals("client-1", event.clientId());
         assertNull(event.error());
-        assertEquals("CHALLENGE_CREATED", event.details().get(DETAIL_EVENT_TYPE));
-        assertEquals("AUTHENTICATION", event.details().get(DETAIL_CHALLENGE_TYPE));
-        assertEquals("NUMBER_MATCH", event.details().get(DETAIL_USER_VERIFICATION));
+        assertEquals(EventTypes.CHALLENGE_CREATED, event.details().get(EVENT_TYPE));
+        assertEquals("AUTHENTICATION", event.details().get(CHALLENGE_TYPE));
+        assertEquals("NUMBER_MATCH", event.details().get(USER_VERIFICATION));
     }
 
     @Test
@@ -97,8 +99,8 @@ class KeycloakEventBridgeListenerTest {
         var event = captured.get(0);
         assertEquals(EventType.LOGIN, event.eventType());
         assertNull(event.error());
-        assertEquals("CHALLENGE_ACCEPTED", event.details().get(DETAIL_EVENT_TYPE));
-        assertEquals("device-1", event.details().get(DETAIL_DEVICE_ID));
+        assertEquals(EventTypes.CHALLENGE_ACCEPTED, event.details().get(EVENT_TYPE));
+        assertEquals("device-1", event.details().get(DEVICE_ID));
     }
 
     @Test
@@ -115,8 +117,8 @@ class KeycloakEventBridgeListenerTest {
 
         var event = captured.get(0);
         assertEquals(EventType.LOGIN_ERROR, event.eventType());
-        assertEquals(ERROR_CHALLENGE_DENIED, event.error());
-        assertEquals("CHALLENGE_DENIED", event.details().get(DETAIL_EVENT_TYPE));
+        assertEquals(ErrorCodes.CHALLENGE_DENIED, event.error());
+        assertEquals(EventTypes.CHALLENGE_DENIED, event.details().get(EVENT_TYPE));
     }
 
     @Test
@@ -126,8 +128,8 @@ class KeycloakEventBridgeListenerTest {
 
         var event = captured.get(0);
         assertEquals(EventType.LOGIN_ERROR, event.eventType());
-        assertEquals(ERROR_INVALID_RESPONSE, event.error());
-        assertEquals("Bad signature", event.details().get(DETAIL_REASON));
+        assertEquals(ErrorCodes.INVALID_RESPONSE, event.error());
+        assertEquals("Bad signature", event.details().get(REASON));
     }
 
     @Test
@@ -136,10 +138,11 @@ class KeycloakEventBridgeListenerTest {
                 "test-realm", "user-1", "chal-1", "cred-1", "device-1", "iOS", Instant.now()));
 
         var event = captured.get(0);
-        assertEquals(EventType.CUSTOM_REQUIRED_ACTION, event.eventType());
+        assertEquals(EventType.UPDATE_CREDENTIAL, event.eventType());
         assertNull(event.error());
-        assertEquals("ENROLLMENT_COMPLETED", event.details().get(DETAIL_EVENT_TYPE));
-        assertEquals("iOS", event.details().get(DETAIL_DEVICE_TYPE));
+        assertEquals(PushMfaConstants.CREDENTIAL_TYPE, event.details().get(Details.CREDENTIAL_TYPE));
+        assertEquals(EventTypes.ENROLLMENT_COMPLETED, event.details().get(EVENT_TYPE));
+        assertEquals("iOS", event.details().get(DEVICE_TYPE));
     }
 
     @Test
@@ -149,8 +152,8 @@ class KeycloakEventBridgeListenerTest {
         var event = captured.get(0);
         assertEquals(EventType.UPDATE_CREDENTIAL, event.eventType());
         assertNull(event.error());
-        assertEquals("KEY_ROTATED", event.details().get(DETAIL_EVENT_TYPE));
-        assertEquals("push-mfa", event.details().get("credential_type"));
+        assertEquals(EventTypes.KEY_ROTATED, event.details().get(EVENT_TYPE));
+        assertEquals(PushMfaConstants.CREDENTIAL_TYPE, event.details().get(Details.CREDENTIAL_TYPE));
     }
 
     @Test
@@ -160,8 +163,8 @@ class KeycloakEventBridgeListenerTest {
 
         var event = captured.get(0);
         assertEquals(EventType.UPDATE_CREDENTIAL_ERROR, event.eventType());
-        assertEquals(ERROR_KEY_ROTATION_DENIED, event.error());
-        assertEquals("push-mfa", event.details().get("credential_type"));
+        assertEquals(ErrorCodes.KEY_ROTATION_DENIED, event.error());
+        assertEquals(PushMfaConstants.CREDENTIAL_TYPE, event.details().get(Details.CREDENTIAL_TYPE));
     }
 
     @Test
@@ -171,9 +174,9 @@ class KeycloakEventBridgeListenerTest {
 
         var event = captured.get(0);
         assertEquals(EventType.LOGIN_ERROR, event.eventType());
-        assertEquals(ERROR_DPOP_AUTH_FAILED, event.error());
-        assertEquals("POST", event.details().get(DETAIL_HTTP_METHOD));
-        assertEquals("/path", event.details().get(DETAIL_REQUEST_PATH));
+        assertEquals(ErrorCodes.DPOP_AUTH_FAILED, event.error());
+        assertEquals("POST", event.details().get(HTTP_METHOD));
+        assertEquals("/path", event.details().get(REQUEST_PATH));
     }
 
     @Test
@@ -182,9 +185,9 @@ class KeycloakEventBridgeListenerTest {
                 "test-realm", "user-1", "chal-1", null, null, null, null, Instant.now(), Instant.now()));
 
         var details = captured.get(0).details();
-        assertFalse(details.containsKey(DETAIL_CHALLENGE_TYPE));
-        assertFalse(details.containsKey(DETAIL_CREDENTIAL_ID));
-        assertFalse(details.containsKey(DETAIL_USER_VERIFICATION));
+        assertFalse(details.containsKey(CHALLENGE_TYPE));
+        assertFalse(details.containsKey(CREDENTIAL_ID));
+        assertFalse(details.containsKey(USER_VERIFICATION));
     }
 
     @Test

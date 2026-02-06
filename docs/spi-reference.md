@@ -78,18 +78,20 @@ This listener bridges Push MFA events to Keycloak's standard event system, makin
 
 Event type mappings to Keycloak events:
 
-| Push MFA Event | Keycloak EventType | Error Code |
-|----------------|-------------------|------------|
-| `ChallengeCreatedEvent` | `CUSTOM_REQUIRED_ACTION` | - |
-| `ChallengeAcceptedEvent` | `LOGIN` | - |
-| `ChallengeDeniedEvent` | `LOGIN_ERROR` | `push_mfa_challenge_denied` |
-| `ChallengeResponseInvalidEvent` | `LOGIN_ERROR` | `push_mfa_invalid_response` |
-| `EnrollmentCompletedEvent` | `CUSTOM_REQUIRED_ACTION` | - |
-| `KeyRotatedEvent` | `UPDATE_CREDENTIAL` | - |
-| `KeyRotationDeniedEvent` | `UPDATE_CREDENTIAL_ERROR` | `push_mfa_key_rotation_denied` |
-| `DpopAuthenticationFailedEvent` | `LOGIN_ERROR` | `push_mfa_dpop_auth_failed` |
+| Push MFA Event | Keycloak EventType | Event Type Value | Error Code | Additional Detail Keys |
+|----------------|-------------------|------------------|------------|------------------------|
+| `ChallengeCreatedEvent` | `CUSTOM_REQUIRED_ACTION` | `CHALLENGE_CREATED` | - | `push_mfa_challenge_id`, `push_mfa_challenge_type`, `push_mfa_credential_id`, `push_mfa_user_verification` |
+| `ChallengeAcceptedEvent` | `LOGIN` | `CHALLENGE_ACCEPTED` | - | `push_mfa_challenge_id`, `push_mfa_challenge_type`, `push_mfa_credential_id`, `push_mfa_device_id` |
+| `ChallengeDeniedEvent` | `LOGIN_ERROR` | `CHALLENGE_DENIED` | `push_mfa_challenge_denied` | `push_mfa_challenge_id`, `push_mfa_challenge_type`, `push_mfa_credential_id`, `push_mfa_device_id` |
+| `ChallengeResponseInvalidEvent` | `LOGIN_ERROR` | `CHALLENGE_RESPONSE_INVALID` | `push_mfa_invalid_response` | `push_mfa_challenge_id`, `push_mfa_credential_id`, `push_mfa_reason` |
+| `EnrollmentCompletedEvent` | `UPDATE_CREDENTIAL` | `ENROLLMENT_COMPLETED` | - | `credential_type`, `push_mfa_challenge_id`, `push_mfa_credential_id`, `push_mfa_device_id`, `push_mfa_device_type` |
+| `KeyRotatedEvent` | `UPDATE_CREDENTIAL` | `KEY_ROTATED` | - | `credential_type`, `push_mfa_credential_id`, `push_mfa_device_id` |
+| `KeyRotationDeniedEvent` | `UPDATE_CREDENTIAL_ERROR` | `KEY_ROTATION_DENIED` | `push_mfa_key_rotation_denied` | `credential_type`, `push_mfa_credential_id`, `push_mfa_reason` |
+| `DpopAuthenticationFailedEvent` | `LOGIN_ERROR` | `DPOP_AUTHENTICATION_FAILED` | `push_mfa_dpop_auth_failed` | `push_mfa_credential_id`, `push_mfa_reason`, `push_mfa_http_method`, `push_mfa_request_path` |
 
-All bridged events include a `push_mfa_event_type` detail with the original event type name, plus event-specific details prefixed with `push_mfa_` (e.g., `push_mfa_challenge_id`, `push_mfa_device_id`).
+- **Event Type Value**: Value of the `push_mfa_event_type` detail; use this to distinguish events sharing the same Keycloak EventType
+- **Error Code**: Value returned by `Event.getError()` for error events
+- **Additional Detail Keys**: Other keys present in `Event.getDetails()` map (all events also include `push_mfa_event_type`; credential-related events include Keycloak's `credential_type` set to `push-mfa`)
 
 #### Logging Listener (`log`)
 
@@ -98,6 +100,69 @@ Logs all events at INFO level with DEBUG details. Configure Keycloak's logging t
 ```properties
 quarkus.log.category."de.arbeitsagentur.keycloak.push.spi.event".level=DEBUG
 ```
+
+### Using PushMfaEventDetails Constants
+
+The `PushMfaEventDetails` class provides constants for all detail keys, event types, and error codes. Use these when processing Push MFA events in your Keycloak `EventListenerProvider`:
+
+```java
+import de.arbeitsagentur.keycloak.push.spi.event.PushMfaEventDetails;
+import org.keycloak.events.Event;
+import org.keycloak.events.EventType;
+
+public void onEvent(Event event) {
+    if (event.getType() == EventType.UPDATE_CREDENTIAL) {
+        String eventType = event.getDetails().get(PushMfaEventDetails.EVENT_TYPE);
+
+        if (PushMfaEventDetails.EventTypes.ENROLLMENT_COMPLETED.equals(eventType)) {
+            // New Push MFA credential was created
+            String deviceId = event.getDetails().get(PushMfaEventDetails.DEVICE_ID);
+            String deviceType = event.getDetails().get(PushMfaEventDetails.DEVICE_TYPE);
+            // ...
+        } else if (PushMfaEventDetails.EventTypes.KEY_ROTATED.equals(eventType)) {
+            // Existing credential's key was rotated
+            // ...
+        }
+    }
+}
+```
+
+**Detail Key Constants** (`PushMfaEventDetails.*`):
+
+| Constant | String Value |
+|----------|--------------|
+| `EVENT_TYPE` | `push_mfa_event_type` |
+| `CHALLENGE_ID` | `push_mfa_challenge_id` |
+| `CHALLENGE_TYPE` | `push_mfa_challenge_type` |
+| `CREDENTIAL_ID` | `push_mfa_credential_id` |
+| `DEVICE_ID` | `push_mfa_device_id` |
+| `DEVICE_TYPE` | `push_mfa_device_type` |
+| `USER_VERIFICATION` | `push_mfa_user_verification` |
+| `REASON` | `push_mfa_reason` |
+| `HTTP_METHOD` | `push_mfa_http_method` |
+| `REQUEST_PATH` | `push_mfa_request_path` |
+
+**Event Type Constants** (`PushMfaEventDetails.EventTypes.*`):
+
+| Constant | String Value |
+|----------|--------------|
+| `CHALLENGE_CREATED` | `CHALLENGE_CREATED` |
+| `CHALLENGE_ACCEPTED` | `CHALLENGE_ACCEPTED` |
+| `CHALLENGE_DENIED` | `CHALLENGE_DENIED` |
+| `CHALLENGE_RESPONSE_INVALID` | `CHALLENGE_RESPONSE_INVALID` |
+| `ENROLLMENT_COMPLETED` | `ENROLLMENT_COMPLETED` |
+| `KEY_ROTATED` | `KEY_ROTATED` |
+| `KEY_ROTATION_DENIED` | `KEY_ROTATION_DENIED` |
+| `DPOP_AUTHENTICATION_FAILED` | `DPOP_AUTHENTICATION_FAILED` |
+
+**Error Code Constants** (`PushMfaEventDetails.ErrorCodes.*`):
+
+| Constant | String Value |
+|----------|--------------|
+| `CHALLENGE_DENIED` | `push_mfa_challenge_denied` |
+| `INVALID_RESPONSE` | `push_mfa_invalid_response` |
+| `KEY_ROTATION_DENIED` | `push_mfa_key_rotation_denied` |
+| `DPOP_AUTH_FAILED` | `push_mfa_dpop_auth_failed` |
 
 ### Multiple Active Listeners
 

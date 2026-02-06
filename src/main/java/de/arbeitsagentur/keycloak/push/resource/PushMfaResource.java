@@ -107,7 +107,7 @@ public class PushMfaResource {
         String cid = PushMfaInputValidator.requireUuid(challengeId, "challengeId");
         String sec =
                 PushMfaInputValidator.optionalBoundedText(secret, CONFIG.sse().maxSecretLength(), "secret");
-        LOG.infof("Received enrollment SSE stream request for challenge %s", cid);
+        LOG.debugf("Received enrollment SSE stream request for challenge %s", cid);
 
         boolean accepted = SSE_DISPATCHER.submit(
                 () -> sseEmitter.emitEvents(cid, sec, sink, sse, SseEventEmitter.EventType.ENROLLMENT, null));
@@ -387,7 +387,7 @@ public class PushMfaResource {
         String cid = PushMfaInputValidator.requireUuid(challengeId, "cid");
         String sec =
                 PushMfaInputValidator.optionalBoundedText(secret, CONFIG.sse().maxSecretLength(), "secret");
-        LOG.infof("Received login SSE stream request for challenge %s", cid);
+        LOG.debugf("Received login SSE stream request for challenge %s", cid);
 
         boolean accepted = SSE_DISPATCHER.submit(() -> sseEmitter.emitEvents(
                 cid, sec, sink, sse, SseEventEmitter.EventType.LOGIN, PushChallenge.Type.AUTHENTICATION));
@@ -532,7 +532,7 @@ public class PushMfaResource {
         if (root != null) {
             return true;
         }
-        LOG.infof("Cleaning up stale challenge %s because auth session %s is gone", challenge.getId(), rootSessionId);
+        LOG.debugf("Cleaning up stale challenge %s because auth session %s is gone", challenge.getId(), rootSessionId);
         challengeStore.remove(challenge.getId());
         return false;
     }

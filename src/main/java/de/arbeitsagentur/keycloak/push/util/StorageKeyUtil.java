@@ -47,7 +47,7 @@ public final class StorageKeyUtil {
      * <p>This ensures that the boundary between component1 and component2 is unambiguous,
      * regardless of what characters appear in either component.
      *
-     * <h3>When to use length-prefixed encoding</h3>
+     * <p><strong>When to use length-prefixed encoding</strong>
      * <p>Use this utility when concatenating <em>multiple variable-length components</em>
      * that may contain the delimiter character (typically colon). Common scenarios:
      * <ul>

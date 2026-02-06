@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.4](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.5.3...v1.5.4) (2026-02-06)
+
+
+### Bug Fixes
+
+* javadoc gen error and test warnings ([297b6d3](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/297b6d3a3a1fdcd39babcfeda2be5e68fb207120))
+
 ## [1.5.3](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.5.2...v1.5.3) (2026-02-06)
 
 

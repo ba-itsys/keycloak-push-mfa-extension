@@ -23,6 +23,7 @@ import de.arbeitsagentur.keycloak.push.challenge.PushChallenge;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStatus;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStore;
 import de.arbeitsagentur.keycloak.push.credential.PushCredentialData;
+import de.arbeitsagentur.keycloak.push.spi.PushNotificationSender;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import jakarta.ws.rs.core.UriInfo;
 import java.net.URI;
@@ -98,6 +99,8 @@ class ChallengeIssuerTest {
         when(uriInfo.getBaseUri()).thenReturn(URI.create("https://keycloak.example.com/"));
 
         when(session.keys()).thenReturn(keyManager);
+        when(session.getProvider(eq(PushNotificationSender.class), anyString()))
+                .thenReturn(mock(PushNotificationSender.class));
         when(session.getAllProviders(any())).thenReturn(Set.of());
 
         // Set up in-memory SingleUseObjectProvider

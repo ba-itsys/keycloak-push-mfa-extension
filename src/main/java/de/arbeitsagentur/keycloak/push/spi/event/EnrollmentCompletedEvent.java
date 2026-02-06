@@ -39,10 +39,8 @@ public record EnrollmentCompletedEvent(
         Instant timestamp)
         implements PushMfaEvent {
 
-    public static final String EVENT_TYPE = "ENROLLMENT_COMPLETED";
-
     @Override
     public String eventType() {
-        return EVENT_TYPE;
+        return PushMfaEventDetails.EventTypes.ENROLLMENT_COMPLETED;
     }
 }

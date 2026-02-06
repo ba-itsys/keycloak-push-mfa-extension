@@ -153,14 +153,14 @@ public class DpopAuthenticator {
                     .findFirst()
                     .orElseThrow(() -> new ForbiddenException("Device not registered for user"));
 
-            ctx.credentialId = credential.getId();
-
             PushCredentialData credentialData = PushCredentialService.readCredentialData(credential);
             if (credentialData == null
                     || credentialData.getPublicKeyJwk() == null
                     || credentialData.getPublicKeyJwk().isBlank()) {
                 throw new BadRequestException("Stored credential missing JWK");
             }
+
+            ctx.credentialId = credentialData.getCredentialId();
 
             KeyWrapper keyWrapper = PushMfaKeyUtil.keyWrapperFromString(credentialData.getPublicKeyJwk());
             PushMfaKeyUtil.ensureKeyMatchesAlgorithm(keyWrapper, algorithm.name());

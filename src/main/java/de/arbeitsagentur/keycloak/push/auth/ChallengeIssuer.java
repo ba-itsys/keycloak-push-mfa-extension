@@ -101,7 +101,7 @@ public class ChallengeIssuer {
         PushChallenge pushChallenge = createChallenge(
                 context, challengeStore, credential, challengeTtl, clientId, rootSessionId, watchSecret, uvResult);
 
-        fireChallengeCreatedEvent(context, pushChallenge);
+        fireChallengeCreatedEvent(context, pushChallenge, credentialData);
         storeChallengeInSession(context, pushChallenge, watchSecret);
 
         String confirmToken = buildConfirmToken(context, credentialData, pushChallenge);
@@ -183,7 +183,8 @@ public class ChallengeIssuer {
      * Fires the challenge created event.
      * Override to customize event firing or add additional events.
      */
-    protected void fireChallengeCreatedEvent(AuthenticationFlowContext context, PushChallenge pushChallenge) {
+    protected void fireChallengeCreatedEvent(
+            AuthenticationFlowContext context, PushChallenge pushChallenge, PushCredentialData credentialData) {
         PushMfaEventService.fire(
                 context.getSession(),
                 new ChallengeCreatedEvent(
@@ -191,7 +192,7 @@ public class ChallengeIssuer {
                         pushChallenge.getUserId(),
                         pushChallenge.getId(),
                         pushChallenge.getType(),
-                        pushChallenge.getCredentialId(),
+                        credentialData.getCredentialId(),
                         pushChallenge.getClientId(),
                         pushChallenge.getUserVerificationMode(),
                         pushChallenge.getExpiresAt(),

@@ -19,11 +19,15 @@ package de.arbeitsagentur.keycloak.push.auth;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallenge;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStatus;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStore;
 import de.arbeitsagentur.keycloak.push.credential.PushCredentialData;
+import de.arbeitsagentur.keycloak.push.spi.PushMfaEventListener;
 import de.arbeitsagentur.keycloak.push.spi.PushNotificationSender;
+import de.arbeitsagentur.keycloak.push.spi.event.ChallengeCreatedEvent;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import jakarta.ws.rs.core.UriInfo;
 import java.net.URI;
@@ -31,11 +35,13 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -364,6 +370,63 @@ class ChallengeIssuerTest {
         assertEquals(PushChallenge.UserVerificationMode.NONE, result.challenge().getUserVerificationMode());
         assertNull(result.challenge().getUserVerificationValue());
         assertTrue(result.challenge().getUserVerificationOptions().isEmpty());
+    }
+
+    @Test
+    void eventCredentialIdMatchesTokenCredentialId() throws Exception {
+        // Use DIFFERENT IDs to expose the mismatch:
+        // - credential.getId() returns the Keycloak CredentialModel UUID
+        // - credentialData.getCredentialId() returns the app-level credential ID
+        String keycloakModelId = "keycloak-model-uuid";
+        String appCredentialId = "app-credential-id";
+
+        credential.setId(keycloakModelId);
+        PushCredentialData differentCredentialData = new PushCredentialData(
+                "{\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"test\",\"y\":\"test\"}",
+                System.currentTimeMillis(),
+                "ios",
+                "push-provider-id",
+                "log",
+                appCredentialId,
+                "device-id");
+
+        when(authenticatorConfig.getConfig()).thenReturn(new HashMap<>());
+
+        // Capture the ChallengeCreatedEvent via a mock listener
+        AtomicReference<ChallengeCreatedEvent> capturedEvent = new AtomicReference<>();
+        PushMfaEventListener listener = mock(PushMfaEventListener.class);
+        doAnswer(inv -> {
+                    capturedEvent.set(inv.getArgument(0));
+                    return null;
+                })
+                .when(listener)
+                .onChallengeCreated(any());
+        when(session.getAllProviders(PushMfaEventListener.class)).thenReturn(Set.of(listener));
+
+        ChallengeIssuer.IssuedChallenge result = ChallengeIssuer.issue(
+                context,
+                challengeStore,
+                differentCredentialData,
+                credential,
+                CHALLENGE_TTL,
+                CLIENT_ID,
+                ROOT_SESSION_ID);
+
+        // Decode the token payload to get the credId claim
+        String[] jwtParts = result.confirmToken().split("\\.");
+        String payloadJson = new String(Base64.getUrlDecoder().decode(jwtParts[1]));
+        JsonNode payload = new ObjectMapper().readTree(payloadJson);
+        String tokenCredentialId = payload.get("credId").asText();
+
+        // The event's credentialId should match the token's credId,
+        // so that consumers can reconstruct the token from event data
+        assertNotNull(capturedEvent.get(), "ChallengeCreatedEvent should have been fired");
+        assertEquals(
+                tokenCredentialId,
+                capturedEvent.get().credentialId(),
+                "ChallengeCreatedEvent.credentialId() should match the token's credId claim, "
+                        + "but event has '" + capturedEvent.get().credentialId()
+                        + "' while token has '" + tokenCredentialId + "'");
     }
 
     private KeyWrapper createTestKeyWrapper() throws Exception {

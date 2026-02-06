@@ -17,17 +17,24 @@
 package de.arbeitsagentur.keycloak.push.resource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallenge;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStatus;
+import de.arbeitsagentur.keycloak.push.spi.PushMfaEventListener;
+import de.arbeitsagentur.keycloak.push.spi.event.ChallengeResponseInvalidEvent;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import jakarta.ws.rs.ForbiddenException;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.SingleUseObjectProvider;
@@ -44,7 +51,9 @@ class PushMfaResourceUserVerificationTest {
         PushChallenge challenge = buildPinChallenge("0123");
         ObjectNode payload = MAPPER.createObjectNode().put("userVerification", "123");
 
-        assertThrows(ForbiddenException.class, () -> resource.verifyUserVerification(session, challenge, payload));
+        assertThrows(
+                ForbiddenException.class,
+                () -> resource.verifyUserVerification(session, challenge, payload, "cred-id"));
     }
 
     @Test
@@ -55,7 +64,7 @@ class PushMfaResourceUserVerificationTest {
         ObjectNode payload = MAPPER.createObjectNode().put("userVerification", "0123");
 
         // Should not throw any exception
-        resource.verifyUserVerification(session, challenge, payload);
+        resource.verifyUserVerification(session, challenge, payload, "cred-id");
     }
 
     @Test
@@ -85,7 +94,7 @@ class PushMfaResourceUserVerificationTest {
         ObjectNode payload = MAPPER.createObjectNode().put("userVerification", "42");
 
         // Should not throw any exception
-        resource.verifyUserVerification(session, challenge, payload);
+        resource.verifyUserVerification(session, challenge, payload, "cred-id");
     }
 
     @Test
@@ -95,7 +104,9 @@ class PushMfaResourceUserVerificationTest {
         PushChallenge challenge = buildNumberMatchChallenge("42", List.of("17", "42", "89"));
         ObjectNode payload = MAPPER.createObjectNode().put("userVerification", "17");
 
-        assertThrows(ForbiddenException.class, () -> resource.verifyUserVerification(session, challenge, payload));
+        assertThrows(
+                ForbiddenException.class,
+                () -> resource.verifyUserVerification(session, challenge, payload, "cred-id"));
     }
 
     @Test
@@ -119,7 +130,63 @@ class PushMfaResourceUserVerificationTest {
         ObjectNode payload = MAPPER.createObjectNode();
 
         // Should not throw any exception even without userVerification in payload
-        resource.verifyUserVerification(session, challenge, payload);
+        resource.verifyUserVerification(session, challenge, payload, "cred-id");
+    }
+
+    @Test
+    void verifyUserVerificationMismatchEventUsesPassedCredentialId() {
+        // The challenge has a Keycloak CredentialModel ID as credentialId,
+        // but the event should use the app-level credentialId passed as parameter
+        String keycloakModelId = "keycloak-model-uuid";
+        String appCredentialId = "app-credential-id";
+
+        KeycloakSession session = buildMockSession();
+
+        // Capture the ChallengeResponseInvalidEvent via a mock listener
+        AtomicReference<ChallengeResponseInvalidEvent> capturedEvent = new AtomicReference<>();
+        PushMfaEventListener listener = Mockito.mock(PushMfaEventListener.class);
+        doAnswer(inv -> {
+                    capturedEvent.set(inv.getArgument(0));
+                    return null;
+                })
+                .when(listener)
+                .onChallengeResponseInvalid(any());
+        Mockito.when(session.getAllProviders(PushMfaEventListener.class)).thenReturn(Set.of(listener));
+
+        PushMfaResource resource = new PushMfaResource(session);
+        // Build challenge with the Keycloak model UUID as its credentialId
+        PushChallenge challenge = buildPinChallengeWithCredentialId("0123", keycloakModelId);
+        ObjectNode payload = MAPPER.createObjectNode().put("userVerification", "wrong");
+
+        assertThrows(
+                ForbiddenException.class,
+                () -> resource.verifyUserVerification(session, challenge, payload, appCredentialId));
+
+        assertNotNull(capturedEvent.get(), "ChallengeResponseInvalidEvent should have been fired");
+        assertEquals(
+                appCredentialId,
+                capturedEvent.get().credentialId(),
+                "Event credentialId should be the app-level credential ID, not the Keycloak model UUID");
+    }
+
+    private PushChallenge buildPinChallengeWithCredentialId(String pin, String credentialId) {
+        return new PushChallenge(
+                "challenge-123",
+                "realm-id",
+                "user-id",
+                new byte[] {1, 2, 3},
+                credentialId,
+                "client-id",
+                "watch-secret",
+                "root-session",
+                Instant.now().plusSeconds(300),
+                PushChallenge.Type.AUTHENTICATION,
+                PushChallengeStatus.PENDING,
+                Instant.now(),
+                null,
+                PushChallenge.UserVerificationMode.PIN,
+                pin,
+                List.of());
     }
 
     private PushChallenge buildPinChallenge(String pin) {

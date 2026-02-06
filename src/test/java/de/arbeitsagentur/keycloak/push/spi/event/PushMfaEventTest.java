@@ -47,7 +47,6 @@ class PushMfaEventTest {
                 EXPIRES_AT,
                 TIMESTAMP);
 
-        assertEquals(ChallengeCreatedEvent.EVENT_TYPE, event.eventType());
         assertEquals(EventTypes.CHALLENGE_CREATED, event.eventType());
         assertEquals(REALM_ID, event.realmId());
         assertEquals(USER_ID, event.userId());
@@ -90,7 +89,6 @@ class PushMfaEventTest {
                 DEVICE_ID,
                 TIMESTAMP);
 
-        assertEquals(ChallengeAcceptedEvent.EVENT_TYPE, event.eventType());
         assertEquals(EventTypes.CHALLENGE_ACCEPTED, event.eventType());
         assertEquals(DEVICE_ID, event.deviceId());
     }
@@ -107,7 +105,6 @@ class PushMfaEventTest {
                 DEVICE_ID,
                 TIMESTAMP);
 
-        assertEquals(ChallengeDeniedEvent.EVENT_TYPE, event.eventType());
         assertEquals(EventTypes.CHALLENGE_DENIED, event.eventType());
     }
 
@@ -117,7 +114,6 @@ class PushMfaEventTest {
         ChallengeResponseInvalidEvent event =
                 new ChallengeResponseInvalidEvent(REALM_ID, USER_ID, CHALLENGE_ID, CREDENTIAL_ID, reason, TIMESTAMP);
 
-        assertEquals(ChallengeResponseInvalidEvent.EVENT_TYPE, event.eventType());
         assertEquals(EventTypes.CHALLENGE_RESPONSE_INVALID, event.eventType());
         assertEquals(reason, event.reason());
     }
@@ -128,7 +124,6 @@ class PushMfaEventTest {
         EnrollmentCompletedEvent event = new EnrollmentCompletedEvent(
                 REALM_ID, USER_ID, CHALLENGE_ID, CREDENTIAL_ID, DEVICE_ID, deviceType, TIMESTAMP);
 
-        assertEquals(EnrollmentCompletedEvent.EVENT_TYPE, event.eventType());
         assertEquals(EventTypes.ENROLLMENT_COMPLETED, event.eventType());
         assertEquals(deviceType, event.deviceType());
     }
@@ -137,7 +132,6 @@ class PushMfaEventTest {
     void keyRotatedEventHasCorrectType() {
         KeyRotatedEvent event = new KeyRotatedEvent(REALM_ID, USER_ID, CREDENTIAL_ID, DEVICE_ID, TIMESTAMP);
 
-        assertEquals(KeyRotatedEvent.EVENT_TYPE, event.eventType());
         assertEquals(EventTypes.KEY_ROTATED, event.eventType());
     }
 
@@ -146,7 +140,6 @@ class PushMfaEventTest {
         String reason = "Invalid public key format";
         KeyRotationDeniedEvent event = new KeyRotationDeniedEvent(REALM_ID, USER_ID, CREDENTIAL_ID, reason, TIMESTAMP);
 
-        assertEquals(KeyRotationDeniedEvent.EVENT_TYPE, event.eventType());
         assertEquals(EventTypes.KEY_ROTATION_DENIED, event.eventType());
         assertEquals(reason, event.reason());
     }
@@ -159,7 +152,6 @@ class PushMfaEventTest {
         DpopAuthenticationFailedEvent event = new DpopAuthenticationFailedEvent(
                 REALM_ID, USER_ID, CREDENTIAL_ID, reason, httpMethod, requestPath, TIMESTAMP);
 
-        assertEquals(DpopAuthenticationFailedEvent.EVENT_TYPE, event.eventType());
         assertEquals(EventTypes.DPOP_AUTHENTICATION_FAILED, event.eventType());
         assertEquals(reason, event.reason());
         assertEquals(httpMethod, event.httpMethod());

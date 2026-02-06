@@ -19,6 +19,8 @@ package de.arbeitsagentur.keycloak.push.resource;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -33,6 +35,8 @@ import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.push.credential.PushCredentialData;
+import de.arbeitsagentur.keycloak.push.spi.PushMfaEventListener;
+import de.arbeitsagentur.keycloak.push.spi.event.DpopAuthenticationFailedEvent;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConfig;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import jakarta.ws.rs.BadRequestException;
@@ -47,6 +51,7 @@ import java.util.Date;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -810,6 +815,61 @@ class DpopAuthenticatorTest {
 
         assertNotNull(result);
         assertEquals(user, result.user());
+    }
+
+    // ==================== Event Credential ID Tests ====================
+
+    @Test
+    void failedEventUsesAppLevelCredentialId() throws Exception {
+        // Use DIFFERENT IDs to expose the mismatch:
+        // - credential.getId() returns the Keycloak CredentialModel UUID
+        // - credentialData.getCredentialId() returns the app-level credential ID
+        String keycloakModelId = "keycloak-model-uuid";
+        String appCredentialId = "app-credential-id";
+
+        credential.setId(keycloakModelId);
+        PushCredentialData differentCredentialData = new PushCredentialData(
+                publicKeyJwk, Instant.now().toEpochMilli(), "mobile", "push-token", "fcm", appCredentialId, DEVICE_ID);
+        credential.setCredentialData(toJson(differentCredentialData));
+
+        // Create access token with WRONG jkt to trigger failure after credentialData is resolved
+        PushMfaConfig.Dpop dpopConfig = new PushMfaConfig.Dpop(300, 128, 120);
+        PushMfaConfig.Input inputConfig = new PushMfaConfig.Input(16384, 128, 128, 64, 128, 128, 2048, 64, 8192);
+
+        AccessToken badAccessToken = new AccessToken();
+        badAccessToken.issuer("https://keycloak.example.com/realms/test-realm");
+        badAccessToken.issuedNow();
+        badAccessToken.exp(Instant.now().plusSeconds(300).getEpochSecond());
+        badAccessToken.type("DPoP");
+        AccessToken.Confirmation cnf = new AccessToken.Confirmation();
+        cnf.setKeyThumbprint("wrong-thumbprint");
+        badAccessToken.setConfirmation(cnf);
+
+        TestableDpopAuthenticator badAuth =
+                new TestableDpopAuthenticator(session, dpopConfig, inputConfig, badAccessToken);
+
+        // Capture the DpopAuthenticationFailedEvent via a mock listener
+        AtomicReference<DpopAuthenticationFailedEvent> capturedEvent = new AtomicReference<>();
+        PushMfaEventListener listener = mock(PushMfaEventListener.class);
+        doAnswer(inv -> {
+                    capturedEvent.set(inv.getArgument(0));
+                    return null;
+                })
+                .when(listener)
+                .onDpopAuthenticationFailed(any());
+        when(session.getAllProviders(PushMfaEventListener.class)).thenReturn(Set.of(listener));
+
+        String dpopProof = createValidDpopProof();
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("DPoP valid-token");
+        when(headers.getHeaderString("DPoP")).thenReturn(dpopProof);
+
+        assertThrows(ForbiddenException.class, () -> badAuth.authenticate(headers, uriInfo, HTTP_METHOD));
+
+        assertNotNull(capturedEvent.get(), "DpopAuthenticationFailedEvent should have been fired");
+        assertEquals(
+                appCredentialId,
+                capturedEvent.get().credentialId(),
+                "Event credentialId should be the app-level credential ID, not the Keycloak model UUID");
     }
 
     // ==================== Helper Methods ====================

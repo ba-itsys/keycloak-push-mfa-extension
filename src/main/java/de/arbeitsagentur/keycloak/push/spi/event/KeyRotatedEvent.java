@@ -30,10 +30,8 @@ import java.time.Instant;
 public record KeyRotatedEvent(String realmId, String userId, String credentialId, String deviceId, Instant timestamp)
         implements PushMfaEvent {
 
-    public static final String EVENT_TYPE = "KEY_ROTATED";
-
     @Override
     public String eventType() {
-        return EVENT_TYPE;
+        return PushMfaEventDetails.EventTypes.KEY_ROTATED;
     }
 }

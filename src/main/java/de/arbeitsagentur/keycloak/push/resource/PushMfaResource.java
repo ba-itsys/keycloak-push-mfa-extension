@@ -320,7 +320,7 @@ public class PushMfaResource {
                             challenge.getRealmId(),
                             challenge.getUserId(),
                             challenge.getId(),
-                            challenge.getCredentialId(),
+                            data.getCredentialId(),
                             "Invalid authentication token signature",
                             Instant.now()));
             throw new ForbiddenException("Invalid authentication token signature");
@@ -344,7 +344,7 @@ public class PushMfaResource {
                             challenge.getUserId(),
                             challenge.getId(),
                             challenge.getType(),
-                            challenge.getCredentialId(),
+                            data.getCredentialId(),
                             challenge.getClientId(),
                             data.getDeviceId(),
                             Instant.now()));
@@ -355,7 +355,7 @@ public class PushMfaResource {
             throw new BadRequestException("Unsupported action: " + tokenAction);
         }
 
-        verifyUserVerification(session, challenge, payload);
+        verifyUserVerification(session, challenge, payload, data.getCredentialId());
         challengeStore.resolve(challengeId, PushChallengeStatus.APPROVED);
 
         PushMfaEventService.fire(
@@ -365,7 +365,7 @@ public class PushMfaResource {
                         challenge.getUserId(),
                         challenge.getId(),
                         challenge.getType(),
-                        challenge.getCredentialId(),
+                        data.getCredentialId(),
                         challenge.getClientId(),
                         data.getDeviceId(),
                         Instant.now()));
@@ -478,7 +478,7 @@ public class PushMfaResource {
                     new KeyRotatedEvent(
                             realm().getId(),
                             device.user().getId(),
-                            device.credential().getId(),
+                            current.getCredentialId(),
                             current.getDeviceId(),
                             Instant.now()));
 
@@ -492,7 +492,7 @@ public class PushMfaResource {
                     new KeyRotationDeniedEvent(
                             realm().getId(),
                             device.user().getId(),
-                            device.credential().getId(),
+                            device.credentialData().getCredentialId(),
                             ex.getMessage(),
                             Instant.now()));
             throw ex;
@@ -590,7 +590,8 @@ public class PushMfaResource {
         };
     }
 
-    void verifyUserVerification(KeycloakSession session, PushChallenge challenge, JsonNode payload) {
+    void verifyUserVerification(
+            KeycloakSession session, PushChallenge challenge, JsonNode payload, String credentialId) {
         if (challenge == null) {
             return;
         }
@@ -622,7 +623,7 @@ public class PushMfaResource {
                             challenge.getRealmId(),
                             challenge.getUserId(),
                             challenge.getId(),
-                            challenge.getCredentialId(),
+                            credentialId,
                             "User verification mismatch",
                             Instant.now()));
             throw new ForbiddenException("User verification mismatch");

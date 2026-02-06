@@ -51,10 +51,8 @@ public record DpopAuthenticationFailedEvent(
         Instant timestamp)
         implements PushMfaEvent {
 
-    public static final String EVENT_TYPE = "DPOP_AUTHENTICATION_FAILED";
-
     @Override
     public String eventType() {
-        return EVENT_TYPE;
+        return PushMfaEventDetails.EventTypes.DPOP_AUTHENTICATION_FAILED;
     }
 }

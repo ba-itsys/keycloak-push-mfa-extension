@@ -44,10 +44,8 @@ public record ChallengeCreatedEvent(
         Instant timestamp)
         implements PushMfaEvent {
 
-    public static final String EVENT_TYPE = "CHALLENGE_CREATED";
-
     @Override
     public String eventType() {
-        return EVENT_TYPE;
+        return PushMfaEventDetails.EventTypes.CHALLENGE_CREATED;
     }
 }

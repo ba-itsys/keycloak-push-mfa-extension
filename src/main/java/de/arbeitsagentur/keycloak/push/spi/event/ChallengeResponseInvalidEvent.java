@@ -40,10 +40,8 @@ public record ChallengeResponseInvalidEvent(
         String realmId, String userId, String challengeId, String credentialId, String reason, Instant timestamp)
         implements PushMfaEvent {
 
-    public static final String EVENT_TYPE = "CHALLENGE_RESPONSE_INVALID";
-
     @Override
     public String eventType() {
-        return EVENT_TYPE;
+        return PushMfaEventDetails.EventTypes.CHALLENGE_RESPONSE_INVALID;
     }
 }

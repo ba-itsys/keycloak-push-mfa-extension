@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.3](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.5.2...v1.5.3) (2026-02-06)
+
+
+### Bug Fixes
+
+* fire UPDATE_CREDENTIAL on successful enrollment, introduce event details constants ([d9f4036](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/d9f403678bded28f04390c0eaf9dbcbd5e4da8b9))
+
 ## [1.5.2](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.5.1...v1.5.2) (2026-02-05)
 
 

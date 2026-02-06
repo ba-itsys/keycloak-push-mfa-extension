@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.5](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.5.4...v1.5.5) (2026-02-06)
+
+
+### Bug Fixes
+
+* fix log levels ([15d04b7](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/15d04b7b1e0ed78d6643ce1800e9267e104d1035))
+
 ## [1.5.4](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.5.3...v1.5.4) (2026-02-06)
 
 

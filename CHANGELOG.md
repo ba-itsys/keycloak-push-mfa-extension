@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.5.6](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.5.5...v1.5.6) (2026-02-06)
+
+
+### Bug Fixes
+
+* htu should ignore query params per RFC 9449 section 4.2 ([9b79b3f](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/9b79b3f859fff35bec6cfdf434332c20b711ebc4))
+* keycloak event bridge mapping challenge accepted to LOGIN means duplicate keycloak events ([7f2f112](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/7f2f1124c21c6999656e0e98cf43269632d2f33c))
+* use correct credentialId in events ([3818859](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/3818859e2d028710eaef5a60b7cc6ba4e1aadcee))
+
 ## [1.5.5](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.5.4...v1.5.5) (2026-02-06)
 
 

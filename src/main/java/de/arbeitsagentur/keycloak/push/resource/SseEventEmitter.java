@@ -54,9 +54,9 @@ public final class SseEventEmitter {
             PushChallenge.Type expectedType) {
         String typeLabel = type == EventType.LOGIN ? "login" : "enrollment";
         try (SseEventSink eventSink = sink) {
-            LOG.infof("Starting %s SSE stream for challenge %s", typeLabel, challengeId);
+            LOG.debugf("Starting %s SSE stream for challenge %s", typeLabel, challengeId);
             if (StringUtil.isBlank(secret)) {
-                LOG.infof("%s SSE rejected for %s due to missing secret", capitalize(typeLabel), challengeId);
+                LOG.warnf("%s SSE rejected for %s due to missing secret", capitalize(typeLabel), challengeId);
                 sendStatusEvent(eventSink, sse, "INVALID", null, type);
                 return;
             }
@@ -65,14 +65,14 @@ public final class SseEventEmitter {
             while (!eventSink.isClosed()) {
                 Optional<PushChallenge> challengeOpt = challengeStore.get(challengeId);
                 if (challengeOpt.isEmpty()) {
-                    LOG.infof("%s SSE challenge %s not found", capitalize(typeLabel), challengeId);
+                    LOG.warnf("%s SSE challenge %s not found", capitalize(typeLabel), challengeId);
                     sendStatusEvent(eventSink, sse, "NOT_FOUND", null, type);
                     break;
                 }
                 PushChallenge challenge = challengeOpt.get();
 
                 if (expectedType != null && challenge.getType() != expectedType) {
-                    LOG.infof(
+                    LOG.warnf(
                             "%s SSE rejected for %s because challenge type is %s",
                             capitalize(typeLabel), challengeId, challenge.getType());
                     sendStatusEvent(eventSink, sse, "BAD_TYPE", null, type);
@@ -80,7 +80,7 @@ public final class SseEventEmitter {
                 }
 
                 if (!Objects.equals(secret, challenge.getWatchSecret())) {
-                    LOG.infof("%s SSE forbidden for %s due to secret mismatch", capitalize(typeLabel), challengeId);
+                    LOG.warnf("%s SSE forbidden for %s due to secret mismatch", capitalize(typeLabel), challengeId);
                     sendStatusEvent(eventSink, sse, "FORBIDDEN", null, type);
                     break;
                 }
@@ -92,7 +92,7 @@ public final class SseEventEmitter {
                 }
 
                 if (currentStatus != PushChallengeStatus.PENDING) {
-                    LOG.infof(
+                    LOG.debugf(
                             "%s SSE exiting for %s after reaching status %s",
                             capitalize(typeLabel), challengeId, currentStatus);
                     break;
@@ -107,9 +107,9 @@ public final class SseEventEmitter {
                     break;
                 }
             }
-            LOG.infof("%s SSE stream closed for challenge %s", capitalize(typeLabel), challengeId);
+            LOG.debugf("%s SSE stream closed for challenge %s", capitalize(typeLabel), challengeId);
         } catch (Exception ex) {
-            LOG.infof(ex, "Failed to stream %s events for %s", typeLabel, challengeId);
+            LOG.warnf(ex, "Failed to stream %s events for %s", typeLabel, challengeId);
         }
     }
 
@@ -130,7 +130,7 @@ public final class SseEventEmitter {
         try {
             String targetChallengeId = challenge != null ? challenge.getId() : "n/a";
             String typeLabel = type == EventType.LOGIN ? "login" : "enrollment";
-            LOG.infof("Emitting %s SSE status %s for challenge %s", typeLabel, status, targetChallengeId);
+            LOG.debugf("Emitting %s SSE status %s for challenge %s", typeLabel, status, targetChallengeId);
 
             Map<String, Object> payload = new HashMap<>();
             payload.put("status", status);
@@ -154,7 +154,7 @@ public final class SseEventEmitter {
                     .build());
         } catch (Exception ex) {
             String typeLabel = type == EventType.LOGIN ? "login" : "enrollment";
-            LOG.infof(
+            LOG.warnf(
                     ex,
                     "Unable to send %s SSE status %s for %s",
                     typeLabel,

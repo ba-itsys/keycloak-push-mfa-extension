@@ -162,7 +162,7 @@ class PushMfaSecurityIT {
         @DisplayName("Random challenge ID returns 404")
         void randomChallengeIdReturns404() throws Exception {
             DeviceClient device = enrollDeviceWithRetry(TEST_USERNAME, TEST_PASSWORD);
-            String fakeConfirmToken = createFakeConfirmToken(device.state().credentialId());
+            String fakeConfirmToken = createFakeConfirmToken(device.state().deviceCredentialId());
 
             HttpResponse<String> response = device.respondToChallengeRaw(
                     fakeConfirmToken, UUID.randomUUID().toString(), "approve");
@@ -190,7 +190,7 @@ class PushMfaSecurityIT {
                     .claim("deviceType", "ios")
                     .claim("pushProviderId", "test")
                     .claim("pushProviderType", "log")
-                    .claim("credentialId", state.credentialId())
+                    .claim("credentialId", state.deviceCredentialId())
                     .claim("deviceId", state.deviceId())
                     .expirationTime(Date.from(Instant.now().minusSeconds(3600)))
                     .claim("cnf", Map.of("jwk", state.signingKey().publicJwk().toJSONObject()))
@@ -389,12 +389,12 @@ class PushMfaSecurityIT {
         @DisplayName("Re-enrollment creates new credential")
         void reEnrollmentCreatesNewCredential() throws Exception {
             DeviceClient device1 = enrollDeviceWithRetry(TEST_USERNAME, TEST_PASSWORD);
-            String credId1 = device1.state().credentialId();
+            String credId1 = device1.state().deviceCredentialId();
 
             adminClient.deleteUserCredentials(TEST_USERNAME);
 
             DeviceClient device2 = enrollDeviceWithRetry(TEST_USERNAME, TEST_PASSWORD);
-            String credId2 = device2.state().credentialId();
+            String credId2 = device2.state().deviceCredentialId();
 
             assertNotEquals(credId1, credId2, "Re-enrollment should create new credential");
         }
@@ -652,9 +652,9 @@ class PushMfaSecurityIT {
 
     // ==================== Helper Methods ====================
 
-    private String createFakeConfirmToken(String credentialId) throws Exception {
+    private String createFakeConfirmToken(String deviceCredentialId) throws Exception {
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .claim("credId", credentialId)
+                .claim("credId", deviceCredentialId)
                 .claim("cid", UUID.randomUUID().toString())
                 .claim("typ", 1)
                 .expirationTime(Date.from(Instant.now().plusSeconds(300)))

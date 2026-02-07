@@ -333,11 +333,11 @@ public class PushMfaAuthenticator implements Authenticator {
     protected void showWaitingFormForExisting(AuthenticationFlowContext context, PushChallenge ch) {
         CredentialModel cred = resolveCredentialForChallenge(context.getUser(), ch);
         PushCredentialData data = cred != null ? PushCredentialService.readCredentialData(cred) : null;
-        String confirmToken = (data != null && data.getCredentialId() != null)
+        String confirmToken = (data != null && data.getDeviceCredentialId() != null)
                 ? PushConfirmTokenBuilder.build(
                         context.getSession(),
                         context.getRealm(),
-                        data.getCredentialId(),
+                        data.getDeviceCredentialId(),
                         ch.getId(),
                         ch.getExpiresAt(),
                         context.getUriInfo().getBaseUri())
@@ -368,7 +368,7 @@ public class PushMfaAuthenticator implements Authenticator {
         form.setAttribute("challengeId", ch != null ? ch.getId() : null)
                 .setAttribute("pushUsername", context.getUser().getUsername())
                 .setAttribute("pushConfirmToken", token)
-                .setAttribute("pushCredentialId", data != null ? data.getCredentialId() : null)
+                .setAttribute("pushCredentialId", data != null ? data.getDeviceCredentialId() : null)
                 .setAttribute("pushMessageVersion", String.valueOf(PushMfaConstants.PUSH_MESSAGE_VERSION))
                 .setAttribute("pushMessageType", String.valueOf(PushMfaConstants.PUSH_MESSAGE_TYPE))
                 .setAttribute("appUniversalLink", appLink)
@@ -481,7 +481,7 @@ public class PushMfaAuthenticator implements Authenticator {
         }
         CredentialModel cred = credentials.get(0);
         PushCredentialData data = PushCredentialService.readCredentialData(cred);
-        if (data == null || data.getCredentialId() == null) {
+        if (data == null || data.getDeviceCredentialId() == null) {
             return null;
         }
         return new CredentialAndData(cred, data);
@@ -492,8 +492,8 @@ public class PushMfaAuthenticator implements Authenticator {
      * Override to customize credential resolution for existing challenges.
      */
     protected CredentialModel resolveCredentialForChallenge(UserModel user, PushChallenge ch) {
-        if (ch.getCredentialId() != null) {
-            CredentialModel byId = PushCredentialService.getCredentialById(user, ch.getCredentialId());
+        if (ch.getKeycloakCredentialId() != null) {
+            CredentialModel byId = PushCredentialService.getCredentialById(user, ch.getKeycloakCredentialId());
             if (byId != null) {
                 return byId;
             }

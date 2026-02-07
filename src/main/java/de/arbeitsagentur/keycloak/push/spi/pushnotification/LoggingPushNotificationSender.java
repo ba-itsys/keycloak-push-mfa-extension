@@ -34,7 +34,7 @@ final class LoggingPushNotificationSender implements PushNotificationSender {
             RealmModel realm,
             UserModel user,
             String confirmToken,
-            String credentialId,
+            String deviceCredentialId,
             String challengeId,
             String pushProviderId,
             String clientId) {
@@ -44,7 +44,7 @@ final class LoggingPushNotificationSender implements PushNotificationSender {
                 user.getUsername(),
                 PushMfaConstants.PUSH_MESSAGE_VERSION,
                 PushMfaConstants.PUSH_MESSAGE_TYPE,
-                credentialId,
+                deviceCredentialId,
                 challengeId,
                 pushProviderId,
                 clientId);

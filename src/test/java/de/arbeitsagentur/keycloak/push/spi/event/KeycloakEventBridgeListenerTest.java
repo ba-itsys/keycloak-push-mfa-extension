@@ -186,7 +186,7 @@ class KeycloakEventBridgeListenerTest {
 
         var details = captured.get(0).details();
         assertFalse(details.containsKey(CHALLENGE_TYPE));
-        assertFalse(details.containsKey(CREDENTIAL_ID));
+        assertFalse(details.containsKey(DEVICE_CREDENTIAL_ID));
         assertFalse(details.containsKey(USER_VERIFICATION));
     }
 

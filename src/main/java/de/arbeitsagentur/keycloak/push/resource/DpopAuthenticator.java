@@ -160,7 +160,7 @@ public class DpopAuthenticator {
                 throw new BadRequestException("Stored credential missing JWK");
             }
 
-            ctx.credentialId = credentialData.getCredentialId();
+            ctx.deviceCredentialId = credentialData.getDeviceCredentialId();
 
             KeyWrapper keyWrapper = PushMfaKeyUtil.keyWrapperFromString(credentialData.getPublicKeyJwk());
             PushMfaKeyUtil.ensureKeyMatchesAlgorithm(keyWrapper, algorithm.name());
@@ -196,7 +196,7 @@ public class DpopAuthenticator {
         final String httpMethod;
         final String requestPath;
         String userId;
-        String credentialId;
+        String deviceCredentialId;
 
         AuthContext(String httpMethod, String requestPath) {
             this.httpMethod = httpMethod;
@@ -210,7 +210,7 @@ public class DpopAuthenticator {
                 new DpopAuthenticationFailedEvent(
                         realm().getId(),
                         ctx.userId,
-                        ctx.credentialId,
+                        ctx.deviceCredentialId,
                         reason,
                         ctx.httpMethod,
                         ctx.requestPath,

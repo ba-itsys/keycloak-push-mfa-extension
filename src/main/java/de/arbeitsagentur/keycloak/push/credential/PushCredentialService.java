@@ -54,11 +54,11 @@ public final class PushCredentialService {
         user.credentialManager().updateStoredCredential(credential);
     }
 
-    public static CredentialModel getCredentialById(UserModel user, String credentialId) {
-        if (StringUtil.isBlank(credentialId)) {
+    public static CredentialModel getCredentialById(UserModel user, String keycloakCredentialId) {
+        if (StringUtil.isBlank(keycloakCredentialId)) {
             return null;
         }
-        CredentialModel model = user.credentialManager().getStoredCredentialById(credentialId);
+        CredentialModel model = user.credentialManager().getStoredCredentialById(keycloakCredentialId);
         if (model == null || !PushMfaConstants.CREDENTIAL_TYPE.equals(model.getType())) {
             return null;
         }

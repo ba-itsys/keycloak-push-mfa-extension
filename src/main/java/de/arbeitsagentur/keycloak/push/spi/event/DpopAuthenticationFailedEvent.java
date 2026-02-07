@@ -35,7 +35,7 @@ import java.time.Instant;
  *
  * @param realmId      Realm where the authentication was attempted
  * @param userId       User ID if known (may be null if not determinable)
- * @param credentialId Credential ID if known (may be null)
+ * @param deviceCredentialId Credential ID if known (may be null)
  * @param reason       Description of why authentication failed
  * @param httpMethod   HTTP method of the failed request
  * @param requestPath  Path of the failed request
@@ -44,7 +44,7 @@ import java.time.Instant;
 public record DpopAuthenticationFailedEvent(
         String realmId,
         String userId,
-        String credentialId,
+        String deviceCredentialId,
         String reason,
         String httpMethod,
         String requestPath,

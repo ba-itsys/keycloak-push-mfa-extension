@@ -72,7 +72,7 @@ public final class DeviceClient {
                 .claim("deviceType", "ios")
                 .claim("pushProviderId", state.pushProviderId())
                 .claim("pushProviderType", state.pushProviderType())
-                .claim("credentialId", state.credentialId())
+                .claim("credentialId", state.deviceCredentialId())
                 .claim("deviceId", state.deviceId())
                 .claim("deviceLabel", state.deviceLabel())
                 .expirationTime(Date.from(Instant.now().plusSeconds(300)))
@@ -120,7 +120,7 @@ public final class DeviceClient {
         var confirmClaims = confirm.getJWTClaimsSet();
         String cid = Objects.requireNonNullElse(confirmClaims.getStringClaim("cid"), challengeId);
         String credId = Objects.requireNonNull(confirmClaims.getStringClaim("credId"), "Confirm token missing credId");
-        assertEquals(state.credentialId(), credId, "Confirm token carried unexpected credential id");
+        assertEquals(state.deviceCredentialId(), credId, "Confirm token carried unexpected credential id");
         String tokenAction = (action == null || action.isBlank()) ? PushMfaConstants.CHALLENGE_APPROVE : action;
         String normalizedAction = tokenAction.toLowerCase();
         JWTClaimsSet.Builder loginBuilder = new JWTClaimsSet.Builder()

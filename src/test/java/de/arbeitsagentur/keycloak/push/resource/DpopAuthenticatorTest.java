@@ -823,7 +823,7 @@ class DpopAuthenticatorTest {
     void failedEventUsesAppLevelCredentialId() throws Exception {
         // Use DIFFERENT IDs to expose the mismatch:
         // - credential.getId() returns the Keycloak CredentialModel UUID
-        // - credentialData.getCredentialId() returns the app-level credential ID
+        // - credentialData.getDeviceCredentialId() returns the app-level credential ID
         String keycloakModelId = "keycloak-model-uuid";
         String appCredentialId = "app-credential-id";
 
@@ -868,7 +868,7 @@ class DpopAuthenticatorTest {
         assertNotNull(capturedEvent.get(), "DpopAuthenticationFailedEvent should have been fired");
         assertEquals(
                 appCredentialId,
-                capturedEvent.get().credentialId(),
+                capturedEvent.get().deviceCredentialId(),
                 "Event credentialId should be the app-level credential ID, not the Keycloak model UUID");
     }
 

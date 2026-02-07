@@ -32,12 +32,12 @@ import java.time.Instant;
  * @param realmId      Realm where the invalid response was received
  * @param userId       User associated with the challenge
  * @param challengeId  Unique identifier of the challenge
- * @param credentialId Credential ID from the challenge (may be null)
+ * @param deviceCredentialId Credential ID from the challenge (may be null)
  * @param reason       Description of why the response was invalid
  * @param timestamp    When this event occurred
  */
 public record ChallengeResponseInvalidEvent(
-        String realmId, String userId, String challengeId, String credentialId, String reason, Instant timestamp)
+        String realmId, String userId, String challengeId, String deviceCredentialId, String reason, Instant timestamp)
         implements PushMfaEvent {
 
     @Override

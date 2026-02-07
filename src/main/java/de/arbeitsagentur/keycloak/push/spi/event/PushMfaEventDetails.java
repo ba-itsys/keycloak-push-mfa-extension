@@ -51,8 +51,8 @@ public final class PushMfaEventDetails {
     /** Detail key for the challenge type (AUTHENTICATION or ENROLLMENT). */
     public static final String CHALLENGE_TYPE = "push_mfa_challenge_type";
 
-    /** Detail key for the credential ID. */
-    public static final String CREDENTIAL_ID = "push_mfa_credential_id";
+    /** Detail key for the device credential ID. */
+    public static final String DEVICE_CREDENTIAL_ID = "push_mfa_credential_id";
 
     /** Detail key for the device ID. */
     public static final String DEVICE_ID = "push_mfa_device_id";

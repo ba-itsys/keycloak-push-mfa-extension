@@ -145,7 +145,7 @@ class ChallengeIssuerTest {
         PushChallenge challenge = result.challenge();
         assertEquals(REALM_ID, challenge.getRealmId());
         assertEquals(USER_ID, challenge.getUserId());
-        assertEquals(CREDENTIAL_ID, challenge.getCredentialId());
+        assertEquals(CREDENTIAL_ID, challenge.getKeycloakCredentialId());
         assertEquals(CLIENT_ID, challenge.getClientId());
         assertEquals(ROOT_SESSION_ID, challenge.getRootSessionId());
         assertEquals(PushChallenge.Type.AUTHENTICATION, challenge.getType());
@@ -376,7 +376,7 @@ class ChallengeIssuerTest {
     void eventCredentialIdMatchesTokenCredentialId() throws Exception {
         // Use DIFFERENT IDs to expose the mismatch:
         // - credential.getId() returns the Keycloak CredentialModel UUID
-        // - credentialData.getCredentialId() returns the app-level credential ID
+        // - credentialData.getDeviceCredentialId() returns the app-level credential ID
         String keycloakModelId = "keycloak-model-uuid";
         String appCredentialId = "app-credential-id";
 
@@ -423,9 +423,9 @@ class ChallengeIssuerTest {
         assertNotNull(capturedEvent.get(), "ChallengeCreatedEvent should have been fired");
         assertEquals(
                 tokenCredentialId,
-                capturedEvent.get().credentialId(),
-                "ChallengeCreatedEvent.credentialId() should match the token's credId claim, "
-                        + "but event has '" + capturedEvent.get().credentialId()
+                capturedEvent.get().deviceCredentialId(),
+                "ChallengeCreatedEvent.deviceCredentialId() should match the token's credId claim, "
+                        + "but event has '" + capturedEvent.get().deviceCredentialId()
                         + "' while token has '" + tokenCredentialId + "'");
     }
 

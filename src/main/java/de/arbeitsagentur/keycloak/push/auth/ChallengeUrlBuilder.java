@@ -74,7 +74,7 @@ public final class ChallengeUrlBuilder {
         return PushConfirmTokenBuilder.build(
                 context.getSession(),
                 context.getRealm(),
-                credentialData.getCredentialId(),
+                credentialData.getDeviceCredentialId(),
                 challenge.getId(),
                 challenge.getExpiresAt(),
                 context.getUriInfo().getBaseUri(),

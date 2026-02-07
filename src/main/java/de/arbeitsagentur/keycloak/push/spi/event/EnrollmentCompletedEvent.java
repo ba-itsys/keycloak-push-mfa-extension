@@ -24,7 +24,7 @@ import java.time.Instant;
  * @param realmId      Realm where enrollment completed
  * @param userId       User who completed enrollment
  * @param challengeId  Enrollment challenge ID that was completed
- * @param credentialId Newly created credential ID
+ * @param deviceCredentialId Newly created credential ID
  * @param deviceId     Device identifier
  * @param deviceType   Type/OS of the device (e.g., "iOS", "Android")
  * @param timestamp    When this event occurred
@@ -33,7 +33,7 @@ public record EnrollmentCompletedEvent(
         String realmId,
         String userId,
         String challengeId,
-        String credentialId,
+        String deviceCredentialId,
         String deviceId,
         String deviceType,
         Instant timestamp)

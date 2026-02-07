@@ -243,7 +243,7 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Cr
                         challenge.getUserId(),
                         challenge.getId(),
                         challenge.getType(),
-                        challenge.getCredentialId(),
+                        challenge.getKeycloakCredentialId(),
                         challenge.getClientId(),
                         challenge.getUserVerificationMode(),
                         challenge.getExpiresAt(),

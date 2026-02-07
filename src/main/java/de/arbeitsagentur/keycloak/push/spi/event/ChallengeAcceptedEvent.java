@@ -26,7 +26,7 @@ import java.time.Instant;
  * @param userId        User who accepted the challenge
  * @param challengeId   Unique identifier of the challenge
  * @param challengeType Type of challenge (AUTHENTICATION or ENROLLMENT)
- * @param credentialId  Credential ID used to accept the challenge
+ * @param deviceCredentialId  Credential ID used to accept the challenge
  * @param clientId      OAuth client ID
  * @param deviceId      Device that accepted the challenge
  * @param timestamp     When this event occurred
@@ -36,7 +36,7 @@ public record ChallengeAcceptedEvent(
         String userId,
         String challengeId,
         PushChallenge.Type challengeType,
-        String credentialId,
+        String deviceCredentialId,
         String clientId,
         String deviceId,
         Instant timestamp)

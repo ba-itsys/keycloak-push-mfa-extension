@@ -38,7 +38,16 @@ public final class PushChallenge {
     private final String realmId;
     private final String userId;
     private final byte[] nonce;
-    private final String credentialId;
+    /**
+     * The Keycloak-internal credential UUID ({@code CredentialModel.getId()}).
+     *
+     * <p>The server selects which credential to use for a challenge and stores this ID so it can
+     * reload the {@code CredentialModel} later. The mobile app never sees this value; it receives
+     * the device credential ID ({@code PushCredentialData.getDeviceCredentialId()}) via the
+     * {@code credId} claim in the confirm token.
+     */
+    private final String keycloakCredentialId;
+
     private final String clientId;
     private final String watchSecret;
     private final String rootSessionId;
@@ -56,7 +65,7 @@ public final class PushChallenge {
             String realmId,
             String userId,
             byte[] nonce,
-            String credentialId,
+            String keycloakCredentialId,
             String clientId,
             String watchSecret,
             String rootSessionId,
@@ -70,7 +79,7 @@ public final class PushChallenge {
                 realmId,
                 userId,
                 nonce,
-                credentialId,
+                keycloakCredentialId,
                 clientId,
                 watchSecret,
                 rootSessionId,
@@ -89,7 +98,7 @@ public final class PushChallenge {
             String realmId,
             String userId,
             byte[] nonce,
-            String credentialId,
+            String keycloakCredentialId,
             String clientId,
             String watchSecret,
             String rootSessionId,
@@ -105,7 +114,7 @@ public final class PushChallenge {
         this.realmId = Objects.requireNonNull(realmId);
         this.userId = Objects.requireNonNull(userId);
         this.nonce = Arrays.copyOf(Objects.requireNonNull(nonce), nonce.length);
-        this.credentialId = credentialId;
+        this.keycloakCredentialId = keycloakCredentialId;
         this.clientId = clientId;
         this.watchSecret = watchSecret;
         this.rootSessionId = rootSessionId;
@@ -136,8 +145,8 @@ public final class PushChallenge {
         return Arrays.copyOf(nonce, nonce.length);
     }
 
-    public String getCredentialId() {
-        return credentialId;
+    public String getKeycloakCredentialId() {
+        return keycloakCredentialId;
     }
 
     public String getClientId() {

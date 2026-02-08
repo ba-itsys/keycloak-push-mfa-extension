@@ -28,7 +28,7 @@ public record PushMfaConfig(Dpop dpop, Input input, Sse sse) {
             int maxDeviceIdLength,
             int maxDeviceTypeLength,
             int maxDeviceLabelLength,
-            int maxCredentialIdLength,
+            int maxDeviceCredentialIdLength,
             int maxPushProviderIdLength,
             int maxPushProviderTypeLength,
             int maxJwkJsonLength) {}

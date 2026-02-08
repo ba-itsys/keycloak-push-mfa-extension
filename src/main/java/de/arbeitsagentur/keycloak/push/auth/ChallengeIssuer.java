@@ -192,7 +192,7 @@ public class ChallengeIssuer {
                         pushChallenge.getUserId(),
                         pushChallenge.getId(),
                         pushChallenge.getType(),
-                        credentialData.getCredentialId(),
+                        credentialData.getDeviceCredentialId(),
                         pushChallenge.getClientId(),
                         pushChallenge.getUserVerificationMode(),
                         pushChallenge.getExpiresAt(),
@@ -219,7 +219,7 @@ public class ChallengeIssuer {
         return PushConfirmTokenBuilder.build(
                 context.getSession(),
                 context.getRealm(),
-                credentialData.getCredentialId(),
+                credentialData.getDeviceCredentialId(),
                 pushChallenge.getId(),
                 pushChallenge.getExpiresAt(),
                 context.getUriInfo().getBaseUri());
@@ -234,7 +234,7 @@ public class ChallengeIssuer {
                 "Push message prepared {version=%d,type=%d,credentialId=%s}",
                 PushMfaConstants.PUSH_MESSAGE_VERSION,
                 PushMfaConstants.PUSH_MESSAGE_TYPE,
-                credentialData.getCredentialId());
+                credentialData.getDeviceCredentialId());
     }
 
     /**
@@ -253,7 +253,7 @@ public class ChallengeIssuer {
                 context.getUser(),
                 clientId,
                 confirmToken,
-                credentialData.getCredentialId(),
+                credentialData.getDeviceCredentialId(),
                 pushChallenge.getId(),
                 credentialData.getPushProviderType(),
                 credentialData.getPushProviderId());

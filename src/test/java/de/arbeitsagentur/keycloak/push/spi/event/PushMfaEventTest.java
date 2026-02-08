@@ -52,7 +52,7 @@ class PushMfaEventTest {
         assertEquals(USER_ID, event.userId());
         assertEquals(CHALLENGE_ID, event.challengeId());
         assertEquals(PushChallenge.Type.AUTHENTICATION, event.challengeType());
-        assertEquals(CREDENTIAL_ID, event.credentialId());
+        assertEquals(CREDENTIAL_ID, event.deviceCredentialId());
         assertEquals(CLIENT_ID, event.clientId());
         assertEquals(PushChallenge.UserVerificationMode.PIN, event.userVerificationMode());
         assertEquals(EXPIRES_AT, event.expiresAt());
@@ -72,7 +72,7 @@ class PushMfaEventTest {
                 EXPIRES_AT,
                 TIMESTAMP);
 
-        assertNull(event.credentialId());
+        assertNull(event.deviceCredentialId());
         assertNull(event.clientId());
         assertEquals(PushChallenge.Type.ENROLLMENT, event.challengeType());
     }
@@ -164,7 +164,7 @@ class PushMfaEventTest {
                 REALM_ID, null, null, "Invalid access token", "GET", "/path", TIMESTAMP);
 
         assertNull(event.userId());
-        assertNull(event.credentialId());
+        assertNull(event.deviceCredentialId());
         assertEquals(REALM_ID, event.realmId());
     }
 

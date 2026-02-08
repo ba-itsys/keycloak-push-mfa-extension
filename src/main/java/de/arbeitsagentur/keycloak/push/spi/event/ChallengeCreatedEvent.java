@@ -26,7 +26,7 @@ import java.time.Instant;
  * @param userId               User for whom the challenge was created
  * @param challengeId          Unique identifier of the challenge
  * @param challengeType        Type of challenge (AUTHENTICATION or ENROLLMENT)
- * @param credentialId         Credential ID (null for enrollment challenges)
+ * @param deviceCredentialId         Credential ID (null for enrollment challenges)
  * @param clientId             OAuth client ID (null for enrollment challenges)
  * @param userVerificationMode User verification mode (NONE, NUMBER_MATCH, or PIN)
  * @param expiresAt            When the challenge expires
@@ -37,7 +37,7 @@ public record ChallengeCreatedEvent(
         String userId,
         String challengeId,
         PushChallenge.Type challengeType,
-        String credentialId,
+        String deviceCredentialId,
         String clientId,
         PushChallenge.UserVerificationMode userVerificationMode,
         Instant expiresAt,

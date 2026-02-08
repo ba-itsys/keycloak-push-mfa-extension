@@ -51,8 +51,8 @@ public class PushCredentialProvider implements CredentialProvider<CredentialMode
     }
 
     @Override
-    public boolean deleteCredential(RealmModel realm, UserModel user, String credentialId) {
-        return user.credentialManager().removeStoredCredentialById(credentialId);
+    public boolean deleteCredential(RealmModel realm, UserModel user, String keycloakCredentialId) {
+        return user.credentialManager().removeStoredCredentialById(keycloakCredentialId);
     }
 
     @Override

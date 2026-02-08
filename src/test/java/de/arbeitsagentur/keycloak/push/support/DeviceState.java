@@ -22,7 +22,7 @@ public final class DeviceState {
 
     private DeviceSigningKey key;
     private final String deviceId;
-    private final String credentialId;
+    private final String deviceCredentialId;
     private String pushProviderId;
     private String pushProviderType;
     private final String deviceLabel;
@@ -32,7 +32,7 @@ public final class DeviceState {
         this(
                 key,
                 "device-" + UUID.randomUUID(),
-                "credential-" + UUID.randomUUID(),
+                "device-credential-" + UUID.randomUUID(),
                 "Integration Test Device",
                 "mock-push-provider",
                 "log");
@@ -41,13 +41,13 @@ public final class DeviceState {
     public DeviceState(
             DeviceSigningKey key,
             String deviceId,
-            String credentialId,
+            String deviceCredentialId,
             String deviceLabel,
             String pushProviderId,
             String pushProviderType) {
         this.key = key;
         this.deviceId = deviceId;
-        this.credentialId = credentialId;
+        this.deviceCredentialId = deviceCredentialId;
         this.deviceLabel = deviceLabel;
         this.pushProviderId = pushProviderId;
         this.pushProviderType = pushProviderType;
@@ -62,7 +62,7 @@ public final class DeviceState {
         return new DeviceState(
                 key,
                 "device-" + UUID.randomUUID(),
-                "credential-" + UUID.randomUUID(),
+                "device-credential-" + UUID.randomUUID(),
                 deviceLabel,
                 "mock-push-provider",
                 "log");
@@ -80,8 +80,8 @@ public final class DeviceState {
         return deviceId;
     }
 
-    public String credentialId() {
-        return credentialId;
+    public String deviceCredentialId() {
+        return deviceCredentialId;
     }
 
     public String pushProviderId() {

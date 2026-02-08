@@ -154,8 +154,8 @@ class PushMfaResourceUserVerificationTest {
         Mockito.when(session.getAllProviders(PushMfaEventListener.class)).thenReturn(Set.of(listener));
 
         PushMfaResource resource = new PushMfaResource(session);
-        // Build challenge with the Keycloak model UUID as its credentialId
-        PushChallenge challenge = buildPinChallengeWithCredentialId("0123", keycloakModelId);
+        // Build challenge with the Keycloak model UUID as its keycloakCredentialId
+        PushChallenge challenge = buildPinChallengeWithKeycloakCredentialId("0123", keycloakModelId);
         ObjectNode payload = MAPPER.createObjectNode().put("userVerification", "wrong");
 
         assertThrows(
@@ -165,17 +165,17 @@ class PushMfaResourceUserVerificationTest {
         assertNotNull(capturedEvent.get(), "ChallengeResponseInvalidEvent should have been fired");
         assertEquals(
                 appCredentialId,
-                capturedEvent.get().credentialId(),
+                capturedEvent.get().deviceCredentialId(),
                 "Event credentialId should be the app-level credential ID, not the Keycloak model UUID");
     }
 
-    private PushChallenge buildPinChallengeWithCredentialId(String pin, String credentialId) {
+    private PushChallenge buildPinChallengeWithKeycloakCredentialId(String pin, String keycloakCredentialId) {
         return new PushChallenge(
                 "challenge-123",
                 "realm-id",
                 "user-id",
                 new byte[] {1, 2, 3},
-                credentialId,
+                keycloakCredentialId,
                 "client-id",
                 "watch-secret",
                 "root-session",

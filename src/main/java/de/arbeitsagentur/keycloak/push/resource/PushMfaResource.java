@@ -198,7 +198,7 @@ public class PushMfaResource {
                 requireField(payload, "deviceType", CONFIG.input().maxDeviceTypeLength()),
                 requireField(payload, "pushProviderId", CONFIG.input().maxPushProviderIdLength()),
                 requireField(payload, "pushProviderType", CONFIG.input().maxPushProviderTypeLength()),
-                requireField(payload, "credentialId", CONFIG.input().maxCredentialIdLength()),
+                requireField(payload, "credentialId", CONFIG.input().maxDeviceCredentialIdLength()),
                 requireField(payload, "deviceId", CONFIG.input().maxDeviceIdLength()));
 
         String labelClaim = jsonText(payload, "deviceLabel");
@@ -214,7 +214,7 @@ public class PushMfaResource {
                         challenge.getRealmId(),
                         challenge.getUserId(),
                         challenge.getId(),
-                        data.getCredentialId(),
+                        data.getDeviceCredentialId(),
                         data.getDeviceId(),
                         data.getDeviceType(),
                         Instant.now()));
@@ -239,7 +239,7 @@ public class PushMfaResource {
                                 realm().getId(), device.user().getId())
                         .stream()
                         .filter(ch -> ch.getType() == PushChallenge.Type.AUTHENTICATION)
-                        .filter(ch -> Objects.equals(ch.getCredentialId(), deviceCredential.getId()))
+                        .filter(ch -> Objects.equals(ch.getKeycloakCredentialId(), deviceCredential.getId()))
                         .filter(this::ensureAuthSessionActive)
                         .map(ch -> new LoginChallenge(
                                 device.user().getId(),
@@ -283,9 +283,9 @@ public class PushMfaResource {
         if (!Objects.equals(device.user().getId(), challenge.getUserId())) {
             throw new ForbiddenException("Authentication token subject mismatch");
         }
-        if (challenge.getCredentialId() != null
+        if (challenge.getKeycloakCredentialId() != null
                 && !Objects.equals(
-                        challenge.getCredentialId(), device.credential().getId())) {
+                        challenge.getKeycloakCredentialId(), device.credential().getId())) {
             throw new ForbiddenException("Authentication token device mismatch");
         }
 
@@ -307,7 +307,7 @@ public class PushMfaResource {
         }
 
         PushCredentialData data = device.credentialData();
-        if (StringUtil.isBlank(data.getCredentialId())) {
+        if (StringUtil.isBlank(data.getDeviceCredentialId())) {
             throw new BadRequestException("Stored credential missing credentialId");
         }
 
@@ -320,7 +320,7 @@ public class PushMfaResource {
                             challenge.getRealmId(),
                             challenge.getUserId(),
                             challenge.getId(),
-                            data.getCredentialId(),
+                            data.getDeviceCredentialId(),
                             "Invalid authentication token signature",
                             Instant.now()));
             throw new ForbiddenException("Invalid authentication token signature");
@@ -329,8 +329,8 @@ public class PushMfaResource {
         verifyTokenExpiration(payload.get("exp"), "authentication token");
 
         String tokenCredentialId = PushMfaInputValidator.requireBoundedText(
-                jsonText(payload, "credId"), CONFIG.input().maxCredentialIdLength(), "credId");
-        if (!Objects.equals(tokenCredentialId, data.getCredentialId())) {
+                jsonText(payload, "credId"), CONFIG.input().maxDeviceCredentialIdLength(), "credId");
+        if (!Objects.equals(tokenCredentialId, data.getDeviceCredentialId())) {
             throw new ForbiddenException("Authentication token credential mismatch");
         }
 
@@ -344,7 +344,7 @@ public class PushMfaResource {
                             challenge.getUserId(),
                             challenge.getId(),
                             challenge.getType(),
-                            data.getCredentialId(),
+                            data.getDeviceCredentialId(),
                             challenge.getClientId(),
                             data.getDeviceId(),
                             Instant.now()));
@@ -355,7 +355,7 @@ public class PushMfaResource {
             throw new BadRequestException("Unsupported action: " + tokenAction);
         }
 
-        verifyUserVerification(session, challenge, payload, data.getCredentialId());
+        verifyUserVerification(session, challenge, payload, data.getDeviceCredentialId());
         challengeStore.resolve(challengeId, PushChallengeStatus.APPROVED);
 
         PushMfaEventService.fire(
@@ -365,7 +365,7 @@ public class PushMfaResource {
                         challenge.getUserId(),
                         challenge.getId(),
                         challenge.getType(),
-                        data.getCredentialId(),
+                        data.getDeviceCredentialId(),
                         challenge.getClientId(),
                         data.getDeviceId(),
                         Instant.now()));
@@ -429,7 +429,7 @@ public class PushMfaResource {
                 current.getDeviceType(),
                 pushProviderId,
                 pushProviderType,
-                current.getCredentialId(),
+                current.getDeviceCredentialId(),
                 current.getDeviceId());
         PushCredentialService.updateCredential(device.user(), device.credential(), updated);
         LOG.infof(
@@ -469,7 +469,7 @@ public class PushMfaResource {
                     current.getDeviceType(),
                     current.getPushProviderId(),
                     current.getPushProviderType(),
-                    current.getCredentialId(),
+                    current.getDeviceCredentialId(),
                     current.getDeviceId());
             PushCredentialService.updateCredential(device.user(), device.credential(), updated);
 
@@ -478,7 +478,7 @@ public class PushMfaResource {
                     new KeyRotatedEvent(
                             realm().getId(),
                             device.user().getId(),
-                            current.getCredentialId(),
+                            current.getDeviceCredentialId(),
                             current.getDeviceId(),
                             Instant.now()));
 
@@ -492,7 +492,7 @@ public class PushMfaResource {
                     new KeyRotationDeniedEvent(
                             realm().getId(),
                             device.user().getId(),
-                            device.credentialData().getCredentialId(),
+                            device.credentialData().getDeviceCredentialId(),
                             ex.getMessage(),
                             Instant.now()));
             throw ex;
@@ -591,7 +591,7 @@ public class PushMfaResource {
     }
 
     void verifyUserVerification(
-            KeycloakSession session, PushChallenge challenge, JsonNode payload, String credentialId) {
+            KeycloakSession session, PushChallenge challenge, JsonNode payload, String deviceCredentialId) {
         if (challenge == null) {
             return;
         }
@@ -623,7 +623,7 @@ public class PushMfaResource {
                             challenge.getRealmId(),
                             challenge.getUserId(),
                             challenge.getId(),
-                            credentialId,
+                            deviceCredentialId,
                             "User verification mismatch",
                             Instant.now()));
             throw new ForbiddenException("User verification mismatch");

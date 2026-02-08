@@ -185,14 +185,14 @@ class PushChallengeStoreTest {
         assertEquals(options, retrieved.getUserVerificationOptions());
     }
 
-    private PushChallenge createAuthChallenge(String credentialId) {
+    private PushChallenge createAuthChallenge(String keycloakCredentialId) {
         return store.create(
                 REALM_ID,
                 USER_ID,
                 new byte[] {1, 2, 3},
                 PushChallenge.Type.AUTHENTICATION,
                 Duration.ofSeconds(120),
-                credentialId,
+                keycloakCredentialId,
                 "client",
                 "watch-secret",
                 "root-session");

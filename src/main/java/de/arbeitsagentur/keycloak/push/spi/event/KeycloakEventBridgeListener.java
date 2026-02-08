@@ -57,7 +57,7 @@ class KeycloakEventBridgeListener implements PushMfaEventListener {
                 .add(PushMfaEventDetails.EVENT_TYPE, PushMfaEventDetails.EventTypes.CHALLENGE_CREATED)
                 .add(PushMfaEventDetails.CHALLENGE_ID, event.challengeId())
                 .add(PushMfaEventDetails.CHALLENGE_TYPE, event.challengeType())
-                .add(PushMfaEventDetails.CREDENTIAL_ID, event.credentialId())
+                .add(PushMfaEventDetails.DEVICE_CREDENTIAL_ID, event.deviceCredentialId())
                 .add(PushMfaEventDetails.USER_VERIFICATION, event.userVerificationMode());
 
         emit(event.realmId(), event.userId(), event.clientId(), EventType.CUSTOM_REQUIRED_ACTION, null, details);
@@ -69,7 +69,7 @@ class KeycloakEventBridgeListener implements PushMfaEventListener {
                 .add(PushMfaEventDetails.EVENT_TYPE, PushMfaEventDetails.EventTypes.CHALLENGE_ACCEPTED)
                 .add(PushMfaEventDetails.CHALLENGE_ID, event.challengeId())
                 .add(PushMfaEventDetails.CHALLENGE_TYPE, event.challengeType())
-                .add(PushMfaEventDetails.CREDENTIAL_ID, event.credentialId())
+                .add(PushMfaEventDetails.DEVICE_CREDENTIAL_ID, event.deviceCredentialId())
                 .add(PushMfaEventDetails.DEVICE_ID, event.deviceId());
 
         emit(event.realmId(), event.userId(), event.clientId(), EventType.CUSTOM_REQUIRED_ACTION, null, details);
@@ -81,7 +81,7 @@ class KeycloakEventBridgeListener implements PushMfaEventListener {
                 .add(PushMfaEventDetails.EVENT_TYPE, PushMfaEventDetails.EventTypes.CHALLENGE_DENIED)
                 .add(PushMfaEventDetails.CHALLENGE_ID, event.challengeId())
                 .add(PushMfaEventDetails.CHALLENGE_TYPE, event.challengeType())
-                .add(PushMfaEventDetails.CREDENTIAL_ID, event.credentialId())
+                .add(PushMfaEventDetails.DEVICE_CREDENTIAL_ID, event.deviceCredentialId())
                 .add(PushMfaEventDetails.DEVICE_ID, event.deviceId());
 
         emit(
@@ -98,7 +98,7 @@ class KeycloakEventBridgeListener implements PushMfaEventListener {
         var details = new EventDetails()
                 .add(PushMfaEventDetails.EVENT_TYPE, PushMfaEventDetails.EventTypes.CHALLENGE_RESPONSE_INVALID)
                 .add(PushMfaEventDetails.CHALLENGE_ID, event.challengeId())
-                .add(PushMfaEventDetails.CREDENTIAL_ID, event.credentialId())
+                .add(PushMfaEventDetails.DEVICE_CREDENTIAL_ID, event.deviceCredentialId())
                 .add(PushMfaEventDetails.REASON, event.reason());
 
         emit(
@@ -116,7 +116,7 @@ class KeycloakEventBridgeListener implements PushMfaEventListener {
                 .add(Details.CREDENTIAL_TYPE, PushMfaConstants.CREDENTIAL_TYPE)
                 .add(PushMfaEventDetails.EVENT_TYPE, PushMfaEventDetails.EventTypes.ENROLLMENT_COMPLETED)
                 .add(PushMfaEventDetails.CHALLENGE_ID, event.challengeId())
-                .add(PushMfaEventDetails.CREDENTIAL_ID, event.credentialId())
+                .add(PushMfaEventDetails.DEVICE_CREDENTIAL_ID, event.deviceCredentialId())
                 .add(PushMfaEventDetails.DEVICE_ID, event.deviceId())
                 .add(PushMfaEventDetails.DEVICE_TYPE, event.deviceType());
 
@@ -128,7 +128,7 @@ class KeycloakEventBridgeListener implements PushMfaEventListener {
         var details = new EventDetails()
                 .add(Details.CREDENTIAL_TYPE, PushMfaConstants.CREDENTIAL_TYPE)
                 .add(PushMfaEventDetails.EVENT_TYPE, PushMfaEventDetails.EventTypes.KEY_ROTATED)
-                .add(PushMfaEventDetails.CREDENTIAL_ID, event.credentialId())
+                .add(PushMfaEventDetails.DEVICE_CREDENTIAL_ID, event.deviceCredentialId())
                 .add(PushMfaEventDetails.DEVICE_ID, event.deviceId());
 
         emit(event.realmId(), event.userId(), null, EventType.UPDATE_CREDENTIAL, null, details);
@@ -139,7 +139,7 @@ class KeycloakEventBridgeListener implements PushMfaEventListener {
         var details = new EventDetails()
                 .add(Details.CREDENTIAL_TYPE, PushMfaConstants.CREDENTIAL_TYPE)
                 .add(PushMfaEventDetails.EVENT_TYPE, PushMfaEventDetails.EventTypes.KEY_ROTATION_DENIED)
-                .add(PushMfaEventDetails.CREDENTIAL_ID, event.credentialId())
+                .add(PushMfaEventDetails.DEVICE_CREDENTIAL_ID, event.deviceCredentialId())
                 .add(PushMfaEventDetails.REASON, event.reason());
 
         emit(
@@ -155,7 +155,7 @@ class KeycloakEventBridgeListener implements PushMfaEventListener {
     public void onDpopAuthenticationFailed(DpopAuthenticationFailedEvent event) {
         var details = new EventDetails()
                 .add(PushMfaEventDetails.EVENT_TYPE, PushMfaEventDetails.EventTypes.DPOP_AUTHENTICATION_FAILED)
-                .add(PushMfaEventDetails.CREDENTIAL_ID, event.credentialId())
+                .add(PushMfaEventDetails.DEVICE_CREDENTIAL_ID, event.deviceCredentialId())
                 .add(PushMfaEventDetails.REASON, event.reason())
                 .add(PushMfaEventDetails.HTTP_METHOD, event.httpMethod())
                 .add(PushMfaEventDetails.REQUEST_PATH, event.requestPath());

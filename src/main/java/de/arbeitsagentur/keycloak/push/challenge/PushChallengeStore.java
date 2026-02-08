@@ -56,7 +56,7 @@ public class PushChallengeStore {
             byte[] nonceBytes,
             PushChallenge.Type type,
             Duration ttl,
-            String credentialId,
+            String keycloakCredentialId,
             String clientId,
             String watchSecret,
             String rootSessionId) {
@@ -66,7 +66,7 @@ public class PushChallengeStore {
                 nonceBytes,
                 type,
                 ttl,
-                credentialId,
+                keycloakCredentialId,
                 clientId,
                 watchSecret,
                 rootSessionId,
@@ -81,7 +81,7 @@ public class PushChallengeStore {
             byte[] nonceBytes,
             PushChallenge.Type type,
             Duration ttl,
-            String credentialId,
+            String keycloakCredentialId,
             String clientId,
             String watchSecret,
             String rootSessionId,
@@ -100,8 +100,8 @@ public class PushChallengeStore {
         data.put("type", type.name());
         data.put("status", PushChallengeStatus.PENDING.name());
         data.put("createdAt", now.toString());
-        if (credentialId != null) {
-            data.put("credentialId", credentialId);
+        if (keycloakCredentialId != null) {
+            data.put("credentialId", keycloakCredentialId);
         }
         if (clientId != null) {
             data.put("clientId", clientId);
@@ -134,7 +134,7 @@ public class PushChallengeStore {
                 realmId,
                 userId,
                 nonceBytes,
-                credentialId,
+                keycloakCredentialId,
                 clientId,
                 watchSecret,
                 rootSessionId,

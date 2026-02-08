@@ -13,11 +13,12 @@ public final class MyPushSender implements PushNotificationSender {
                      RealmModel realm,
                      UserModel user,
                      String confirmToken,
-                     String credentialId,
+                     String deviceCredentialId,
                      String challengeId,
                      String pushProviderId,
                      String clientId) {
         // Serialize confirmToken into the mobile push message and deliver it via FCM/APNs/etc.
+        // deviceCredentialId is the device-chosen credential ID (not the Keycloak-internal UUID).
     }
 }
 ```
@@ -57,10 +58,10 @@ The extension provides an event SPI that allows you to react to push MFA lifecyc
 | `ChallengeAcceptedEvent` | User approved the challenge on their device | `challengeId`, `challengeType`, `userId`, `deviceId` |
 | `ChallengeDeniedEvent` | User denied the challenge on their device | `challengeId`, `challengeType`, `userId`, `deviceId` |
 | `ChallengeResponseInvalidEvent` | Response validation failed (bad signature, wrong PIN, etc.) | `challengeId`, `userId`, `reason` |
-| `EnrollmentCompletedEvent` | Device enrollment finished successfully | `challengeId`, `userId`, `credentialId`, `deviceId`, `deviceType` |
-| `KeyRotatedEvent` | Device key was successfully rotated | `userId`, `credentialId`, `deviceId` |
-| `KeyRotationDeniedEvent` | Key rotation request failed validation | `userId`, `credentialId`, `reason` |
-| `DpopAuthenticationFailedEvent` | DPoP authentication failed for device API request | `userId`, `credentialId`, `reason`, `httpMethod`, `requestPath` |
+| `EnrollmentCompletedEvent` | Device enrollment finished successfully | `challengeId`, `userId`, `deviceCredentialId`, `deviceId`, `deviceType` |
+| `KeyRotatedEvent` | Device key was successfully rotated | `userId`, `deviceCredentialId`, `deviceId` |
+| `KeyRotationDeniedEvent` | Key rotation request failed validation | `userId`, `deviceCredentialId`, `reason` |
+| `DpopAuthenticationFailedEvent` | DPoP authentication failed for device API request | `userId`, `deviceCredentialId`, `reason`, `httpMethod`, `requestPath` |
 
 All events include `realmId`, `userId` (may be null for early auth failures), and `timestamp`.
 
@@ -134,7 +135,7 @@ public void onEvent(Event event) {
 | `EVENT_TYPE` | `push_mfa_event_type` |
 | `CHALLENGE_ID` | `push_mfa_challenge_id` |
 | `CHALLENGE_TYPE` | `push_mfa_challenge_type` |
-| `CREDENTIAL_ID` | `push_mfa_credential_id` |
+| `DEVICE_CREDENTIAL_ID` | `push_mfa_credential_id` |
 | `DEVICE_ID` | `push_mfa_device_id` |
 | `DEVICE_TYPE` | `push_mfa_device_type` |
 | `USER_VERIFICATION` | `push_mfa_user_verification` |

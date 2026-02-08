@@ -2,6 +2,20 @@
 
 This document provides detailed technical information about each phase of the enrollment and login flows.
 
+## Credential ID Concepts
+
+Each Push MFA credential has **two distinct IDs**:
+
+| ID | Where | Purpose |
+|----|-------|---------|
+| **Device credential ID** (`deviceCredentialId`) | Set by the device during enrollment; stored in `PushCredentialData`; carried in tokens as `credId`, events as `push_mfa_credential_id`, and push notifications | The mobile app uses this to match incoming pushes to its local credential store. Appears in all external-facing protocols. |
+| **Keycloak credential ID** (`keycloakCredentialId`) | UUID assigned by Keycloak when the `CredentialModel` is persisted; stored on `PushChallenge` | Used internally by the server to load the correct `CredentialModel` from storage. The app never sees this value. |
+
+**Why challenges only store the Keycloak credential ID:** The server picks which credential to use for a challenge and records its Keycloak UUID so it can reload the `CredentialModel` later. The device credential ID is redundant on the challenge because:
+- The app already knows its own device credential ID (it chose it during enrollment).
+- The app receives the device credential ID via the `credId` claim in the confirm token.
+- The server accesses the device credential ID through `PushCredentialData` after loading the `CredentialModel` by its Keycloak UUID.
+
 ## Enrollment Flow
 
 1. **Enrollment challenge (RequiredAction):** Keycloak renders a QR code that encodes the realm-signed `enrollmentToken` (the default theme emits `my-secure://enroll?token=<enrollmentToken>`, but you can change the URI scheme/payload in your own theme or override the server-side prefix via `--spi-required-action-push-mfa-register-app-uri-prefix=...`). The token is a JWT signed with the realm key and contains user id (`sub`), username, `enrollmentId`, and a Base64URL nonce.

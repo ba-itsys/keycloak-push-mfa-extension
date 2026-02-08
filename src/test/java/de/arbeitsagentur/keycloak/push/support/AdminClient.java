@@ -380,11 +380,12 @@ public final class AdminClient {
             if (!"push-mfa".equals(item.path("type").asText())) {
                 continue;
             }
-            String credentialId = item.path("id").asText(null);
-            if (credentialId == null || credentialId.isBlank()) {
+            String keycloakCredentialId = item.path("id").asText(null);
+            if (keycloakCredentialId == null || keycloakCredentialId.isBlank()) {
                 continue;
             }
-            URI deleteUri = baseUri.resolve("/admin/realms/demo/users/" + userId + "/credentials/" + credentialId);
+            URI deleteUri =
+                    baseUri.resolve("/admin/realms/demo/users/" + userId + "/credentials/" + keycloakCredentialId);
             HttpRequest deleteRequest = HttpRequest.newBuilder(deleteUri)
                     .header("Authorization", "Bearer " + accessToken)
                     .DELETE()

@@ -44,7 +44,7 @@ final class LoggingPushMfaEventListener implements PushMfaEventListener {
                 event.challengeId(),
                 event.challengeType(),
                 event.clientId(),
-                event.credentialId(),
+                event.deviceCredentialId(),
                 event.userVerificationMode());
     }
 
@@ -66,30 +66,30 @@ final class LoggingPushMfaEventListener implements PushMfaEventListener {
     public void onChallengeResponseInvalid(ChallengeResponseInvalidEvent event) {
         LOG.warnf(
                 "Challenge response invalid: id=%s, credential=%s, reason=%s",
-                event.challengeId(), event.credentialId(), event.reason());
+                event.challengeId(), event.deviceCredentialId(), event.reason());
     }
 
     @Override
     public void onEnrollmentCompleted(EnrollmentCompletedEvent event) {
         LOG.debugf(
                 "Enrollment completed: challenge=%s, device=%s, type=%s, credential=%s",
-                event.challengeId(), event.deviceId(), event.deviceType(), event.credentialId());
+                event.challengeId(), event.deviceId(), event.deviceType(), event.deviceCredentialId());
     }
 
     @Override
     public void onKeyRotated(KeyRotatedEvent event) {
-        LOG.debugf("Key rotated: credential=%s, device=%s", event.credentialId(), event.deviceId());
+        LOG.debugf("Key rotated: credential=%s, device=%s", event.deviceCredentialId(), event.deviceId());
     }
 
     @Override
     public void onKeyRotationDenied(KeyRotationDeniedEvent event) {
-        LOG.warnf("Key rotation denied: credential=%s, reason=%s", event.credentialId(), event.reason());
+        LOG.warnf("Key rotation denied: credential=%s, reason=%s", event.deviceCredentialId(), event.reason());
     }
 
     @Override
     public void onDpopAuthenticationFailed(DpopAuthenticationFailedEvent event) {
         LOG.warnf(
                 "DPoP authentication failed: user=%s, credential=%s, method=%s, path=%s, reason=%s",
-                event.userId(), event.credentialId(), event.httpMethod(), event.requestPath(), event.reason());
+                event.userId(), event.deviceCredentialId(), event.httpMethod(), event.requestPath(), event.reason());
     }
 }

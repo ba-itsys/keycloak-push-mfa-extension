@@ -39,17 +39,17 @@ public final class PushConfirmTokenBuilder {
     public static String build(
             KeycloakSession session,
             RealmModel realm,
-            String credentialId,
+            String deviceCredentialId,
             String challengeId,
             Instant challengeExpiresAt,
             URI baseUri) {
-        return build(session, realm, credentialId, challengeId, challengeExpiresAt, baseUri, null);
+        return build(session, realm, deviceCredentialId, challengeId, challengeExpiresAt, baseUri, null);
     }
 
     public static String build(
             KeycloakSession session,
             RealmModel realm,
-            String credentialId,
+            String deviceCredentialId,
             String challengeId,
             Instant challengeExpiresAt,
             URI baseUri,
@@ -68,7 +68,7 @@ public final class PushConfirmTokenBuilder {
 
         Map<String, Object> payload = new HashMap<>();
         payload.put("iss", issuer.toString());
-        payload.put("credId", credentialId);
+        payload.put("credId", deviceCredentialId);
         payload.put("typ", PushMfaConstants.PUSH_MESSAGE_TYPE);
         payload.put("ver", PushMfaConstants.PUSH_MESSAGE_VERSION);
         payload.put("cid", challengeId);

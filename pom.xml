@@ -4,7 +4,7 @@
 
   <groupId>de.arbeitsagentur.opdt</groupId>
   <artifactId>keycloak-push-mfa-extension</artifactId>
-  <version>1.5.7</version>
+  <version>1.5.8-SNAPSHOT</version>
   <packaging>jar</packaging>
 
   <name>Keycloak Push MFA Extension</name>

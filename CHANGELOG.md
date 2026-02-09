@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.7](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.5.6...v1.5.7) (2026-02-09)
+
+
+### Bug Fixes
+
+* rename credentialId to better show which one it is (keycloak, device) ([#92](https://github.com/ba-itsys/keycloak-push-mfa-extension/issues/92)) ([220531d](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/220531d10bd02ee8582355e4551f0a083f934441))
+
 ## [1.5.6](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.5.5...v1.5.6) (2026-02-06)
 
 

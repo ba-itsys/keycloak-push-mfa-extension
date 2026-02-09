@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.6.0](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.5.7...v1.6.0) (2026-02-09)
+
+
+### Features
+
+* add /push-mfa/login/lockout endpoint ([ec33395](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/ec3339587993b20097d57977cca0303374fb631c))
+
+
+### Bug Fixes
+
+* remove useless / flaky tests ([7c7995d](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/7c7995d4b1286ada20c9b68522e3afca946f1207))
+
 ## [1.5.7](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.5.6...v1.5.7) (2026-02-09)
 
 

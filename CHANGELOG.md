@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.1](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.6.0...v1.6.1) (2026-02-11)
+
+
+### Bug Fixes
+
+* add client id to push mfa events ([51059d9](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/51059d96b06d58244523b34e35363d7129ef3921))
+* disable keycloak event bridge by default to increase flexibility ([fc0af5b](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/fc0af5b7435b7b67d5ba7cf06d876bdf832cf8f2))
+
 ## [1.6.0](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.5.7...v1.6.0) (2026-02-09)
 
 

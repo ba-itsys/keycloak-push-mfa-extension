@@ -108,6 +108,8 @@ Event type mappings to Keycloak events:
 - **Error Code**: Value returned by `Event.getError()` for error events
 - **Additional Detail Keys**: Other keys present in `Event.getDetails()` map (all events also include `push_mfa_event_type`; credential-related events include Keycloak's `credential_type` set to `push-mfa`)
 
+> **Brute force protector note:** The `LOGIN_ERROR` events above are fired by the event bridge when processing device-side REST API responses. These are separate from the authenticator flow, where only an explicit **challenge denied** triggers `context.failureChallenge()`. Non-credential errors (challenge expiry, rate limits, internal errors) use `context.challenge()` and do **not** increment the brute force failure counter. See [Security — Brute Force Protector Compatibility](security.md#brute-force-protector-compatibility) for details.
+
 #### Logging Listener (`log`)
 
 Logs all events at INFO level with DEBUG details. Configure Keycloak's logging to see the output:

@@ -174,12 +174,7 @@ public class PushMfaAuthenticator implements Authenticator {
 
         // Acquire per-user lock to prevent race conditions in concurrent challenge creation
         if (!store.tryAcquireCreationLock(realmId, userId)) {
-            // Another thread is currently creating a challenge for this user
-            context.failureChallenge(
-                    AuthenticationFlowError.GENERIC_AUTHENTICATION_ERROR,
-                    context.form()
-                            .setError("push-mfa-too-many-challenges")
-                            .createErrorPage(Response.Status.TOO_MANY_REQUESTS));
+            showTooManyChallengesError(context);
             return;
         }
 
@@ -420,11 +415,7 @@ public class PushMfaAuthenticator implements Authenticator {
                 ch -> resolveCredentialForChallenge(context.getUser(), ch) != null);
 
         if (pending.pendingCount() >= maxPending) {
-            context.failureChallenge(
-                    AuthenticationFlowError.GENERIC_AUTHENTICATION_ERROR,
-                    context.form()
-                            .setError("push-mfa-too-many-challenges")
-                            .createErrorPage(Response.Status.TOO_MANY_REQUESTS));
+            showTooManyChallengesError(context);
             return true;
         }
         return false;
@@ -511,23 +502,35 @@ public class PushMfaAuthenticator implements Authenticator {
     }
 
     /**
-     * Shows a generic error page.
+     * Shows a generic error page. Uses {@code context.challenge()} instead of
+     * {@code context.failureChallenge()} to avoid triggering Keycloak's brute force protector
+     * for internal/system errors that are not credential failures.
      * Override to customize error display.
      */
     protected void showError(AuthenticationFlowContext context, String errorKey, Response.Status status) {
-        context.failureChallenge(
-                AuthenticationFlowError.INTERNAL_ERROR,
-                context.form().setError(errorKey).createErrorPage(status));
+        context.challenge(context.form().setError(errorKey).createErrorPage(status));
     }
 
     /**
-     * Shows the expired challenge error page.
+     * Shows the too-many-challenges error page. Uses {@code context.challenge()} instead of
+     * {@code context.failureChallenge()} to avoid triggering Keycloak's brute force protector
+     * for non-credential errors.
+     * Override to customize the too-many-challenges error display.
+     */
+    protected void showTooManyChallengesError(AuthenticationFlowContext context) {
+        context.challenge(context.form()
+                .setError("push-mfa-too-many-challenges")
+                .createErrorPage(Response.Status.TOO_MANY_REQUESTS));
+    }
+
+    /**
+     * Shows the expired challenge error page. Uses {@code context.challenge()} instead of
+     * {@code context.failureChallenge()} to avoid triggering Keycloak's brute force protector
+     * when a challenge simply times out (the user did not respond in time).
      * Override to customize the expired error display.
      */
     protected void showExpiredError(AuthenticationFlowContext context) {
-        context.failureChallenge(
-                AuthenticationFlowError.EXPIRED_CODE,
-                context.form().setError("push-mfa-expired").createForm("push-expired.ftl"));
+        context.challenge(context.form().setError("push-mfa-expired").createForm("push-expired.ftl"));
     }
 
     /**

@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.2](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.6.1...v1.6.2) (2026-02-16)
+
+
+### Bug Fixes
+
+* do not use failureChallenge for challenge timeouts to not lock out users ([e16c29b](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/e16c29befa925f18404e3cdc0e861f8fb15a9559))
+
 ## [1.6.1](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.6.0...v1.6.1) (2026-02-11)
 
 

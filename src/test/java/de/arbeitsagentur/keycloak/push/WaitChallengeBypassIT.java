@@ -592,11 +592,61 @@ class WaitChallengeBypassIT {
                     // Expected if we're on a wait page
                 }
             } finally {
-                adminClient.disablePushMfaWaitChallenge();
-                adminClient.configurePushMfaLoginChallengeTtlSeconds(
-                        PushMfaConstants.DEFAULT_LOGIN_CHALLENGE_TTL.toSeconds());
-                adminClient.clearUserAttribute(username, WAIT_ATTRIBUTE_KEY);
+                // Resilient cleanup with retry logic
+                cleanupTestStateWithRetry(() -> {
+                    try {
+                        adminClient.disablePushMfaWaitChallenge();
+                        adminClient.configurePushMfaLoginChallengeTtlSeconds(
+                                PushMfaConstants.DEFAULT_LOGIN_CHALLENGE_TTL.toSeconds());
+                        adminClient.clearUserAttribute(username, WAIT_ATTRIBUTE_KEY);
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                });
             }
+        }
+
+        /**
+         * Execute cleanup operations with graceful handling of transient errors.
+         * Prevents test failures due to temporary server issues during cleanup.
+         */
+        private void cleanupTestStateWithRetry(Runnable cleanupOp) {
+            Exception lastException = null;
+            for (int attempt = 0; attempt < 3; attempt++) {
+                try {
+                    cleanupOp.run();
+                    return;
+                } catch (Exception e) {
+                    lastException = e;
+                    if (attempt < 2 && isMaybeTemporary(e)) {
+                        try {
+                            // Reset token on auth errors and retry
+                            if (e.getMessage() != null && e.getMessage().contains("401")) {
+                                adminClient.resetAccessToken();
+                            }
+                            Thread.sleep(300 * (attempt + 1));
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            break;
+                        }
+                    }
+                }
+            }
+            // Log the error but don't fail the test during cleanup
+            if (lastException != null) {
+                System.err.println("[WARNING] Test cleanup partially failed (this doesn't fail the test): "
+                        + lastException.getMessage());
+                lastException.printStackTrace(System.err);
+            }
+        }
+
+        /**
+         * Determine if an exception appears to be transient (temporary) rather than
+         * indicating a persistent problem.
+         */
+        private boolean isMaybeTemporary(Exception e) {
+            String msg = e.getMessage();
+            return msg != null && (msg.contains("401") || msg.contains("timeout") || msg.contains("temporarily"));
         }
     }
 

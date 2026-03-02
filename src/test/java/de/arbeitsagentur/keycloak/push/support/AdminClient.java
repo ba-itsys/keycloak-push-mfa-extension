@@ -227,7 +227,7 @@ public final class AdminClient {
 
         // Get current user representation
         URI userUri = baseUri.resolve("/admin/realms/demo/users/" + userId);
-        HttpResponse<String> getResponse = sendGetWithRetry(userUri, true);
+        HttpResponse<String> getResponse = sendGetWithRetry(userUri);
 
         if (getResponse.statusCode() != 200) {
             return; // User not found or error
@@ -312,7 +312,7 @@ public final class AdminClient {
 
         // Get current user representation
         URI userUri = baseUri.resolve("/admin/realms/demo/users/" + userId);
-        HttpResponse<String> getResponse = sendGetWithRetry(userUri, false);
+        HttpResponse<String> getResponse = sendGetWithRetry(userUri);
 
         if (getResponse.statusCode() != 200) {
             throw new IllegalStateException(
@@ -461,10 +461,11 @@ public final class AdminClient {
 
     /**
      * Send a GET request with automatic token refresh retry on 401.
-     * @param uri the URI to GET
-     * @param ignoreErrors if true, returns response even on non-200, if false throws on non-200
+     *
+     * <p>The caller is responsible for interpreting non-200 results; this helper
+     * merely ensures a fresh token is acquired if necessary.
      */
-    private HttpResponse<String> sendGetWithRetry(URI uri, boolean ignoreErrors) throws Exception {
+    private HttpResponse<String> sendGetWithRetry(URI uri) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(uri)
                 .header("Authorization", "Bearer " + accessToken)
                 .header("Accept", "application/json")
@@ -683,7 +684,7 @@ public final class AdminClient {
             }
         } else {
             URI configUri = baseUri.resolve("/admin/realms/demo/authentication/config/" + configId);
-            HttpResponse<String> existingResponse = sendGetWithRetry(configUri, false);
+            HttpResponse<String> existingResponse = sendGetWithRetry(configUri);
             if (existingResponse.statusCode() != 200) {
                 throw new IllegalStateException("Failed to read authenticator config: " + existingResponse.statusCode()
                         + " body=" + existingResponse.body());

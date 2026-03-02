@@ -384,10 +384,18 @@ public class PushMfaResource {
         UserModel user = device.user();
         user.setEnabled(false);
 
+        // resolve any outstanding authentication challenges for this user so that
+        // browsers waiting via SSE are notified and will surface the lockout
+        String realmId = realm().getId();
+        List<PushChallenge> pending = challengeStore.findPendingAuthenticationForUser(realmId, user.getId());
+        for (PushChallenge ch : pending) {
+            challengeStore.resolve(ch.getId(), PushChallengeStatus.USER_LOCKED_OUT);
+        }
+
         PushMfaEventService.fire(
                 session,
                 new UserLockedOutEvent(
-                        realm().getId(),
+                        realmId,
                         user.getId(),
                         device.credentialData().getDeviceCredentialId(),
                         device.clientId(),

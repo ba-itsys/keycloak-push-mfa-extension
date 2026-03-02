@@ -20,5 +20,6 @@ public enum PushChallengeStatus {
     PENDING,
     APPROVED,
     DENIED,
-    EXPIRED
+    EXPIRED,
+    USER_LOCKED_OUT
 }

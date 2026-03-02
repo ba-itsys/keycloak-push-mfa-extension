@@ -84,6 +84,14 @@ public class PushMfaAuthenticator implements Authenticator {
     protected void onChallengeDenied(AuthenticationFlowContext context, PushChallenge challenge) {}
 
     /**
+     * Called after a challenge has been denied and indicatted a possible attack. Override to add custom behavior.
+     *
+     * @param context the authentication flow context
+     * @param challenge the denied challenge
+     */
+    protected void onChallengeUserLockedOut(AuthenticationFlowContext context, PushChallenge challenge) {}
+
+    /**
      * Called after a challenge has expired. Override to add custom behavior.
      *
      * @param context the authentication flow context
@@ -272,6 +280,12 @@ public class PushMfaAuthenticator implements Authenticator {
                 ChallengeNoteHelper.clear(authSession);
                 onChallengeDenied(context, ch);
                 showDeniedError(context);
+            }
+            case USER_LOCKED_OUT -> {
+                store.remove(ch.getId());
+                ChallengeNoteHelper.clear(authSession);
+                onChallengeUserLockedOut(context, ch);
+                showUserLockedOutError(context);
             }
             case EXPIRED -> {
                 store.remove(ch.getId());
@@ -541,6 +555,16 @@ public class PushMfaAuthenticator implements Authenticator {
         context.failureChallenge(
                 AuthenticationFlowError.INVALID_CREDENTIALS,
                 context.form().setError("push-mfa-denied").createForm("push-denied.ftl"));
+    }
+
+    /**
+     * Shows the denied with user locked out challenge error page.
+     * Override to customize the denied error display.
+     */
+    protected void showUserLockedOutError(AuthenticationFlowContext context) {
+        context.failureChallenge(
+                AuthenticationFlowError.INVALID_CREDENTIALS,
+                context.form().setError("push-mfa-user-locked-out").createForm("push-user-locked-out.ftl"));
     }
 
     // Wait challenge rate limiting methods

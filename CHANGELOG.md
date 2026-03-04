@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.3](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.6.2...v1.6.3) (2026-03-04)
+
+
+### Bug Fixes
+
+* add USER_LOCKED_OUT to frontend flow ([#104](https://github.com/ba-itsys/keycloak-push-mfa-extension/issues/104)) ([db02740](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/db02740ba133650c01f242edf032d9a37681b36c))
+
 ## [1.6.2](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.6.1...v1.6.2) (2026-02-16)
 
 

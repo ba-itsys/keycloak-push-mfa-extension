@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import de.arbeitsagentur.keycloak.push.support.AdminClient;
 import de.arbeitsagentur.keycloak.push.support.ContainerLogWatcher;
+import de.arbeitsagentur.keycloak.push.support.KeycloakAdminBootstrap;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -83,6 +84,7 @@ class PushMfaFuzzIT {
 
     @BeforeAll
     void setup() throws Exception {
+        KeycloakAdminBootstrap.allowHttpAdminLogin(KEYCLOAK);
         baseUri = URI.create(String.format("http://%s:%d/", KEYCLOAK.getHost(), KEYCLOAK.getMappedPort(8080)));
         adminClient = new AdminClient(baseUri);
         adminClient.ensureUser(TEST_USERNAME, TEST_PASSWORD);

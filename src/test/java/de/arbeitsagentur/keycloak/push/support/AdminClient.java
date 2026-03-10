@@ -440,23 +440,25 @@ public final class AdminClient {
     }
 
     private HttpResponse<String> sendWithRetry(URI uri) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder(uri)
-                .header("Authorization", "Bearer " + accessToken)
-                .POST(HttpRequest.BodyPublishers.noBody())
-                .build();
-        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
-
-        // Handle token expiration by refreshing and retrying once
-        if (response.statusCode() == 401) {
-            accessToken = null;
-            ensureAccessToken();
-            request = HttpRequest.newBuilder(uri)
+        for (int attempt = 0; attempt < 3; attempt++) {
+            HttpRequest request = HttpRequest.newBuilder(uri)
                     .header("Authorization", "Bearer " + accessToken)
                     .POST(HttpRequest.BodyPublishers.noBody())
                     .build();
-            response = http.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() == 401) {
+                accessToken = null;
+                ensureAccessToken();
+                continue;
+            }
+            if (response.statusCode() >= 500 && attempt < 2) {
+                Thread.sleep(250L * (attempt + 1));
+                continue;
+            }
+            return response;
         }
-        return response;
+        throw new IllegalStateException("Unreachable retry state for POST " + uri);
     }
 
     /**
@@ -466,25 +468,26 @@ public final class AdminClient {
      * merely ensures a fresh token is acquired if necessary.
      */
     private HttpResponse<String> sendGetWithRetry(URI uri) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder(uri)
-                .header("Authorization", "Bearer " + accessToken)
-                .header("Accept", "application/json")
-                .GET()
-                .build();
-        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
-
-        // Handle token expiration by refreshing and retrying once
-        if (response.statusCode() == 401) {
-            accessToken = null;
-            ensureAccessToken();
-            request = HttpRequest.newBuilder(uri)
+        for (int attempt = 0; attempt < 3; attempt++) {
+            HttpRequest request = HttpRequest.newBuilder(uri)
                     .header("Authorization", "Bearer " + accessToken)
                     .header("Accept", "application/json")
                     .GET()
                     .build();
-            response = http.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() == 401) {
+                accessToken = null;
+                ensureAccessToken();
+                continue;
+            }
+            if (response.statusCode() >= 500 && attempt < 2) {
+                Thread.sleep(250L * (attempt + 1));
+                continue;
+            }
+            return response;
         }
-        return response;
+        throw new IllegalStateException("Unreachable retry state for GET " + uri);
     }
 
     /**
@@ -493,25 +496,26 @@ public final class AdminClient {
      * @param body the request body
      */
     private HttpResponse<String> sendPutWithRetry(URI uri, String body) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder(uri)
-                .header("Authorization", "Bearer " + accessToken)
-                .header("Content-Type", "application/json")
-                .PUT(HttpRequest.BodyPublishers.ofString(body))
-                .build();
-        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
-
-        // Handle token expiration by refreshing and retrying once
-        if (response.statusCode() == 401) {
-            accessToken = null;
-            ensureAccessToken();
-            request = HttpRequest.newBuilder(uri)
+        for (int attempt = 0; attempt < 3; attempt++) {
+            HttpRequest request = HttpRequest.newBuilder(uri)
                     .header("Authorization", "Bearer " + accessToken)
                     .header("Content-Type", "application/json")
                     .PUT(HttpRequest.BodyPublishers.ofString(body))
                     .build();
-            response = http.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() == 401) {
+                accessToken = null;
+                ensureAccessToken();
+                continue;
+            }
+            if (response.statusCode() >= 500 && attempt < 2) {
+                Thread.sleep(250L * (attempt + 1));
+                continue;
+            }
+            return response;
         }
-        return response;
+        throw new IllegalStateException("Unreachable retry state for PUT " + uri);
     }
 
     private JsonNode readCredentials(String userId) throws Exception {
@@ -618,7 +622,7 @@ public final class AdminClient {
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
         Exception lastException = null;
-        for (int attempt = 0; attempt < 3; attempt++) {
+        for (int attempt = 0; attempt < 10; attempt++) {
             HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 200) {
                 JsonNode json = MAPPER.readTree(response.body());

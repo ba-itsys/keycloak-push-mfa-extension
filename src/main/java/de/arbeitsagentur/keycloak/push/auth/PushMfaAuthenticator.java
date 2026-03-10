@@ -499,9 +499,7 @@ public class PushMfaAuthenticator implements Authenticator {
     protected CredentialModel resolveCredentialForChallenge(UserModel user, PushChallenge ch) {
         if (ch.getKeycloakCredentialId() != null) {
             CredentialModel byId = PushCredentialService.getCredentialById(user, ch.getKeycloakCredentialId());
-            if (byId != null) {
-                return byId;
-            }
+            return byId;
         }
         List<CredentialModel> credentials = PushCredentialService.getActiveCredentials(user);
         return credentials.isEmpty() ? null : credentials.get(0);

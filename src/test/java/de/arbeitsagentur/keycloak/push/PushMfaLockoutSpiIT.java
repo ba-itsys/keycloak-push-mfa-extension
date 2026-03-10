@@ -28,6 +28,7 @@ import de.arbeitsagentur.keycloak.push.support.DeviceClient;
 import de.arbeitsagentur.keycloak.push.support.DeviceKeyType;
 import de.arbeitsagentur.keycloak.push.support.DeviceState;
 import de.arbeitsagentur.keycloak.push.support.HtmlPage;
+import de.arbeitsagentur.keycloak.push.support.KeycloakAdminBootstrap;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.URI;
@@ -84,7 +85,8 @@ class PushMfaLockoutSpiIT {
     private AdminClient adminClient;
 
     @BeforeAll
-    void setup() {
+    void setup() throws Exception {
+        KeycloakAdminBootstrap.allowHttpAdminLogin(KEYCLOAK);
         baseUri = URI.create(String.format("http://%s:%d/", KEYCLOAK.getHost(), KEYCLOAK.getMappedPort(8080)));
         adminClient = new AdminClient(baseUri);
     }

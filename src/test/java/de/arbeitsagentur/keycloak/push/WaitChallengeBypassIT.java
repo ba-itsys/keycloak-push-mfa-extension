@@ -29,6 +29,7 @@ import de.arbeitsagentur.keycloak.push.support.DeviceClient;
 import de.arbeitsagentur.keycloak.push.support.DeviceKeyType;
 import de.arbeitsagentur.keycloak.push.support.DeviceState;
 import de.arbeitsagentur.keycloak.push.support.HtmlPage;
+import de.arbeitsagentur.keycloak.push.support.KeycloakAdminBootstrap;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import java.net.URI;
 import java.nio.file.Files;
@@ -104,6 +105,7 @@ class WaitChallengeBypassIT {
 
     @BeforeAll
     void setup() throws Exception {
+        KeycloakAdminBootstrap.allowHttpAdminLogin(KEYCLOAK);
         baseUri = URI.create(String.format("http://%s:%d/", KEYCLOAK.getHost(), KEYCLOAK.getMappedPort(8080)));
         adminClient = new AdminClient(baseUri);
 

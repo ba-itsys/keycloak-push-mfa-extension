@@ -26,6 +26,7 @@ import de.arbeitsagentur.keycloak.push.support.AdminClient;
 import de.arbeitsagentur.keycloak.push.support.BrowserSession;
 import de.arbeitsagentur.keycloak.push.support.ContainerLogWatcher;
 import de.arbeitsagentur.keycloak.push.support.HtmlPage;
+import de.arbeitsagentur.keycloak.push.support.KeycloakAdminBootstrap;
 import de.arbeitsagentur.keycloak.push.support.MockMobileClient;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import java.net.URI;
@@ -90,7 +91,8 @@ class MockMobileIntegrationIT {
     private AdminClient adminClient;
 
     @BeforeAll
-    void setup() {
+    void setup() throws Exception {
+        KeycloakAdminBootstrap.allowHttpAdminLogin(KEYCLOAK);
         baseUri = URI.create(String.format("http://%s:%d/", KEYCLOAK.getHost(), KEYCLOAK.getMappedPort(8080)));
         adminClient = new AdminClient(baseUri);
         mockMobileClient = new MockMobileClient(

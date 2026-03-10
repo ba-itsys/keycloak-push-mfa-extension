@@ -1,0 +1,53 @@
+/*
+ * Copyright 2026 Bundesagentur für Arbeit
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package de.arbeitsagentur.keycloak.push.it.lockout;
+
+import de.arbeitsagentur.keycloak.push.credential.PushCredentialData;
+import de.arbeitsagentur.keycloak.push.spi.PushMfaLockoutHandler;
+import java.util.logging.Logger;
+import org.keycloak.credential.CredentialModel;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.RealmModel;
+import org.keycloak.models.UserModel;
+
+public final class TestAttributePushMfaLockoutHandler implements PushMfaLockoutHandler {
+
+    private static final Logger LOG = Logger.getLogger(TestAttributePushMfaLockoutHandler.class.getName());
+
+    public static final String LOCKOUT_MARKER_ATTRIBUTE = "pushMfaLockoutTestMarker";
+    public static final String LOG_MARKER = "LOCKOUT_HANDLER_TEST_MARKER";
+
+    @Override
+    public void lockoutUser(
+            KeycloakSession session,
+            RealmModel realm,
+            UserModel user,
+            CredentialModel credential,
+            PushCredentialData credentialData,
+            String clientId) {
+        String marker = String.format(
+                "%s clientId=%s deviceId=%s userId=%s",
+                LOG_MARKER, clientId, credentialData.getDeviceId(), user.getId());
+        user.setSingleAttribute(LOCKOUT_MARKER_ATTRIBUTE, marker);
+        LOG.info(marker);
+    }
+
+    @Override
+    public void close() {
+        // no-op
+    }
+}

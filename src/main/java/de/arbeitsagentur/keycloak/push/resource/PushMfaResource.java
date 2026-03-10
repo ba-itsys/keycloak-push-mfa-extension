@@ -23,6 +23,7 @@ import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStatus;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStore;
 import de.arbeitsagentur.keycloak.push.credential.PushCredentialData;
 import de.arbeitsagentur.keycloak.push.credential.PushCredentialService;
+import de.arbeitsagentur.keycloak.push.spi.PushMfaLockoutHandler;
 import de.arbeitsagentur.keycloak.push.spi.event.ChallengeAcceptedEvent;
 import de.arbeitsagentur.keycloak.push.spi.event.ChallengeDeniedEvent;
 import de.arbeitsagentur.keycloak.push.spi.event.ChallengeResponseInvalidEvent;
@@ -382,7 +383,11 @@ public class PushMfaResource {
     public Response lockoutUser(@Context HttpHeaders headers, @Context UriInfo uriInfo) {
         DpopAuthenticator.DeviceAssertion device = dpopAuth.authenticate(headers, uriInfo, "POST");
         UserModel user = device.user();
-        user.setEnabled(false);
+        PushMfaLockoutHandler handler = session.getProvider(PushMfaLockoutHandler.class);
+        if (handler == null) {
+            throw new IllegalStateException("No PushMfaLockoutHandler provider available");
+        }
+        handler.lockoutUser(session, realm(), user, device.credential(), device.credentialData(), device.clientId());
 
         // resolve any outstanding authentication challenges for this user so that
         // browsers waiting via SSE are notified and will surface the lockout

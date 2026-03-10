@@ -193,6 +193,53 @@ The Push MFA Event SPI supports multiple active listeners simultaneously. All re
 
 All listeners are discovered via the standard Java ServiceLoader mechanism.
 
+## Push MFA Lockout SPI
+
+The `/realms/<realm>/push-mfa/login/lockout` endpoint now delegates the account action to the `PushMfaLockoutHandler` SPI. The bundled default provider keeps the current behavior and simply calls `user.setEnabled(false)`, but deployments can replace that with their own lockout workflow.
+
+Implement a custom handler:
+
+```java
+public final class MyLockoutHandler implements PushMfaLockoutHandler {
+    @Override
+    public void lockoutUser(KeycloakSession session,
+                            RealmModel realm,
+                            UserModel user,
+                            CredentialModel credential,
+                            PushCredentialData credentialData,
+                            String clientId) {
+        user.setSingleAttribute("push_mfa_lockout_requested", "true");
+        // or disable the user, call an external system, trigger your own audit path, etc.
+    }
+}
+```
+
+Create a matching factory:
+
+```java
+public final class MyLockoutHandlerFactory implements PushMfaLockoutHandlerFactory {
+    @Override
+    public PushMfaLockoutHandler create(KeycloakSession session) {
+        return new MyLockoutHandler();
+    }
+    @Override public String getId() { return "custom-lockout"; }
+}
+```
+
+Register the factory in:
+
+```
+META-INF/services/de.arbeitsagentur.keycloak.push.spi.PushMfaLockoutHandlerFactory
+```
+
+Select your provider with standard Keycloak SPI config:
+
+```properties
+spi-push-mfa-lockout-handler--provider=custom-lockout
+```
+
+If no provider is selected explicitly, the bundled `default` implementation remains active and preserves the old behavior.
+
 ### Implementing a Custom Event Listener
 
 Create a listener that implements `PushMfaEventListener`:

@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.7.0](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.6.3...v1.7.0) (2026-03-10)
+
+
+### Features
+
+* add lockout spi ([177becc](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/177beccc10ca18158ffa6ee5e1bdda3131ac362f))
+
+
+### Dependencies
+
+* **deps-dev:** bump org.apache.maven.plugins:maven-compiler-plugin ([4e432fd](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/4e432fd3680e2c1c6adaed8919731217817814cc))
+* **deps-dev:** bump org.apache.maven.plugins:maven-surefire-plugin ([2b5aa98](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/2b5aa985a0c5d49936d62ef8bc6ae03b7b3d29e6))
+* **deps-dev:** bump org.glassfish.jersey.core:jersey-common ([fe4decf](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/fe4decf99553f17bf669f57c25f0b6777574cde6))
+* **deps:** bump keycloak.version from 26.5.2 to 26.5.4 ([cb639f5](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/cb639f5b34193bdb68ea20a7a25a59dfc9e3b1df))
+
 ## [1.6.3](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.6.2...v1.6.3) (2026-03-04)
 
 

@@ -186,6 +186,22 @@ public final class BrowserSession {
         return new DeviceChallenge(token.text().trim(), challengeInput.attr("value"), action);
     }
 
+    public URI extractLoginEventsUri(HtmlPage page) {
+        Element root = page.document().getElementById("kc-push-wait-root");
+        if (root == null) {
+            throw new IllegalStateException("Login wait root element missing");
+        }
+        String eventsUrl = root.attr("data-push-events-url");
+        if (eventsUrl == null || eventsUrl.isBlank()) {
+            throw new IllegalStateException("Login events URL missing");
+        }
+        URI candidate = URI.create(eventsUrl);
+        if (candidate.isAbsolute()) {
+            return candidate;
+        }
+        return page.uri().resolve(candidate);
+    }
+
     public String extractSameDeviceToken(HtmlPage page) {
         Element button = page.document().getElementById("kc-push-open-app");
         if (button == null) {

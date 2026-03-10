@@ -61,9 +61,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
 import org.jboss.logging.Logger;
 import org.keycloak.credential.CredentialModel;
 import org.keycloak.crypto.KeyWrapper;
+import org.keycloak.executors.ExecutorsProvider;
 import org.keycloak.jose.jws.Algorithm;
 import org.keycloak.jose.jws.JWSInput;
 import org.keycloak.models.ClientModel;
@@ -79,9 +81,8 @@ public class PushMfaResource {
 
     private static final Logger LOG = Logger.getLogger(PushMfaResource.class);
     private static final PushMfaConfig CONFIG = PushMfaConfig.load();
-    private static final PushMfaSseDispatcher SSE_DISPATCHER =
-            new PushMfaSseDispatcher(CONFIG.sse().maxConnections());
-    private static final int SSE_RETRY_AFTER_SECONDS = 5;
+    private static final long SSE_RETRY_AFTER_MILLIS = 5000L;
+    private static volatile PushMfaSseRegistry sseRegistry;
 
     private final KeycloakSession session;
     private final PushChallengeStore challengeStore;
@@ -92,7 +93,7 @@ public class PushMfaResource {
         this.session = session;
         this.challengeStore = new PushChallengeStore(session);
         this.dpopAuth = new DpopAuthenticator(session, CONFIG.dpop(), CONFIG.input());
-        this.sseEmitter = new SseEventEmitter(challengeStore);
+        this.sseEmitter = new SseEventEmitter();
     }
 
     @GET
@@ -110,21 +111,7 @@ public class PushMfaResource {
         String sec =
                 PushMfaInputValidator.optionalBoundedText(secret, CONFIG.sse().maxSecretLength(), "secret");
         LOG.debugf("Received enrollment SSE stream request for challenge %s", cid);
-
-        boolean accepted = SSE_DISPATCHER.submit(
-                () -> sseEmitter.emitEvents(cid, sec, sink, sse, SseEventEmitter.EventType.ENROLLMENT, null));
-        if (!accepted) {
-            LOG.warnf("Rejecting enrollment SSE for %s due to maxConnections=%d", cid, SSE_DISPATCHER.maxConnections());
-            try (SseEventSink s = sink) {
-                sseEmitter.sendStatusEvent(
-                        s,
-                        sse,
-                        "TOO_MANY_CONNECTIONS",
-                        null,
-                        SseEventEmitter.EventType.ENROLLMENT,
-                        SSE_RETRY_AFTER_SECONDS);
-            }
-        }
+        submitChallengeStream(cid, sec, sink, sse, SseEventEmitter.EventType.ENROLLMENT, null);
     }
 
     @POST
@@ -428,15 +415,96 @@ public class PushMfaResource {
         String sec =
                 PushMfaInputValidator.optionalBoundedText(secret, CONFIG.sse().maxSecretLength(), "secret");
         LOG.debugf("Received login SSE stream request for challenge %s", cid);
+        submitChallengeStream(cid, sec, sink, sse, SseEventEmitter.EventType.LOGIN, PushChallenge.Type.AUTHENTICATION);
+    }
 
-        boolean accepted = SSE_DISPATCHER.submit(() -> sseEmitter.emitEvents(
-                cid, sec, sink, sse, SseEventEmitter.EventType.LOGIN, PushChallenge.Type.AUTHENTICATION));
+    private void submitChallengeStream(
+            String challengeId,
+            String secret,
+            SseEventSink sink,
+            Sse sse,
+            SseEventEmitter.EventType type,
+            PushChallenge.Type expectedType) {
+        PushMfaSseRegistry registry = getSseRegistry(session);
+        if (StringUtil.isBlank(secret)) {
+            LOG.warnf("%s SSE rejected for %s due to missing secret", type, challengeId);
+            closeAfterStatus(sink, sse, "INVALID", null, type, SSE_RETRY_AFTER_MILLIS);
+            return;
+        }
+
+        PushMfaSseRegistry.ChallengeReadResult readResult = registry.readChallenge(challengeId, secret, expectedType);
+        if (readResult.failureStatus() != null) {
+            closeAfterStatus(sink, sse, readResult.failureStatus(), null, type, SSE_RETRY_AFTER_MILLIS);
+            return;
+        }
+
+        PushChallenge challenge = readResult.challenge();
+        if (challenge.getStatus() != PushChallengeStatus.PENDING) {
+            closeAfterStatus(sink, sse, challenge.getStatus().name(), challenge, type, null);
+            return;
+        }
+
+        boolean accepted = registry.register(challengeId, secret, sink, sse, type, expectedType, null);
         if (!accepted) {
-            LOG.warnf("Rejecting login SSE for %s due to maxConnections=%d", cid, SSE_DISPATCHER.maxConnections());
-            try (SseEventSink s = sink) {
-                sseEmitter.sendStatusEvent(
-                        s, sse, "TOO_MANY_CONNECTIONS", null, SseEventEmitter.EventType.LOGIN, SSE_RETRY_AFTER_SECONDS);
+            LOG.warnf("Rejecting %s SSE for %s due to maxConnections=%d", type, challengeId, registry.maxConnections());
+            closeAfterStatus(sink, sse, "TOO_MANY_CONNECTIONS", null, type, SSE_RETRY_AFTER_MILLIS);
+            return;
+        }
+
+        if (sink.isClosed()) {
+            try {
+                sink.close();
+            } catch (Exception ignored) {
+                // no-op
             }
+        }
+    }
+
+    private static PushMfaSseRegistry getSseRegistry(KeycloakSession session) {
+        PushMfaSseRegistry registry = sseRegistry;
+        if (registry != null) {
+            return registry;
+        }
+
+        synchronized (PushMfaResource.class) {
+            registry = sseRegistry;
+            if (registry == null) {
+                registry = new PushMfaSseRegistry(
+                        CONFIG.sse().maxConnections(),
+                        session.getKeycloakSessionFactory(),
+                        resolveManagedExecutor(session));
+                sseRegistry = registry;
+            }
+            return registry;
+        }
+    }
+
+    private static ExecutorService resolveManagedExecutor(KeycloakSession session) {
+        try {
+            ExecutorsProvider executorsProvider = session.getProvider(ExecutorsProvider.class);
+            if (executorsProvider == null) {
+                return null;
+            }
+            ExecutorService executor = executorsProvider.getExecutor("push-mfa-sse");
+            if (executor != null) {
+                LOG.debug("Using Keycloak managed executor for push-mfa-sse streams");
+            }
+            return executor;
+        } catch (RuntimeException ex) {
+            LOG.debug("Falling back to dedicated SSE executor", ex);
+            return null;
+        }
+    }
+
+    private void closeAfterStatus(
+            SseEventSink sink,
+            Sse sse,
+            String status,
+            PushChallenge challenge,
+            SseEventEmitter.EventType type,
+            Long retryAfterMillis) {
+        try (SseEventSink eventSink = sink) {
+            sseEmitter.sendStatusEvent(eventSink, sse, status, challenge, type, retryAfterMillis);
         }
     }
 

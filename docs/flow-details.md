@@ -108,37 +108,37 @@ Each Push MFA credential has **two distinct IDs**:
 
    See [DPoP Authentication](#dpop-authentication) for the proof format and how access tokens are obtained.
 
-5. **Browser wait (SSE):** The Keycloak login UI now opens a server-sent events (SSE) stream for the login challenge. Once the SSE status switches away from `PENDING`, the waiting form automatically submits and the flow proceeds. The legacy `GET /push-mfa/login/pending` endpoint is still available for scripts and debugging, but browsers no longer rely on polling.
+5. **Browser wait (SSE):** The Keycloak login UI opens an `EventSource` for the login challenge. The SSE stream stays open while the challenge remains `PENDING`. Each Keycloak node keeps a node-local registry of its connected browsers and one poller thread that checks the shared challenge store for those local registrations. Once the status switches away from `PENDING`, the waiting form automatically submits and the flow proceeds. The legacy `GET /push-mfa/login/pending` endpoint is still available for scripts and debugging.
 
 ## Enrollment SSE Details
 
 - **Endpoint:** `GET /realms/<realm>/push-mfa/enroll/challenges/{challengeId}/events?secret=<watchSecret>` streams `text/event-stream`. The `watchSecret` is a per-challenge random value stored in `PushChallenge.watchSecret`; it prevents other sessions from observing enrollment progress.
-- **Server loop:** `PushMfaResource#emitEnrollmentEvents` runs asynchronously, polls the challenge store every second, and emits a `status` event whenever the challenge state changes or an error occurs. Each event payload is JSON shaped like:
+- **Server behavior:** `PushMfaResource#streamEnrollmentEvents` validates `challengeId + watchSecret`, rejects invalid streams immediately, and keeps valid `PENDING` streams registered on the current node. A single node-local poller thread reads the shared challenge store for all locally registered watchers and emits status changes only to the matching SSE sink. Each event payload is JSON shaped like:
 
   ```json
   {
-    "status": "PENDING | APPROVED | DENIED | NOT_FOUND | FORBIDDEN | INVALID | INTERRUPTED",
+    "status": "PENDING | APPROVED | DENIED | NOT_FOUND | FORBIDDEN | INVALID",
     "challengeId": "<uuid>",
     "expiresAt": "2025-11-14T13:16:12.902Z",
     "resolvedAt": "2025-11-14T13:16:22.180Z"
   }
   ```
 
-  Failures (missing secret, secret mismatch, challenge not found, thread interruption, serialization errors) are logged at INFO level so pod logs provide a complete timeline for troubleshooting.
+  The poller opens a fresh Keycloak transaction for each poll cycle, so it does not reuse request-scoped session objects off-thread.
 
-- **Client behavior:** The enrollment page (`push-register.ftl`) spins up a single `EventSource` pointed at the `eventsUrl`. When a non-`PENDING` status arrives the stream is closed and the hidden `check` form is submitted, allowing Keycloak's RequiredAction to complete without any manual refresh. If the connection drops (pod restart, network flap) the browser's native EventSource automatically retries; the script only logs `error` events for visibility.
+- **Client behavior:** The enrollment page (`push-register.ftl`) starts one `EventSource` pointed at the `eventsUrl`. When a non-`PENDING` status arrives the script closes the stream and submits the hidden `check` form, allowing Keycloak's RequiredAction to complete without manual refresh.
 
-- **No polling fallback:** Unlike earlier iterations the SSE client never schedules timer-based polling. If EventSource is missing (very old browsers) the script simply logs a warning, which is acceptable in this demo because enrollment is expected to run in modern browsers.
+- **Cross-node behavior:** The browser stays attached to whichever node accepted the SSE connection, and that node polls the shared challenge storage for its local registrations. Sticky sessions and node-to-node notifications are not required. If the node goes away, normal `EventSource` reconnect behavior attaches the browser to another node, which then becomes responsible for that client.
 
 ## Login SSE Details
 
 - **Endpoint:** `GET /realms/<realm>/push-mfa/login/challenges/{cid}/events?secret=<watchSecret>` streams the status for a login challenge. The authenticator generates a fresh `watchSecret` for every login, stores it with the challenge, and exposes the fully qualified SSE URL to the `push-wait.ftl` template via `pushChallengeWatchUrl`.
 
-- **Server loop:** `PushMfaResource#emitLoginChallengeEvents` mirrors the enrollment loop and emits JSON payloads such as:
+- **Server behavior:** `PushMfaResource#streamLoginChallengeEvents` mirrors the enrollment endpoint: validate, reject invalid requests immediately, register valid `PENDING` streams on the local node, and let the node-local poller emit subsequent status changes. Payloads look like:
 
   ```json
   {
-    "status": "PENDING | APPROVED | DENIED | EXPIRED | NOT_FOUND | FORBIDDEN | BAD_TYPE | INVALID | INTERRUPTED",
+    "status": "PENDING | APPROVED | DENIED | EXPIRED | NOT_FOUND | FORBIDDEN | BAD_TYPE | INVALID",
     "challengeId": "8fb0bc35-3e9f-4a9e-b9c1-5bb0bd963044",
     "expiresAt": "2025-11-17T10:24:11.446Z",
     "resolvedAt": "2025-11-17T10:24:35.100Z",
@@ -146,13 +146,13 @@ Each Push MFA credential has **two distinct IDs**:
   }
   ```
 
-- **Client behavior:** The waiting login form starts an `EventSource` and listens for `status` events. As soon as the status changes away from `PENDING`, the stream is closed and the (already prepared) form posts back to Keycloak, resuming the authentication flow without additional HTTP polling. If SSE is unavailable or the connection fails repeatedly, the script falls back to a single delayed form submission so the classic polling logic still works as a safety net.
+- **Client behavior:** The waiting login form listens for `status` events. As soon as the status changes away from `PENDING`, the stream is closed and the prepared form posts back to Keycloak, resuming the authentication flow.
 
 ## Validation Checks by Step
 
 - **Enrollment token / QR:** Keycloak signs the `enrollmentToken` with the realm key and encodes `sub`, `enrollmentId`, `nonce`, and `exp` in the QR. The app should verify the signature against `/realms/demo/protocol/openid-connect/certs` plus issuer/audience/expiry before using it.
 - **Complete enrollment (`POST /realms/demo/push-mfa/enroll/complete`):** The server ensures the challenge exists, belongs to the user, and is still `PENDING`, checks `exp` and nonce, requires a supported algorithm embedded in `cnf.jwk` (no extra `algorithm` field), enforces header/`cnf` algorithm compatibility, and verifies the JWT signature with the posted JWK before persisting the credential id and optional `deviceId`.
-- **Confirm token + SSE:** Each login creates a fresh challenge and confirm token signed by the realm key containing only the credential id and `cid` (plus `typ`/`ver` and `exp`). The confirm token intentionally omits `client_id`/`client_name`, so the mobile app must call `/push-mfa/login/pending` after receiving a push to fetch the username and client metadata and surface that information to the user before asking for approval. SSE watchers for enrollment/login require the per-challenge `watchSecret` and abort on missing/mismatched secrets or the wrong challenge type before streaming status.
+- **Confirm token + SSE:** Each login creates a fresh challenge and confirm token signed by the realm key containing only the credential id and `cid` (plus `typ`/`ver` and `exp`). The confirm token intentionally omits `client_id`/`client_name`, so the mobile app must call `/push-mfa/login/pending` after receiving a push to fetch the username and client metadata and surface that information to the user before asking for approval. SSE status reads require the per-challenge `watchSecret` and reject missing/mismatched secrets or the wrong challenge type before returning any status.
 - **DPoP-protected API calls (`/login/pending`, `/login/challenges/{cid}/respond`, `/device/*`):** Keycloak re-verifies the access token, confirms the `cnf.jkt` thumbprint matches the stored JWK, checks the DPoP proof `htm`/`htu`, ensures `iat` is within ±120 seconds, and requires `sub` + `deviceId` to match a stored credential (enforcing the algorithm declared in the JWK) before accepting the request-level DPoP signature.
 - **Login approval JWT (`POST /realms/demo/push-mfa/login/challenges/{cid}/respond` body):** After DPoP auth, the login token must match the challenge id, pass signature/`exp` checks against the stored key, carry the correct `credId`, use an algorithm compatible with the stored JWK, and declare `action` as `approve` or `deny`. If the challenge is bound to a specific credential id, mismatched devices are rejected.
 

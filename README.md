@@ -55,7 +55,7 @@ sequenceDiagram
     Keycloak-->>Browser: Render QR Code & Start SSE Listener
 
     par Parallel Actions
-        Browser->>Keycloak: SSE Connection (Watch Status)
+        Browser->>Keycloak: SSE Request (Read Current Status)
         Browser->>Mobile: Scan QR Code
     end
 
@@ -75,7 +75,7 @@ sequenceDiagram
 
     par Parallel Actions
         Keycloak-->>Browser: Render "Waiting for approval..." Page
-        Browser->>Keycloak: SSE Connection (Watch Challenge)
+        Browser->>Keycloak: SSE Request (Read Current Challenge Status)
         Keycloak->>Provider: Send Push Notification
         Note right of Keycloak: Payload: ConfirmToken<br/>(Credential ID, ChallengeID)
     end
@@ -93,6 +93,8 @@ sequenceDiagram
     Keycloak-->>Browser: SSE Event: { status: "APPROVED" }
     Browser->>Keycloak: Auto-Submit Form (Login Success)
 ```
+
+The SSE endpoints keep a long-lived stream open per browser, but each Keycloak node uses a single node-local poller thread to watch the shared challenge store for all of its currently connected SSE clients. Cross-node delivery works because every node reads the same challenge state from shared storage; if a node dies, the browser's normal `EventSource` reconnect can land on another node and that node becomes responsible for the stream.
 
 ## Documentation
 

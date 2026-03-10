@@ -8,7 +8,7 @@ The provider ships with a lightweight theme fragment under `src/main/resources/t
 
 **Template:** `templates/push-register.ftl`
 
-Renders the QR code, enrollment token, and SSE watcher while the user finishes onboarding. The markup is fully self-contained: everything is driven by `data-push-*` attributes on the root element plus localized strings from `messages/messages_en.properties`.
+Renders the QR code, enrollment token, and SSE watcher while the user finishes onboarding. The markup is fully self-contained: everything is driven by `data-push-*` attributes on the root element plus localized strings from `messages/messages_en.properties`. The shipped JS keeps one `EventSource` open while the server-side node-local poller watches the challenge status.
 
 To restyle the screen, replace the HTML/CSS and keep emitting the same attributes (or call `KeycloakPushMfa.initRegisterPage(...)` manually) so the QR code and SSE wiring continue to function.
 
@@ -42,7 +42,7 @@ All shared browser behavior (SSE handling, QR rendering, clipboard helpers) live
 - `KeycloakPushMfa.initLoginPage` - Initialize login waiting page
 - `KeycloakPushMfa.autoInit` - Auto-initialize based on page context
 
-If you move to a different frontend stack you can reuse those helpers or replace them entirely with your own EventSource/QR logic.
+If you move to a different frontend stack you can reuse those helpers or replace them entirely with your own EventSource/QR logic. Preserve normal `EventSource` reconnect handling so the browser can recover if the node holding the stream disappears.
 
 ## Customization Approach
 

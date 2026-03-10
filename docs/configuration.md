@@ -91,7 +91,7 @@ JAVA_OPTS_APPEND="-Dkeycloak.push-mfa.input.maxJwtLength=8192 -Dkeycloak.push-mf
 
 | Property | Default | Range | Description |
 |----------|---------|-------|-------------|
-| `keycloak.push-mfa.sse.maxConnections` | `256` | 1–1024 | Max concurrent SSE connections per pod |
+| `keycloak.push-mfa.sse.maxConnections` | `256` | 1–1024 | Max number of concurrently registered SSE clients per Keycloak node |
 | `keycloak.push-mfa.sse.maxSecretLength` | `128` | 16–1024 | Max SSE secret query parameter length |
 
-> **Sizing tip for `maxConnections`:** Use `logins_per_second × average_approval_seconds` plus headroom. Example: 10 logins/s × 15s approval = ~150–250 connections.
+> **Implementation note:** SSE streams stay open while a challenge is pending. Each Keycloak node runs one node-local poller that checks shared challenge storage for all registered local SSE clients. This avoids one sleeping worker thread per connection while still working across multiple Keycloak nodes, as long as every node can read the same backing store.

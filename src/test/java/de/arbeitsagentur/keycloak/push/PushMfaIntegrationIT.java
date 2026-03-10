@@ -36,6 +36,7 @@ import de.arbeitsagentur.keycloak.push.support.DeviceKeyType;
 import de.arbeitsagentur.keycloak.push.support.DeviceSigningKey;
 import de.arbeitsagentur.keycloak.push.support.DeviceState;
 import de.arbeitsagentur.keycloak.push.support.HtmlPage;
+import de.arbeitsagentur.keycloak.push.support.SseClient;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -193,6 +194,105 @@ class PushMfaIntegrationIT {
         assertTrue(
                 pageText.contains("push approval denied") || pageText.contains("push request was denied"),
                 "Denied page should explain the rejected push login");
+    }
+
+    @Test
+    void enrollmentSseStreamsApproval() throws Exception {
+        adminClient.resetUserState(TEST_USERNAME);
+        DeviceState state = DeviceState.create(DeviceKeyType.RSA);
+        DeviceClient deviceClient = new DeviceClient(baseUri, state);
+        BrowserSession session = new BrowserSession(baseUri);
+
+        HtmlPage loginPage = session.startAuthorization("test-app");
+        HtmlPage enrollPage = session.submitLogin(loginPage, TEST_USERNAME, TEST_PASSWORD);
+        URI eventsUri = session.extractEnrollmentEventsUri(enrollPage);
+
+        try (SseClient sseClient = new SseClient(eventsUri)) {
+            assertEquals(200, sseClient.awaitStatusCode(Duration.ofSeconds(5)));
+            assertEquals("PENDING", sseClient.awaitStatus(Duration.ofSeconds(5)));
+
+            String token = session.extractEnrollmentToken(enrollPage);
+            deviceClient.completeEnrollment(token);
+
+            assertEquals("APPROVED", sseClient.awaitStatus(Duration.ofSeconds(5)));
+            assertEquals(200, sseClient.awaitStatusCode(Duration.ofSeconds(5)));
+        }
+
+        session.submitEnrollmentCheck(enrollPage);
+    }
+
+    @Test
+    void loginSseRoutesStatusToMatchingChallengeOnly() throws Exception {
+        adminClient.configurePushMfaMaxPendingChallenges(10);
+        DeviceClient deviceClient = enrollDevice();
+
+        BrowserSession firstSession = new BrowserSession(baseUri);
+        BrowserSession secondSession = new BrowserSession(baseUri);
+
+        HtmlPage firstLogin = firstSession.startAuthorization("test-app");
+        HtmlPage firstWaitingPage = firstSession.submitLogin(firstLogin, TEST_USERNAME, TEST_PASSWORD);
+        BrowserSession.DeviceChallenge firstChallenge = firstSession.extractDeviceChallenge(firstWaitingPage);
+
+        HtmlPage secondLogin = secondSession.startAuthorization("test-app");
+        HtmlPage secondWaitingPage = secondSession.submitLogin(secondLogin, TEST_USERNAME, TEST_PASSWORD);
+        BrowserSession.DeviceChallenge secondChallenge = secondSession.extractDeviceChallenge(secondWaitingPage);
+        URI firstEventsUri = firstSession.extractLoginEventsUri(firstWaitingPage);
+        URI secondEventsUri = secondSession.extractLoginEventsUri(secondWaitingPage);
+
+        try (SseClient firstSse = new SseClient(firstEventsUri);
+                SseClient secondSse = new SseClient(secondEventsUri)) {
+            assertEquals(200, firstSse.awaitStatusCode(Duration.ofSeconds(5)));
+            assertEquals(200, secondSse.awaitStatusCode(Duration.ofSeconds(5)));
+            assertEquals("PENDING", firstSse.awaitStatus(Duration.ofSeconds(5)));
+            assertEquals("PENDING", secondSse.awaitStatus(Duration.ofSeconds(5)));
+
+            assertEquals(
+                    "approved",
+                    deviceClient.respondToChallenge(
+                            firstChallenge.confirmToken(),
+                            firstChallenge.challengeId(),
+                            PushMfaConstants.CHALLENGE_APPROVE));
+
+            assertEquals("APPROVED", firstSse.awaitStatus(Duration.ofSeconds(5)));
+            assertNull(secondSse.awaitStatus(Duration.ofSeconds(2)));
+        }
+
+        firstSession.completePushChallenge(firstChallenge.formAction());
+        assertEquals(
+                "denied",
+                deviceClient.respondToChallenge(
+                        secondChallenge.confirmToken(),
+                        secondChallenge.challengeId(),
+                        PushMfaConstants.CHALLENGE_DENY));
+    }
+
+    @Test
+    void loginSseStreamsExpiryWithoutPerConnectionPollingThread() throws Exception {
+        adminClient.configurePushMfaLoginChallengeTtlSeconds(1);
+        try {
+            DeviceClient deviceClient = enrollDevice();
+            BrowserSession session = new BrowserSession(baseUri);
+
+            HtmlPage loginPage = session.startAuthorization("test-app");
+            HtmlPage waitingPage = session.submitLogin(loginPage, TEST_USERNAME, TEST_PASSWORD);
+            BrowserSession.DeviceChallenge challenge = session.extractDeviceChallenge(waitingPage);
+            URI eventsUri = session.extractLoginEventsUri(waitingPage);
+
+            try (SseClient sseClient = new SseClient(eventsUri)) {
+                assertEquals(200, sseClient.awaitStatusCode(Duration.ofSeconds(5)));
+                assertEquals("PENDING", sseClient.awaitStatus(Duration.ofSeconds(5)));
+
+                awaitNoPendingChallenges(deviceClient);
+                assertEquals("EXPIRED", sseClient.awaitStatus(Duration.ofSeconds(5)));
+            }
+
+            HtmlPage expiredPage = session.submitPushChallengeForPage(challenge.formAction());
+            String expiredText = expiredPage.document().text().toLowerCase();
+            assertTrue(expiredText.contains("expired"), "Expected expired page but got: " + expiredText);
+        } finally {
+            adminClient.configurePushMfaLoginChallengeTtlSeconds(
+                    PushMfaConstants.DEFAULT_LOGIN_CHALLENGE_TTL.toSeconds());
+        }
     }
 
     @Test

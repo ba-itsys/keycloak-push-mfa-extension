@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.7.1](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.7.0...v1.7.1) (2026-03-11)
+
+
+### Bug Fixes
+
+* flaky tests ([e9b337c](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/e9b337c553a4cc1b5ea7fe743924cc76dc40e028))
+* open only one thread for SSE per kc node ([f666846](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/f666846868270045650ef62dcc97c338abc076bd))
+* stale challenges from deleted credentials could block login ([f2d4876](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/f2d487606c6dddb815889df7564d4e8dbfe9ec2b))
+
 ## [1.7.0](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.6.3...v1.7.0) (2026-03-10)
 
 

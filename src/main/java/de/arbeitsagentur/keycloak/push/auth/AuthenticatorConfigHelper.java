@@ -68,8 +68,8 @@ public final class AuthenticatorConfigHelper {
         }
         String normalized = rawValue.toLowerCase();
         return switch (normalized) {
-            case PushMfaConstants.USER_VERIFICATION_NUMBER_MATCH, "number_match", "numbermatch" -> PushChallenge
-                    .UserVerificationMode.NUMBER_MATCH;
+            case PushMfaConstants.USER_VERIFICATION_NUMBER_MATCH, "number_match", "numbermatch" ->
+                PushChallenge.UserVerificationMode.NUMBER_MATCH;
             case PushMfaConstants.USER_VERIFICATION_PIN -> PushChallenge.UserVerificationMode.PIN;
             default -> PushChallenge.UserVerificationMode.NONE;
         };

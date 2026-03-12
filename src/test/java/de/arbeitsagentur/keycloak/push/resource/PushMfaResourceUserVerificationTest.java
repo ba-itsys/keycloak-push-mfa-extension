@@ -20,8 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -29,6 +27,7 @@ import de.arbeitsagentur.keycloak.push.challenge.PushChallenge;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStatus;
 import de.arbeitsagentur.keycloak.push.spi.PushMfaEventListener;
 import de.arbeitsagentur.keycloak.push.spi.event.ChallengeResponseInvalidEvent;
+import de.arbeitsagentur.keycloak.push.support.InMemorySingleUseObjectProvider;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import jakarta.ws.rs.ForbiddenException;
 import java.time.Instant;
@@ -37,7 +36,6 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.SingleUseObjectProvider;
 import org.mockito.Mockito;
 
 class PushMfaResourceUserVerificationTest {
@@ -81,8 +79,7 @@ class PushMfaResourceUserVerificationTest {
 
     private KeycloakSession buildMockSession() {
         KeycloakSession session = Mockito.mock(KeycloakSession.class);
-        SingleUseObjectProvider singleUse = Mockito.mock(SingleUseObjectProvider.class);
-        Mockito.when(session.singleUseObjects()).thenReturn(singleUse);
+        Mockito.when(session.singleUseObjects()).thenReturn(new InMemorySingleUseObjectProvider());
         return session;
     }
 
@@ -144,13 +141,7 @@ class PushMfaResourceUserVerificationTest {
 
         // Capture the ChallengeResponseInvalidEvent via a mock listener
         AtomicReference<ChallengeResponseInvalidEvent> capturedEvent = new AtomicReference<>();
-        PushMfaEventListener listener = Mockito.mock(PushMfaEventListener.class);
-        doAnswer(inv -> {
-                    capturedEvent.set(inv.getArgument(0));
-                    return null;
-                })
-                .when(listener)
-                .onChallengeResponseInvalid(any());
+        PushMfaEventListener listener = new CapturingListener(capturedEvent);
         Mockito.when(session.getAllProviders(PushMfaEventListener.class)).thenReturn(Set.of(listener));
 
         PushMfaResource resource = new PushMfaResource(session);
@@ -247,5 +238,21 @@ class PushMfaResourceUserVerificationTest {
                 PushChallenge.UserVerificationMode.NONE,
                 null,
                 List.of());
+    }
+
+    private static final class CapturingListener implements PushMfaEventListener {
+        private final AtomicReference<ChallengeResponseInvalidEvent> capturedEvent;
+
+        private CapturingListener(AtomicReference<ChallengeResponseInvalidEvent> capturedEvent) {
+            this.capturedEvent = capturedEvent;
+        }
+
+        @Override
+        public void onChallengeResponseInvalid(ChallengeResponseInvalidEvent event) {
+            capturedEvent.set(event);
+        }
+
+        @Override
+        public void close() {}
     }
 }

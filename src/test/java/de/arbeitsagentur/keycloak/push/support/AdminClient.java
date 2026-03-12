@@ -171,13 +171,7 @@ public final class AdminClient {
             throw new IllegalStateException("User not found: " + username);
         }
         URI userUri = baseUri.resolve("/admin/realms/demo/users/" + userId);
-        HttpResponse<String> response = http.send(
-                HttpRequest.newBuilder(userUri)
-                        .header("Authorization", "Bearer " + accessToken)
-                        .header("Accept", "application/json")
-                        .GET()
-                        .build(),
-                HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = sendGetWithRetry(userUri);
         assertEquals(200, response.statusCode(), () -> "User fetch failed: " + response.body());
         return MAPPER.readTree(response.body()).path("enabled").asBoolean(true);
     }
@@ -189,13 +183,7 @@ public final class AdminClient {
             throw new IllegalStateException("User not found: " + username);
         }
         URI userUri = baseUri.resolve("/admin/realms/demo/users/" + userId);
-        HttpResponse<String> getResponse = http.send(
-                HttpRequest.newBuilder(userUri)
-                        .header("Authorization", "Bearer " + accessToken)
-                        .header("Accept", "application/json")
-                        .GET()
-                        .build(),
-                HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> getResponse = sendGetWithRetry(userUri);
         assertEquals(200, getResponse.statusCode(), () -> "User fetch failed: " + getResponse.body());
         ObjectNode userObject = (ObjectNode) MAPPER.readTree(getResponse.body());
         userObject.put("enabled", true);
@@ -286,11 +274,7 @@ public final class AdminClient {
         }
 
         URI deleteUri = baseUri.resolve("/admin/realms/demo/users/" + userId);
-        HttpRequest request = HttpRequest.newBuilder(deleteUri)
-                .header("Authorization", "Bearer " + accessToken)
-                .DELETE()
-                .build();
-        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = sendDeleteWithRetry(deleteUri);
         if (response.statusCode() != 204 && response.statusCode() != 404) {
             throw new IllegalStateException("Failed to delete user: " + response.statusCode() + " " + response.body());
         }
@@ -408,11 +392,7 @@ public final class AdminClient {
             }
             URI deleteUri =
                     baseUri.resolve("/admin/realms/demo/users/" + userId + "/credentials/" + keycloakCredentialId);
-            HttpRequest deleteRequest = HttpRequest.newBuilder(deleteUri)
-                    .header("Authorization", "Bearer " + accessToken)
-                    .DELETE()
-                    .build();
-            HttpResponse<String> deleteResponse = http.send(deleteRequest, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> deleteResponse = sendDeleteWithRetry(deleteUri);
             assertEquals(204, deleteResponse.statusCode(), () -> "Credential delete failed: " + deleteResponse.body());
         }
     }
@@ -521,12 +501,7 @@ public final class AdminClient {
     private JsonNode readCredentials(String userId) throws Exception {
         ensureAccessToken();
         URI credentialsUri = baseUri.resolve("/admin/realms/demo/users/" + userId + "/credentials");
-        HttpRequest request = HttpRequest.newBuilder(credentialsUri)
-                .header("Authorization", "Bearer " + accessToken)
-                .header("Accept", "application/json")
-                .GET()
-                .build();
-        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = sendGetWithRetry(credentialsUri);
         assertEquals(200, response.statusCode(), () -> "Credential fetch failed: " + response.body());
         JsonNode items = MAPPER.readTree(response.body());
         if (!items.isArray()) {
@@ -537,26 +512,7 @@ public final class AdminClient {
 
     private JsonNode findExecution(String flowAlias, String authenticator) throws Exception {
         URI uri = baseUri.resolve("/admin/realms/demo/authentication/flows/" + flowAlias + "/executions");
-        HttpResponse<String> response = http.send(
-                HttpRequest.newBuilder(uri)
-                        .header("Authorization", "Bearer " + accessToken)
-                        .header("Accept", "application/json")
-                        .GET()
-                        .build(),
-                HttpResponse.BodyHandlers.ofString());
-
-        // Handle token expiration by refreshing and retrying once
-        if (response.statusCode() == 401) {
-            accessToken = null;
-            ensureAccessToken();
-            response = http.send(
-                    HttpRequest.newBuilder(uri)
-                            .header("Authorization", "Bearer " + accessToken)
-                            .header("Accept", "application/json")
-                            .GET()
-                            .build(),
-                    HttpResponse.BodyHandlers.ofString());
-        }
+        HttpResponse<String> response = sendGetWithRetry(uri);
 
         if (response.statusCode() != 200) {
             throw new IllegalStateException(
@@ -579,24 +535,7 @@ public final class AdminClient {
     private String findUserId(String username) throws Exception {
         ensureAccessToken();
         URI usersUri = baseUri.resolve("/admin/realms/demo/users?username=" + urlEncode(username));
-        HttpRequest request = HttpRequest.newBuilder(usersUri)
-                .header("Authorization", "Bearer " + accessToken)
-                .header("Accept", "application/json")
-                .GET()
-                .build();
-        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
-
-        // Retry on 401 (token expired)
-        if (response.statusCode() == 401) {
-            resetAccessToken();
-            ensureAccessToken();
-            HttpRequest retryRequest = HttpRequest.newBuilder(usersUri)
-                    .header("Authorization", "Bearer " + accessToken)
-                    .header("Accept", "application/json")
-                    .GET()
-                    .build();
-            response = http.send(retryRequest, HttpResponse.BodyHandlers.ofString());
-        }
+        HttpResponse<String> response = sendGetWithRetry(usersUri);
 
         final HttpResponse<String> finalResponse = response;
         assertEquals(200, finalResponse.statusCode(), () -> "User lookup failed: " + finalResponse.body());
@@ -638,6 +577,28 @@ public final class AdminClient {
             throw lastException;
         }
         throw lastException;
+    }
+
+    private HttpResponse<String> sendDeleteWithRetry(URI uri) throws Exception {
+        for (int attempt = 0; attempt < 3; attempt++) {
+            HttpRequest request = HttpRequest.newBuilder(uri)
+                    .header("Authorization", "Bearer " + accessToken)
+                    .DELETE()
+                    .build();
+            HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() == 401) {
+                accessToken = null;
+                ensureAccessToken();
+                continue;
+            }
+            if (response.statusCode() >= 500 && attempt < 2) {
+                Thread.sleep(250L * (attempt + 1));
+                continue;
+            }
+            return response;
+        }
+        throw new IllegalStateException("Unreachable retry state for DELETE " + uri);
     }
 
     private String urlEncode(String value) {

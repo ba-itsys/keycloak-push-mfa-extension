@@ -36,7 +36,7 @@ import de.arbeitsagentur.keycloak.push.support.DeviceKeyType;
 import de.arbeitsagentur.keycloak.push.support.DeviceSigningKey;
 import de.arbeitsagentur.keycloak.push.support.DeviceState;
 import de.arbeitsagentur.keycloak.push.support.HtmlPage;
-import de.arbeitsagentur.keycloak.push.support.KeycloakAdminBootstrap;
+import de.arbeitsagentur.keycloak.push.support.SharedKeycloakContainerSupport;
 import de.arbeitsagentur.keycloak.push.support.SseClient;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import java.net.URI;
@@ -45,9 +45,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.HashSet;
 import java.util.Map;
@@ -60,10 +57,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.wait.strategy.Wait;
-import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.MountableFile;
 
 /**
  * Integration tests for the Push MFA authenticator extension.
@@ -79,9 +73,7 @@ import org.testcontainers.utility.MountableFile;
 class PushMfaIntegrationIT {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final Path EXTENSION_JAR = locateProviderJar();
-    private static final Path REALM_FILE =
-            Paths.get("config", "demo-realm.json").toAbsolutePath();
+    private static final String SHARED_KEYCLOAK_OWNER = PushMfaIntegrationIT.class.getSimpleName();
     private static final String TEST_USERNAME = "test";
     private static final String TEST_PASSWORD = "test";
     private static final String ATTACKER_USERNAME = "attacker";
@@ -95,27 +87,15 @@ class PushMfaIntegrationIT {
     private static final String WAIT_CHALLENGE_USER_5 = "wait-user-5";
     private static final String WAIT_CHALLENGE_USER_6 = "wait-user-6";
     private static final String WAIT_CHALLENGE_PASSWORD = "wait-test";
-
-    @Container
-    private static final GenericContainer<?> KEYCLOAK = new GenericContainer<>("quay.io/keycloak/keycloak:26.4.5")
-            .withExposedPorts(8080)
-            .withCopyFileToContainer(
-                    MountableFile.forHostPath(EXTENSION_JAR), "/opt/keycloak/providers/keycloak-push-mfa.jar")
-            .withCopyFileToContainer(MountableFile.forHostPath(REALM_FILE), "/opt/keycloak/data/import/demo-realm.json")
-            .withEnv("KEYCLOAK_ADMIN", "admin")
-            .withEnv("KEYCLOAK_ADMIN_PASSWORD", "admin")
-            .withCommand(
-                    "start-dev --hostname=localhost --hostname-strict=false --http-enabled=true --import-realm --features=dpop")
-            .waitingFor(Wait.forHttp("/realms/master").forStatusCode(200))
-            .withStartupTimeout(Duration.ofMinutes(3));
+    private static final GenericContainer<?> KEYCLOAK = sharedKeycloak();
 
     private URI baseUri;
     private AdminClient adminClient;
 
     @BeforeAll
     void setup() throws Exception {
-        KeycloakAdminBootstrap.allowHttpAdminLogin(KEYCLOAK);
-        baseUri = URI.create(String.format("http://%s:%d/", KEYCLOAK.getHost(), KEYCLOAK.getMappedPort(8080)));
+        SharedKeycloakContainerSupport.acquire(SHARED_KEYCLOAK_OWNER);
+        baseUri = SharedKeycloakContainerSupport.baseUri();
         adminClient = new AdminClient(baseUri);
 
         // Create dedicated users for wait challenge tests to ensure complete isolation
@@ -128,7 +108,7 @@ class PushMfaIntegrationIT {
     }
 
     @AfterAll
-    void cleanupWaitChallengeUsers() {
+    void cleanupSharedResources() throws Exception {
         // Clean up dedicated wait challenge test users to reduce DB bloat
         // These users are created in @BeforeAll and only used by wait challenge tests
         String[] waitChallengeUsers = {
@@ -147,6 +127,7 @@ class PushMfaIntegrationIT {
                 System.err.println("Failed to delete wait challenge user " + username + ": " + e.getMessage());
             }
         }
+        SharedKeycloakContainerSupport.release(SHARED_KEYCLOAK_OWNER);
     }
 
     @BeforeEach
@@ -773,6 +754,107 @@ class PushMfaIntegrationIT {
         assertEquals("unchanged", secondStatus);
     }
 
+    @Test
+    void deviceUpdatesPushProviderRetainsTypeWhenOmitted() throws Exception {
+        DeviceClient deviceClient = enrollDevice();
+        String newProviderId = "integration-provider-" + UUID.randomUUID();
+        String existingProviderType = adminClient
+                .fetchPushCredential(deviceClient.state().userId())
+                .path("pushProviderType")
+                .asText();
+
+        URI updateUri = baseUri.resolve("/realms/demo/push-mfa/device/push-provider");
+        HttpRequest request = HttpRequest.newBuilder(updateUri)
+                .header("Authorization", "DPoP " + deviceClient.accessToken())
+                .header(
+                        "DPoP",
+                        deviceClient.createDpopProof(
+                                "PUT", updateUri, UUID.randomUUID().toString()))
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(MAPPER.createObjectNode()
+                        .put("pushProviderId", newProviderId)
+                        .toString()))
+                .build();
+
+        HttpResponse<String> response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode(), () -> "Update push provider failed: " + response.body());
+        assertEquals("updated", MAPPER.readTree(response.body()).path("status").asText());
+
+        JsonNode credentialData =
+                adminClient.fetchPushCredential(deviceClient.state().userId());
+        assertEquals(newProviderId, credentialData.path("pushProviderId").asText());
+        assertEquals(
+                existingProviderType, credentialData.path("pushProviderType").asText());
+    }
+
+    @Test
+    void rotateDeviceKeyRejectsMissingKeyMaterial() throws Exception {
+        DeviceClient deviceClient = enrollDevice();
+        URI rotateUri = baseUri.resolve("/realms/demo/push-mfa/device/rotate-key");
+        HttpRequest request = HttpRequest.newBuilder(rotateUri)
+                .header("Authorization", "DPoP " + deviceClient.accessToken())
+                .header(
+                        "DPoP",
+                        deviceClient.createDpopProof(
+                                "PUT", rotateUri, UUID.randomUUID().toString()))
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(
+                        MAPPER.createObjectNode().toString()))
+                .build();
+
+        HttpResponse<String> response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+        assertEquals(400, response.statusCode(), () -> "Expected bad rotate request to fail: " + response.body());
+    }
+
+    @Test
+    void challengeResponseRejectsMalformedJwt() throws Exception {
+        DeviceClient deviceClient = enrollDevice();
+        BrowserSession pushSession = new BrowserSession(baseUri);
+        HtmlPage pushLogin = pushSession.startAuthorization("test-app");
+        HtmlPage waitingPage = pushSession.submitLogin(pushLogin, TEST_USERNAME, TEST_PASSWORD);
+        BrowserSession.DeviceChallenge confirm = pushSession.extractDeviceChallenge(waitingPage);
+
+        HttpResponse<String> response = deviceClient.sendRawChallengeResponse(confirm.challengeId(), "not-a-jwt");
+
+        assertEquals(400, response.statusCode(), () -> "Expected malformed JWT rejection: " + response.body());
+    }
+
+    @Test
+    void challengeResponseRejectsUnsupportedAction() throws Exception {
+        DeviceClient deviceClient = enrollDevice();
+        BrowserSession pushSession = new BrowserSession(baseUri);
+        HtmlPage pushLogin = pushSession.startAuthorization("test-app");
+        HtmlPage waitingPage = pushSession.submitLogin(pushLogin, TEST_USERNAME, TEST_PASSWORD);
+        BrowserSession.DeviceChallenge confirm = pushSession.extractDeviceChallenge(waitingPage);
+
+        SignedJWT invalidToken = deviceClient.createLoginToken(
+                confirm.challengeId(),
+                deviceClient.state().deviceCredentialId(),
+                deviceClient.state().deviceId(),
+                "later",
+                null);
+        HttpResponse<String> response =
+                deviceClient.sendRawChallengeResponse(confirm.challengeId(), invalidToken.serialize());
+
+        assertEquals(400, response.statusCode(), () -> "Expected unsupported action rejection: " + response.body());
+    }
+
+    @Test
+    void challengeResponseRejectsCredentialMismatch() throws Exception {
+        DeviceClient deviceClient = enrollDevice();
+        BrowserSession pushSession = new BrowserSession(baseUri);
+        HtmlPage pushLogin = pushSession.startAuthorization("test-app");
+        HtmlPage waitingPage = pushSession.submitLogin(pushLogin, TEST_USERNAME, TEST_PASSWORD);
+        BrowserSession.DeviceChallenge confirm = pushSession.extractDeviceChallenge(waitingPage);
+
+        SignedJWT wrongCredentialToken = deviceClient.createLoginToken(
+                confirm.challengeId(), "wrong-credential", deviceClient.state().deviceId(), "approve", null);
+        HttpResponse<String> response =
+                deviceClient.sendRawChallengeResponse(confirm.challengeId(), wrongCredentialToken.serialize());
+
+        assertEquals(403, response.statusCode(), () -> "Expected credential mismatch rejection: " + response.body());
+    }
+
     private void completeLoginFlow(DeviceClient deviceClient) throws Exception {
         BrowserSession pushSession = new BrowserSession(baseUri);
         HtmlPage pushLogin = pushSession.startAuthorization("test-app");
@@ -1283,19 +1365,7 @@ class PushMfaIntegrationIT {
         return SignedJWT.parse(token).getJWTClaimsSet().getSubject();
     }
 
-    /**
-     * find the versioned JAR produced by Maven, e.g. keycloak-push-mfa-extension.jar
-     */
-    private static Path locateProviderJar() {
-        Path targetDir = Paths.get("target");
-        if (!Files.isDirectory(targetDir)) {
-            throw new IllegalStateException("target directory not found. Run mvn package before integration tests.");
-        }
-        Path candidate = targetDir.resolve("keycloak-push-mfa-extension.jar");
-        if (Files.isRegularFile(candidate)) {
-            return candidate;
-        }
-        throw new IllegalStateException(
-                "Provider JAR not found at " + candidate + ". Run mvn package before integration tests.");
+    private static GenericContainer<?> sharedKeycloak() {
+        return SharedKeycloakContainerSupport.container();
     }
 }

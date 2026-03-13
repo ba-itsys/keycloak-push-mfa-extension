@@ -20,20 +20,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import de.arbeitsagentur.keycloak.push.support.AdminClient;
 import de.arbeitsagentur.keycloak.push.support.ContainerLogWatcher;
-import de.arbeitsagentur.keycloak.push.support.KeycloakAdminBootstrap;
+import de.arbeitsagentur.keycloak.push.support.SharedKeycloakContainerSupport;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.time.Duration;
 import java.util.Base64;
 import java.util.Random;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -45,10 +42,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.wait.strategy.Wait;
-import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.MountableFile;
 
 /**
  * Fuzzing-style tests that generate random/malformed inputs to test robustness.
@@ -58,24 +52,11 @@ import org.testcontainers.utility.MountableFile;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class PushMfaFuzzIT {
 
-    private static final Path EXTENSION_JAR = locateProviderJar();
-    private static final Path REALM_FILE =
-            Paths.get("config", "demo-realm.json").toAbsolutePath();
+    private static final String SHARED_KEYCLOAK_OWNER = PushMfaFuzzIT.class.getSimpleName();
     private static final String TEST_USERNAME = "fuzztest";
     private static final String TEST_PASSWORD = "fuzztest";
     private static final Random RANDOM = new Random(12345);
-
-    @Container
-    private static final GenericContainer<?> KEYCLOAK = new GenericContainer<>("quay.io/keycloak/keycloak:26.4.5")
-            .withExposedPorts(8080)
-            .withCopyFileToContainer(MountableFile.forHostPath(EXTENSION_JAR), "/opt/keycloak/providers/extension.jar")
-            .withCopyFileToContainer(MountableFile.forHostPath(REALM_FILE), "/opt/keycloak/data/import/demo-realm.json")
-            .withEnv("KEYCLOAK_ADMIN", "admin")
-            .withEnv("KEYCLOAK_ADMIN_PASSWORD", "admin")
-            .withCommand(
-                    "start-dev --hostname=localhost --hostname-strict=false --http-enabled=true --import-realm --features=dpop")
-            .waitingFor(Wait.forHttp("/realms/master").forStatusCode(200))
-            .withStartupTimeout(Duration.ofMinutes(3));
+    private static final GenericContainer<?> KEYCLOAK = sharedKeycloak();
 
     private final HttpClient http =
             HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
@@ -84,10 +65,15 @@ class PushMfaFuzzIT {
 
     @BeforeAll
     void setup() throws Exception {
-        KeycloakAdminBootstrap.allowHttpAdminLogin(KEYCLOAK);
-        baseUri = URI.create(String.format("http://%s:%d/", KEYCLOAK.getHost(), KEYCLOAK.getMappedPort(8080)));
+        SharedKeycloakContainerSupport.acquire(SHARED_KEYCLOAK_OWNER);
+        baseUri = SharedKeycloakContainerSupport.baseUri();
         adminClient = new AdminClient(baseUri);
         adminClient.ensureUser(TEST_USERNAME, TEST_PASSWORD);
+    }
+
+    @AfterAll
+    void captureContainerCoverage() throws Exception {
+        SharedKeycloakContainerSupport.release(SHARED_KEYCLOAK_OWNER);
     }
 
     @BeforeEach
@@ -102,17 +88,8 @@ class PushMfaFuzzIT {
         }
     }
 
-    private static Path locateProviderJar() {
-        Path target = Paths.get("target");
-        try (var files = Files.list(target)) {
-            return files.filter(p -> p.getFileName().toString().matches("keycloak-push-mfa-extension-.*\\.jar"))
-                    .filter(p -> !p.getFileName().toString().contains("-sources"))
-                    .filter(p -> !p.getFileName().toString().contains("-javadoc"))
-                    .findFirst()
-                    .orElse(target.resolve("keycloak-push-mfa-extension.jar"));
-        } catch (Exception e) {
-            return target.resolve("keycloak-push-mfa-extension.jar");
-        }
+    private static GenericContainer<?> sharedKeycloak() {
+        return SharedKeycloakContainerSupport.container();
     }
 
     private URI realmUri() {

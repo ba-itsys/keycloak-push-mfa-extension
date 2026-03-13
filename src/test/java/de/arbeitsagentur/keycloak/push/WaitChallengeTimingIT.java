@@ -27,13 +27,9 @@ import de.arbeitsagentur.keycloak.push.support.DeviceClient;
 import de.arbeitsagentur.keycloak.push.support.DeviceKeyType;
 import de.arbeitsagentur.keycloak.push.support.DeviceState;
 import de.arbeitsagentur.keycloak.push.support.HtmlPage;
-import de.arbeitsagentur.keycloak.push.support.KeycloakAdminBootstrap;
+import de.arbeitsagentur.keycloak.push.support.SharedKeycloakContainerSupport;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import java.net.URI;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -43,6 +39,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -51,10 +48,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.wait.strategy.Wait;
-import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.MountableFile;
 
 /**
  * Integration tests for rate limiting behavior under rapid-fire and concurrent
@@ -72,10 +66,7 @@ import org.testcontainers.utility.MountableFile;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class WaitChallengeTimingIT {
 
-    private static final Path EXTENSION_JAR = locateProviderJar();
-    private static final Path REALM_FILE =
-            Paths.get("config", "demo-realm.json").toAbsolutePath();
-
+    private static final String SHARED_KEYCLOAK_OWNER = WaitChallengeTimingIT.class.getSimpleName();
     // Dedicated users for timing tests to ensure complete isolation
     private static final String TIMING_USER_1 = "timing-user-1";
     private static final String TIMING_USER_3 = "timing-user-3";
@@ -83,27 +74,15 @@ class WaitChallengeTimingIT {
     private static final String TIMING_USER_8 = "timing-user-8";
 
     private static final String TIMING_PASSWORD = "timing-test";
-
-    @Container
-    private static final GenericContainer<?> KEYCLOAK = new GenericContainer<>("quay.io/keycloak/keycloak:26.4.5")
-            .withExposedPorts(8080)
-            .withCopyFileToContainer(
-                    MountableFile.forHostPath(EXTENSION_JAR), "/opt/keycloak/providers/keycloak-push-mfa.jar")
-            .withCopyFileToContainer(MountableFile.forHostPath(REALM_FILE), "/opt/keycloak/data/import/demo-realm.json")
-            .withEnv("KEYCLOAK_ADMIN", "admin")
-            .withEnv("KEYCLOAK_ADMIN_PASSWORD", "admin")
-            .withCommand(
-                    "start-dev --hostname=localhost --hostname-strict=false --http-enabled=true --import-realm --features=dpop")
-            .waitingFor(Wait.forHttp("/realms/master").forStatusCode(200))
-            .withStartupTimeout(Duration.ofMinutes(3));
+    private static final GenericContainer<?> KEYCLOAK = sharedKeycloak();
 
     private URI baseUri;
     private AdminClient adminClient;
 
     @BeforeAll
     void setup() throws Exception {
-        KeycloakAdminBootstrap.allowHttpAdminLogin(KEYCLOAK);
-        baseUri = URI.create(String.format("http://%s:%d/", KEYCLOAK.getHost(), KEYCLOAK.getMappedPort(8080)));
+        SharedKeycloakContainerSupport.acquire(SHARED_KEYCLOAK_OWNER);
+        baseUri = SharedKeycloakContainerSupport.baseUri();
         adminClient = new AdminClient(baseUri);
 
         // Create dedicated users for timing tests
@@ -111,6 +90,11 @@ class WaitChallengeTimingIT {
         adminClient.ensureUser(TIMING_USER_3, TIMING_PASSWORD);
         adminClient.ensureUser(TIMING_USER_7, TIMING_PASSWORD);
         adminClient.ensureUser(TIMING_USER_8, TIMING_PASSWORD);
+    }
+
+    @AfterAll
+    void captureContainerCoverage() throws Exception {
+        SharedKeycloakContainerSupport.release(SHARED_KEYCLOAK_OWNER);
     }
 
     @BeforeEach
@@ -472,16 +456,7 @@ class WaitChallengeTimingIT {
         assertEquals(0, pending.size(), () -> "Expected pending challenges to expire but got: " + pending);
     }
 
-    private static Path locateProviderJar() {
-        Path targetDir = Paths.get("target");
-        if (!Files.isDirectory(targetDir)) {
-            throw new IllegalStateException("target directory not found. Run mvn package before integration tests.");
-        }
-        Path candidate = targetDir.resolve("keycloak-push-mfa-extension.jar");
-        if (Files.isRegularFile(candidate)) {
-            return candidate;
-        }
-        throw new IllegalStateException(
-                "Provider JAR not found at " + candidate + ". Run mvn package before integration tests.");
+    private static GenericContainer<?> sharedKeycloak() {
+        return SharedKeycloakContainerSupport.container();
     }
 }

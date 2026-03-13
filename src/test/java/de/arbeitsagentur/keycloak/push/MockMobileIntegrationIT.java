@@ -26,22 +26,20 @@ import de.arbeitsagentur.keycloak.push.support.AdminClient;
 import de.arbeitsagentur.keycloak.push.support.BrowserSession;
 import de.arbeitsagentur.keycloak.push.support.ContainerLogWatcher;
 import de.arbeitsagentur.keycloak.push.support.HtmlPage;
-import de.arbeitsagentur.keycloak.push.support.KeycloakAdminBootstrap;
 import de.arbeitsagentur.keycloak.push.support.MockMobileClient;
+import de.arbeitsagentur.keycloak.push.support.SharedKeycloakContainerSupport;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import java.net.URI;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.Network;
 import org.testcontainers.containers.wait.strategy.Wait;
-import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.MountableFile;
 
@@ -50,31 +48,13 @@ import org.testcontainers.utility.MountableFile;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class MockMobileIntegrationIT {
 
-    private static final Path EXTENSION_JAR = locateProviderJar();
-    private static final Path REALM_FILE =
-            Paths.get("config", "demo-realm.json").toAbsolutePath();
     private static final Path MOCK_APP_DIR = Paths.get("mock", "mobile").toAbsolutePath();
+    private static final String SHARED_KEYCLOAK_OWNER = MockMobileIntegrationIT.class.getSimpleName();
     private static final String TEST_USERNAME = "test";
-    private static final Network NETWORK = Network.newNetwork();
+    private static final GenericContainer<?> KEYCLOAK = sharedKeycloak();
 
-    @Container
-    private static final GenericContainer<?> KEYCLOAK = new GenericContainer<>("quay.io/keycloak/keycloak:26.4.5")
-            .withNetwork(NETWORK)
-            .withNetworkAliases("keycloak")
-            .withExposedPorts(8080)
-            .withCopyFileToContainer(
-                    MountableFile.forHostPath(EXTENSION_JAR), "/opt/keycloak/providers/keycloak-push-mfa.jar")
-            .withCopyFileToContainer(MountableFile.forHostPath(REALM_FILE), "/opt/keycloak/data/import/demo-realm.json")
-            .withEnv("KEYCLOAK_ADMIN", "admin")
-            .withEnv("KEYCLOAK_ADMIN_PASSWORD", "admin")
-            .withCommand(
-                    "start-dev --hostname=localhost --hostname-strict=false --http-enabled=true --import-realm --features=dpop")
-            .waitingFor(Wait.forHttp("/realms/master").forStatusCode(200))
-            .withStartupTimeout(Duration.ofMinutes(4));
-
-    @Container
     private static final GenericContainer<?> MOBILE = new GenericContainer<>("node:24-bullseye")
-            .withNetwork(NETWORK)
+            .withNetwork(SharedKeycloakContainerSupport.network())
             .withExposedPorts(3001)
             .withCopyFileToContainer(MountableFile.forHostPath(MOCK_APP_DIR), "/app")
             .withEnv("REALM_BASE", "http://keycloak:8080/realms/demo")
@@ -92,11 +72,22 @@ class MockMobileIntegrationIT {
 
     @BeforeAll
     void setup() throws Exception {
-        KeycloakAdminBootstrap.allowHttpAdminLogin(KEYCLOAK);
-        baseUri = URI.create(String.format("http://%s:%d/", KEYCLOAK.getHost(), KEYCLOAK.getMappedPort(8080)));
+        SharedKeycloakContainerSupport.acquire(SHARED_KEYCLOAK_OWNER);
+        if (!MOBILE.isRunning()) {
+            MOBILE.start();
+        }
+        baseUri = SharedKeycloakContainerSupport.baseUri();
         adminClient = new AdminClient(baseUri);
         mockMobileClient = new MockMobileClient(
                 URI.create(String.format("http://%s:%d", MOBILE.getHost(), MOBILE.getMappedPort(3001))));
+    }
+
+    @AfterAll
+    void captureContainerCoverage() throws Exception {
+        if (MOBILE.isRunning()) {
+            MOBILE.stop();
+        }
+        SharedKeycloakContainerSupport.release(SHARED_KEYCLOAK_OWNER);
     }
 
     @Test
@@ -287,17 +278,8 @@ class MockMobileIntegrationIT {
         return SignedJWT.parse(token).getJWTClaimsSet().getSubject();
     }
 
-    private static Path locateProviderJar() {
-        Path targetDir = Paths.get("target");
-        if (!Files.isDirectory(targetDir)) {
-            throw new IllegalStateException("target directory not found. Run mvn package before integration tests.");
-        }
-        Path candidate = targetDir.resolve("keycloak-push-mfa-extension.jar");
-        if (Files.isRegularFile(candidate)) {
-            return candidate;
-        }
-        throw new IllegalStateException(
-                "Provider JAR not found at " + candidate + ". Run mvn package before integration tests.");
+    private static GenericContainer<?> sharedKeycloak() {
+        return SharedKeycloakContainerSupport.container();
     }
 
     private record EnrollmentFlow(BrowserSession session, HtmlPage enrollmentPage, String enrollmentToken) {}

@@ -28,6 +28,7 @@ import de.arbeitsagentur.keycloak.push.support.DeviceClient;
 import de.arbeitsagentur.keycloak.push.support.DeviceKeyType;
 import de.arbeitsagentur.keycloak.push.support.DeviceState;
 import de.arbeitsagentur.keycloak.push.support.HtmlPage;
+import de.arbeitsagentur.keycloak.push.support.JacocoContainerSupport;
 import de.arbeitsagentur.keycloak.push.support.KeycloakAdminBootstrap;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -62,24 +63,10 @@ class PushMfaLockoutSpiIT {
             Paths.get("config", "demo-realm.json").toAbsolutePath();
     private static final String TEST_USERNAME = "test";
     private static final String TEST_PASSWORD = "test";
+    private static final String JACOCO_EXEC_FILE = "PushMfaLockoutSpiIT.exec";
 
     @Container
-    private static final GenericContainer<?> KEYCLOAK = new GenericContainer<>(
-                    DockerImageName.parse("quay.io/keycloak/keycloak:26.4.5"))
-            .withExposedPorts(8080)
-            .withCopyFileToContainer(
-                    MountableFile.forHostPath(EXTENSION_JAR), "/opt/keycloak/providers/keycloak-push-mfa.jar")
-            .withCopyFileToContainer(
-                    MountableFile.forHostPath(LOCKOUT_TEST_PROVIDER_JAR),
-                    "/opt/keycloak/providers/push-mfa-lockout-test-provider.jar")
-            .withCopyFileToContainer(MountableFile.forHostPath(REALM_FILE), "/opt/keycloak/data/import/demo-realm.json")
-            .withEnv("KEYCLOAK_ADMIN", "admin")
-            .withEnv("KEYCLOAK_ADMIN_PASSWORD", "admin")
-            .withCommand(
-                    "start-dev --hostname=localhost --hostname-strict=false --http-enabled=true --import-realm --features=dpop --spi-push-mfa-lockout-handler--provider="
-                            + TestAttributePushMfaLockoutHandlerFactory.ID)
-            .waitingFor(Wait.forHttp("/realms/master").forStatusCode(200))
-            .withStartupTimeout(Duration.ofMinutes(3));
+    private static final GenericContainer<?> KEYCLOAK = instrumentedKeycloakContainer();
 
     private URI baseUri;
     private AdminClient adminClient;
@@ -175,5 +162,31 @@ class PushMfaLockoutSpiIT {
         }
         throw new IllegalStateException(
                 "Provider JAR not found at " + candidate + ". Run mvn package before integration tests.");
+    }
+
+    private static GenericContainer<?> instrumentedKeycloakContainer() {
+        try {
+            return JacocoContainerSupport.instrumentKeycloakContainer(
+                    new GenericContainer<>(DockerImageName.parse("quay.io/keycloak/keycloak:26.4.5"))
+                            .withExposedPorts(8080)
+                            .withCopyFileToContainer(
+                                    MountableFile.forHostPath(EXTENSION_JAR),
+                                    "/opt/keycloak/providers/keycloak-push-mfa.jar")
+                            .withCopyFileToContainer(
+                                    MountableFile.forHostPath(LOCKOUT_TEST_PROVIDER_JAR),
+                                    "/opt/keycloak/providers/push-mfa-lockout-test-provider.jar")
+                            .withCopyFileToContainer(
+                                    MountableFile.forHostPath(REALM_FILE), "/opt/keycloak/data/import/demo-realm.json")
+                            .withEnv("KEYCLOAK_ADMIN", "admin")
+                            .withEnv("KEYCLOAK_ADMIN_PASSWORD", "admin")
+                            .withCommand(
+                                    "start-dev --hostname=localhost --hostname-strict=false --http-enabled=true --import-realm --features=dpop --spi-push-mfa-lockout-handler--provider="
+                                            + TestAttributePushMfaLockoutHandlerFactory.ID)
+                            .waitingFor(Wait.forHttp("/realms/master").forStatusCode(200))
+                            .withStartupTimeout(Duration.ofMinutes(5)),
+                    JACOCO_EXEC_FILE);
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to configure lockout SPI Keycloak coverage", ex);
+        }
     }
 }

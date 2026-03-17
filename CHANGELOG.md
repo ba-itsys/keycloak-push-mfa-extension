@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.0](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.7.1...v1.8.0) (2026-03-17)
+
+
+### Features
+
+* **login-challenge:** add createdAt for LoginChallenge; improve documentation ([#125](https://github.com/ba-itsys/keycloak-push-mfa-extension/issues/125)) ([ad1420a](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/ad1420a2c3abc1b8cd3519829b18c91009ff7880))
+
 ## [1.7.1](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.7.0...v1.7.1) (2026-03-11)
 
 

@@ -39,9 +39,18 @@ public final class RequiredActionHelper {
                     realm.getAuthenticationExecutionsStream(flow.getId()).toList()) {
                 if (PushMfaConstants.PROVIDER_ID.equals(exec.getAuthenticator())
                         && exec.getAuthenticatorConfig() != null) {
-                    return realm.getAuthenticatorConfigById(exec.getAuthenticatorConfig());
+                    AuthenticatorConfigModel config = realm.getAuthenticatorConfigById(exec.getAuthenticatorConfig());
+                    if (config != null) {
+                        return config;
+                    }
                 }
             }
+        }
+
+        AuthenticatorConfigModel fallback =
+                realm.getAuthenticatorConfigByAlias(PushMfaConstants.AUTHENTICATOR_CONFIG_ALIAS);
+        if (fallback != null) {
+            return fallback;
         }
         return null;
     }

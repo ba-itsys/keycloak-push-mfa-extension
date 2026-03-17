@@ -527,8 +527,14 @@ public final class AdminClient {
                 .GET()
                 .build();
         HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
-        assertEquals(200, response.statusCode(), () -> "Credential fetch failed: " + response.body());
-        JsonNode items = MAPPER.readTree(response.body());
+        if (response.statusCode() == 401) {
+            resetAccessToken();
+            ensureAccessToken();
+            response = http.send(request, HttpResponse.BodyHandlers.ofString());
+        }
+        String responseBody = response.body();
+        assertEquals(200, response.statusCode(), () -> "Credential fetch failed: " + responseBody);
+        JsonNode items = MAPPER.readTree(responseBody);
         if (!items.isArray()) {
             throw new IllegalStateException("Unexpected credential response: " + response.body());
         }

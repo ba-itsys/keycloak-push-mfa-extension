@@ -17,18 +17,29 @@
 package de.arbeitsagentur.keycloak.push.auth;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import de.arbeitsagentur.keycloak.push.challenge.PushChallenge;
+import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStatus;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import org.junit.jupiter.api.Test;
+import org.keycloak.credential.CredentialModel;
 import org.keycloak.models.AuthenticatorConfigModel;
+import org.keycloak.models.SubjectCredentialManager;
+import org.keycloak.models.UserModel;
 
 class PushMfaAuthenticatorTest {
+
+    private final TestPushMfaAuthenticator authenticator = new TestPushMfaAuthenticator();
 
     @Test
     void numberMatchOptionsAreUnique() {
@@ -119,5 +130,65 @@ class PushMfaAuthenticatorTest {
         assertEquals(
                 PushMfaConstants.DEFAULT_USER_VERIFICATION_PIN_LENGTH,
                 AuthenticatorConfigHelper.resolvePinLength(config));
+    }
+
+    @Test
+    void resolveCredentialForChallenge_returnsNull_whenChallengeCredentialWasDeleted() {
+        UserModel user = mock(UserModel.class);
+        SubjectCredentialManager credentialManager = mock(SubjectCredentialManager.class);
+        when(user.credentialManager()).thenReturn(credentialManager);
+        when(credentialManager.getStoredCredentialById("deleted-credential")).thenReturn(null);
+
+        CredentialModel activeCredential = new CredentialModel();
+        activeCredential.setId("active-credential");
+        activeCredential.setType(PushMfaConstants.CREDENTIAL_TYPE);
+        when(credentialManager.getStoredCredentialsByTypeStream(PushMfaConstants.CREDENTIAL_TYPE))
+                .thenReturn(List.of(activeCredential).stream());
+
+        PushChallenge challenge = authenticationChallenge("deleted-credential");
+
+        assertNull(authenticator.resolve(user, challenge));
+    }
+
+    @Test
+    void resolveCredentialForChallenge_fallsBackOnlyWhenChallengeHasNoStoredCredentialId() {
+        UserModel user = mock(UserModel.class);
+        SubjectCredentialManager credentialManager = mock(SubjectCredentialManager.class);
+        when(user.credentialManager()).thenReturn(credentialManager);
+
+        CredentialModel activeCredential = new CredentialModel();
+        activeCredential.setId("active-credential");
+        activeCredential.setType(PushMfaConstants.CREDENTIAL_TYPE);
+        when(credentialManager.getStoredCredentialsByTypeStream(PushMfaConstants.CREDENTIAL_TYPE))
+                .thenReturn(List.of(activeCredential).stream());
+
+        PushChallenge challenge = authenticationChallenge(null);
+
+        assertEquals(activeCredential, authenticator.resolve(user, challenge));
+    }
+
+    private PushChallenge authenticationChallenge(String credentialId) {
+        Instant now = Instant.now();
+        return new PushChallenge(
+                "challenge-id",
+                "realm-id",
+                "user-id",
+                new byte[0],
+                credentialId,
+                "client-id",
+                "watch-secret",
+                "root-session",
+                now.plusSeconds(60),
+                PushChallenge.Type.AUTHENTICATION,
+                PushChallengeStatus.PENDING,
+                now,
+                null);
+    }
+
+    private static final class TestPushMfaAuthenticator extends PushMfaAuthenticator {
+
+        private CredentialModel resolve(UserModel user, PushChallenge challenge) {
+            return resolveCredentialForChallenge(user, challenge);
+        }
     }
 }

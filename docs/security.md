@@ -72,3 +72,18 @@ Keep the credential id ↔ real user mapping, push provider identifiers/types, a
 ### Surface Errors to Users
 
 Treat 4xx responses (expired, invalid signature, nonce mismatch) as security events, notifying the user and requiring a fresh enrollment or login attempt rather than silently retrying.
+
+## SSE Watcher Security
+
+The browser-side SSE endpoints are not DPoP-protected and are not bound to the Keycloak browser session. They are protected by a per-challenge random `watchSecret` carried in the watcher URL.
+
+- Treat the full SSE URL, including `?secret=...`, as a bearer secret.
+- Anyone who learns that URL can observe the matching challenge status until it resolves or expires.
+- Observing SSE status does not let the watcher approve or deny the challenge; those actions still require the enrolled device key and DPoP-bound API calls.
+
+### Operational Guidance
+
+- Avoid logging full query strings for `/realms/<realm>/push-mfa/*/events`.
+- Keep the login and enrollment pages free of third-party JavaScript.
+- Use a restrictive Content Security Policy so injected scripts cannot read and exfiltrate the SSE URL from the DOM.
+- Keep XSS protections on the Keycloak theme pages high, because XSS on those pages can steal the SSE capability URL.

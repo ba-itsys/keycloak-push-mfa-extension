@@ -1055,19 +1055,13 @@ class PushMfaIntegrationIT {
                             || retriedText.contains("too many"),
                     "Expected wait required page but got: " + retriedText);
 
-            // The retry attempt above also creates a challenge and increments the wait counter
-            // So we now have 2 unapproved challenges, meaning wait time = 2s * 2^1 = 4s
-            // Wait for the full backoff period plus small buffer
-            Thread.sleep(4500);
-
             // Ensure no pending challenges before next attempt
             awaitNoPendingChallenges(deviceClient);
 
             // Retry after waiting should succeed
-            BrowserSession secondSession = new BrowserSession(baseUri);
-            HtmlPage secondLoginPage = secondSession.startAuthorization("test-app");
-            HtmlPage secondWaitingPage = secondSession.submitLogin(secondLoginPage, username, WAIT_CHALLENGE_PASSWORD);
-            BrowserSession.DeviceChallenge secondChallenge = secondSession.extractDeviceChallenge(secondWaitingPage);
+            ChallengeAttempt secondAttempt = awaitChallengeCreationAllowed(username, WAIT_CHALLENGE_PASSWORD);
+            BrowserSession secondSession = secondAttempt.session();
+            BrowserSession.DeviceChallenge secondChallenge = secondAttempt.challenge();
             assertNotNull(secondChallenge, "Should be able to create challenge after waiting");
 
             // Approve this challenge to clean up
@@ -1102,14 +1096,8 @@ class PushMfaIntegrationIT {
             firstSession.extractDeviceChallenge(firstWaiting);
             awaitNoPendingChallenges(deviceClient);
 
-            // Wait for initial backoff (1s + buffer)
-            Thread.sleep(1500);
-
             // Second unapproved challenge - creates 2s wait (exponential: 1s * 2^1)
-            BrowserSession secondSession = new BrowserSession(baseUri);
-            HtmlPage secondLogin = secondSession.startAuthorization("test-app");
-            HtmlPage secondWaiting = secondSession.submitLogin(secondLogin, username, WAIT_CHALLENGE_PASSWORD);
-            secondSession.extractDeviceChallenge(secondWaiting);
+            awaitChallengeCreationAllowed(username, WAIT_CHALLENGE_PASSWORD);
             awaitNoPendingChallenges(deviceClient);
 
             // Immediate retry should fail (need to wait 2s now)
@@ -1129,14 +1117,8 @@ class PushMfaIntegrationIT {
                         "Expected rate limit error: " + e.getMessage());
             }
 
-            // Wait for the 2s backoff period to pass
-            Thread.sleep(2500);
-
             // Third unapproved challenge - creates 4s wait (exponential: 1s * 2^2)
-            BrowserSession fourthSession = new BrowserSession(baseUri);
-            HtmlPage fourthLogin = fourthSession.startAuthorization("test-app");
-            HtmlPage fourthWaiting = fourthSession.submitLogin(fourthLogin, username, WAIT_CHALLENGE_PASSWORD);
-            fourthSession.extractDeviceChallenge(fourthWaiting);
+            awaitChallengeCreationAllowed(username, WAIT_CHALLENGE_PASSWORD);
             awaitNoPendingChallenges(deviceClient);
 
             // Verify we now need to wait longer (4s)
@@ -1156,17 +1138,13 @@ class PushMfaIntegrationIT {
                         "Expected rate limit error: " + e.getMessage());
             }
 
-            // Wait for the 4s backoff period to fully pass
-            Thread.sleep(4500);
-
             // Ensure no pending challenges before final attempt
             awaitNoPendingChallenges(deviceClient);
 
             // Now should be able to create a new challenge
-            BrowserSession finalSession = new BrowserSession(baseUri);
-            HtmlPage finalLogin = finalSession.startAuthorization("test-app");
-            HtmlPage finalWaiting = finalSession.submitLogin(finalLogin, username, WAIT_CHALLENGE_PASSWORD);
-            BrowserSession.DeviceChallenge finalChallenge = finalSession.extractDeviceChallenge(finalWaiting);
+            ChallengeAttempt finalAttempt = awaitChallengeCreationAllowed(username, WAIT_CHALLENGE_PASSWORD);
+            BrowserSession finalSession = finalAttempt.session();
+            BrowserSession.DeviceChallenge finalChallenge = finalAttempt.challenge();
             assertNotNull(finalChallenge, "Should be able to create challenge after waiting full backoff period");
 
             // Approve to clean up
@@ -1195,32 +1173,20 @@ class PushMfaIntegrationIT {
         try {
             // Build up wait counter with multiple unapproved challenges
             for (int i = 0; i < 3; i++) {
-                // Wait for any previous backoff to clear
-                int waitTime = (int) Math.pow(2, i) * 1000 + 200; // exponential backoff with buffer
-                Thread.sleep(waitTime);
-
                 // Ensure no pending challenges before creating new one
                 awaitNoPendingChallenges(deviceClient);
 
-                BrowserSession session = new BrowserSession(baseUri);
-                HtmlPage login = session.startAuthorization("test-app");
-                HtmlPage waiting = session.submitLogin(login, username, WAIT_CHALLENGE_PASSWORD);
-                session.extractDeviceChallenge(waiting);
+                awaitChallengeCreationAllowed(username, WAIT_CHALLENGE_PASSWORD);
                 awaitNoPendingChallenges(deviceClient);
             }
-
-            // Now we have 3 unapproved challenges, wait time should be 4s (1s * 2^2)
-            // Wait for that backoff period plus small buffer
-            Thread.sleep(4500);
 
             // Ensure no pending challenges before creating approval challenge
             awaitNoPendingChallenges(deviceClient);
 
             // Create a new challenge and APPROVE it
-            BrowserSession approvalSession = new BrowserSession(baseUri);
-            HtmlPage approvalLogin = approvalSession.startAuthorization("test-app");
-            HtmlPage approvalWaiting = approvalSession.submitLogin(approvalLogin, username, WAIT_CHALLENGE_PASSWORD);
-            BrowserSession.DeviceChallenge approvalChallenge = approvalSession.extractDeviceChallenge(approvalWaiting);
+            ChallengeAttempt approvalAttempt = awaitChallengeCreationAllowed(username, WAIT_CHALLENGE_PASSWORD);
+            BrowserSession approvalSession = approvalAttempt.session();
+            BrowserSession.DeviceChallenge approvalChallenge = approvalAttempt.challenge();
 
             String status = deviceClient.respondToChallenge(
                     approvalChallenge.confirmToken(),
@@ -1293,6 +1259,57 @@ class PushMfaIntegrationIT {
         assertEquals(0, pending.size(), () -> "Expected pending challenges to expire but got: " + pending);
     }
 
+    private ChallengeAttempt awaitChallengeCreationAllowed(String username, String password) throws Exception {
+        long deadline = System.currentTimeMillis() + 15000L;
+        String lastBlockedPage = null;
+        IllegalStateException lastBlockedError = null;
+
+        while (System.currentTimeMillis() < deadline) {
+            BrowserSession session = new BrowserSession(baseUri);
+            HtmlPage loginPage = session.startAuthorization("test-app");
+            HtmlPage responsePage;
+            try {
+                responsePage = session.submitLogin(loginPage, username, password);
+            } catch (IllegalStateException ex) {
+                if (!isWaitChallengeBlocked(ex.getMessage())) {
+                    throw ex;
+                }
+                lastBlockedError = ex;
+                Thread.sleep(250);
+                continue;
+            }
+
+            try {
+                BrowserSession.DeviceChallenge challenge = session.extractDeviceChallenge(responsePage);
+                return new ChallengeAttempt(session, challenge);
+            } catch (IllegalStateException ex) {
+                String responseText = responsePage.document().text();
+                if (!isWaitChallengeBlocked(ex.getMessage()) && !isWaitChallengeBlocked(responseText)) {
+                    throw ex;
+                }
+                lastBlockedPage = responseText;
+                lastBlockedError = ex;
+                Thread.sleep(250);
+            }
+        }
+
+        if (lastBlockedError != null) {
+            throw new AssertionError("Challenge creation stayed rate-limited: " + lastBlockedError.getMessage());
+        }
+        throw new AssertionError("Challenge creation stayed rate-limited: " + lastBlockedPage);
+    }
+
+    private boolean isWaitChallengeBlocked(String text) {
+        if (text == null) {
+            return false;
+        }
+        String normalized = text.toLowerCase();
+        return normalized.contains("wait")
+                || normalized.contains("rate limit")
+                || normalized.contains("too many")
+                || normalized.contains("pending push approval");
+    }
+
     private JsonNode awaitPushCredential(String userId) throws Exception {
         long deadline = System.currentTimeMillis() + 5000L;
         RuntimeException lastFailure = null;
@@ -1313,6 +1330,8 @@ class PushMfaIntegrationIT {
     private static String subjectFromToken(String token) throws Exception {
         return SignedJWT.parse(token).getJWTClaimsSet().getSubject();
     }
+
+    private record ChallengeAttempt(BrowserSession session, BrowserSession.DeviceChallenge challenge) {}
 
     /**
      * find the versioned JAR produced by Maven, e.g. keycloak-push-mfa-extension.jar

@@ -29,12 +29,17 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import org.jboss.logging.Logger;
+import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
+import org.keycloak.models.RealmModel;
 import org.keycloak.models.utils.KeycloakModelUtils;
+import org.keycloak.utils.StringUtil;
 
 final class PushMfaSseRegistry {
 
@@ -203,6 +208,11 @@ final class PushMfaSseRegistry {
                     if (expectedType != null && challenge.getType() != expectedType) {
                         return ChallengeReadResult.failure("BAD_TYPE");
                     }
+                    if (challenge.getType() == PushChallenge.Type.AUTHENTICATION
+                            && !isAuthenticationSessionActive(session, challenge)) {
+                        challengeStore.remove(challengeId);
+                        return ChallengeReadResult.failure(PushChallengeStatus.EXPIRED.name());
+                    }
                     if (!Objects.equals(secret, challenge.getWatchSecret())) {
                         return ChallengeReadResult.failure("FORBIDDEN");
                     }
@@ -210,8 +220,31 @@ final class PushMfaSseRegistry {
                 });
     }
 
+    static boolean isAuthenticationSessionActive(KeycloakSession session, PushChallenge challenge) {
+        String rootSessionId = challenge.getRootSessionId();
+        if (StringUtil.isBlank(rootSessionId)) {
+            return true;
+        }
+
+        RealmModel realm = session.realms().getRealm(challenge.getRealmId());
+        if (realm == null) {
+            LOG.debugf(
+                    "Cleaning up stale challenge %s because realm %s is gone",
+                    challenge.getId(), challenge.getRealmId());
+            return false;
+        }
+
+        var rootSession = session.authenticationSessions().getRootAuthenticationSession(realm, rootSessionId);
+        if (rootSession != null) {
+            return true;
+        }
+
+        LOG.debugf("Cleaning up stale challenge %s because auth session %s is gone", challenge.getId(), rootSessionId);
+        return false;
+    }
+
     private static ExecutorService createExecutor() {
-        return java.util.concurrent.Executors.newSingleThreadExecutor(runnable -> {
+        return Executors.newSingleThreadExecutor(runnable -> {
             Thread thread = new Thread(runnable, "push-mfa-sse-poller");
             thread.setDaemon(true);
             return thread;
@@ -236,7 +269,7 @@ final class PushMfaSseRegistry {
             Sse sse,
             SseEventEmitter.EventType type,
             PushChallenge.Type expectedType,
-            java.util.concurrent.atomic.AtomicReference<PushChallengeStatus> lastStatusRef) {
+            AtomicReference<PushChallengeStatus> lastStatusRef) {
         Registration(
                 String id,
                 String challengeId,
@@ -246,15 +279,7 @@ final class PushMfaSseRegistry {
                 SseEventEmitter.EventType type,
                 PushChallenge.Type expectedType,
                 PushChallengeStatus lastStatus) {
-            this(
-                    id,
-                    challengeId,
-                    secret,
-                    sink,
-                    sse,
-                    type,
-                    expectedType,
-                    new java.util.concurrent.atomic.AtomicReference<>(lastStatus));
+            this(id, challengeId, secret, sink, sse, type, expectedType, new AtomicReference<>(lastStatus));
         }
 
         PushChallengeStatus lastStatus() {

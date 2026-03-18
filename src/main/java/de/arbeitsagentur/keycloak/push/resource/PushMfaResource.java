@@ -68,10 +68,8 @@ import org.keycloak.crypto.KeyWrapper;
 import org.keycloak.executors.ExecutorsProvider;
 import org.keycloak.jose.jws.Algorithm;
 import org.keycloak.jose.jws.JWSInput;
-import org.keycloak.models.ClientModel;
-import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.RealmModel;
-import org.keycloak.models.UserModel;
+import org.keycloak.models.*;
+import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.util.JsonSerialization;
 import org.keycloak.utils.StringUtil;
 
@@ -192,23 +190,46 @@ public class PushMfaResource {
                 requireField(payload, "deviceId", CONFIG.input().maxDeviceIdLength()));
 
         String labelClaim = jsonText(payload, "deviceLabel");
-        String label = StringUtil.isBlank(labelClaim) ? PushMfaConstants.USER_CREDENTIAL_DISPLAY_NAME : labelClaim;
-        label = PushMfaInputValidator.requireBoundedText(label, CONFIG.input().maxDeviceLabelLength(), "deviceLabel");
+        String normalizedLabel =
+                StringUtil.isBlank(labelClaim) ? PushMfaConstants.USER_CREDENTIAL_DISPLAY_NAME : labelClaim;
+        String label = PushMfaInputValidator.requireBoundedText(
+                normalizedLabel, CONFIG.input().maxDeviceLabelLength(), "deviceLabel");
 
-        PushCredentialService.createCredential(user, label, data);
-        challengeStore.resolve(challenge.getId(), PushChallengeStatus.APPROVED);
+        Instant completedAt = Instant.now();
+        runInTransaction(txSession -> {
+            PushChallengeStore txChallengeStore = new PushChallengeStore(txSession);
+            PushChallenge txChallenge = txChallengeStore
+                    .get(challenge.getId())
+                    .orElseThrow(() -> new NotFoundException("Challenge not found"));
 
-        PushMfaEventService.fire(
-                session,
-                new EnrollmentCompletedEvent(
-                        challenge.getRealmId(),
-                        challenge.getUserId(),
-                        challenge.getId(),
-                        data.getDeviceCredentialId(),
-                        challenge.getClientId(),
-                        data.getDeviceId(),
-                        data.getDeviceType(),
-                        Instant.now()));
+            if (txChallenge.getType() != PushChallenge.Type.ENROLLMENT) {
+                throw new BadRequestException("Challenge is not for enrollment");
+            }
+            if (!Objects.equals(txChallenge.getUserId(), challenge.getUserId())) {
+                throw new ForbiddenException("Challenge does not belong to user");
+            }
+            if (txChallenge.getStatus() != PushChallengeStatus.PENDING) {
+                throw new BadRequestException("Challenge already resolved or expired");
+            }
+
+            RealmModel txRealm = getRealm(txSession, txChallenge.getRealmId());
+            UserModel txUser = getUser(txSession, txRealm, txChallenge.getUserId());
+
+            PushCredentialService.createCredential(txUser, label, data);
+            txChallengeStore.resolve(txChallenge.getId(), PushChallengeStatus.APPROVED);
+
+            PushMfaEventService.fire(
+                    txSession,
+                    new EnrollmentCompletedEvent(
+                            txChallenge.getRealmId(),
+                            txChallenge.getUserId(),
+                            txChallenge.getId(),
+                            data.getDeviceCredentialId(),
+                            txChallenge.getClientId(),
+                            data.getDeviceId(),
+                            data.getDeviceType(),
+                            completedAt));
+        });
 
         return Response.ok(Map.of("status", "enrolled")).build();
     }
@@ -370,34 +391,43 @@ public class PushMfaResource {
     @Path("login/lockout")
     public Response lockoutUser(@Context HttpHeaders headers, @Context UriInfo uriInfo) {
         DpopAuthenticator.DeviceAssertion device = dpopAuth.authenticate(headers, uriInfo, "POST");
-        UserModel user = device.user();
-        PushMfaLockoutHandler handler = session.getProvider(PushMfaLockoutHandler.class);
-        if (handler == null) {
-            throw new IllegalStateException("No PushMfaLockoutHandler provider available");
-        }
-        handler.lockoutUser(session, realm(), user, device.credential(), device.credentialData(), device.clientId());
+        RealmModel currentRealm = realm();
+        String realmId = currentRealm.getId();
+        UserModel currentUser = device.user();
+        String userId = currentUser.getId();
+        CredentialModel currentCredential = device.credential();
+        String keycloakCredentialId = currentCredential.getId();
+        PushCredentialData credentialData = device.credentialData();
+        String clientId = device.clientId();
+        Instant lockedOutAt = Instant.now();
+        runInTransaction(txSession -> {
+            RealmModel txRealm = getRealm(txSession, realmId, currentRealm);
+            UserModel txUser = getUser(txSession, txRealm, userId, currentUser);
+            CredentialModel txCredential = getCredential(txUser, keycloakCredentialId, currentCredential);
+            PushMfaLockoutHandler handler = txSession.getProvider(PushMfaLockoutHandler.class);
+            if (handler == null) {
+                throw new IllegalStateException("No PushMfaLockoutHandler provider available");
+            }
+            handler.lockoutUser(txSession, txRealm, txUser, txCredential, credentialData, clientId);
 
-        // resolve any outstanding authentication challenges for this user so that
-        // browsers waiting via SSE are notified and will surface the lockout
-        String realmId = realm().getId();
-        List<PushChallenge> pending = challengeStore.findPendingAuthenticationForUser(realmId, user.getId());
-        for (PushChallenge ch : pending) {
-            challengeStore.resolve(ch.getId(), PushChallengeStatus.USER_LOCKED_OUT);
-        }
+            PushChallengeStore txChallengeStore = new PushChallengeStore(txSession);
+            List<PushChallenge> pending = txChallengeStore.findPendingAuthenticationForUser(realmId, userId);
+            for (PushChallenge ch : pending) {
+                txChallengeStore.resolve(ch.getId(), PushChallengeStatus.USER_LOCKED_OUT);
+            }
 
-        PushMfaEventService.fire(
-                session,
-                new UserLockedOutEvent(
-                        realmId,
-                        user.getId(),
-                        device.credentialData().getDeviceCredentialId(),
-                        device.clientId(),
-                        device.credentialData().getDeviceId(),
-                        Instant.now()));
+            PushMfaEventService.fire(
+                    txSession,
+                    new UserLockedOutEvent(
+                            realmId,
+                            userId,
+                            credentialData.getDeviceCredentialId(),
+                            clientId,
+                            credentialData.getDeviceId(),
+                            lockedOutAt));
+        });
 
-        LOG.debugf(
-                "User %s locked out by device %s",
-                user.getId(), device.credentialData().getDeviceId());
+        LOG.debugf("User %s locked out by device %s", userId, credentialData.getDeviceId());
         return Response.ok(Map.of("status", "locked_out")).build();
     }
 
@@ -540,7 +570,17 @@ public class PushMfaResource {
                 pushProviderType,
                 current.getDeviceCredentialId(),
                 current.getDeviceId());
-        PushCredentialService.updateCredential(device.user(), device.credential(), updated);
+        RealmModel currentRealm = realm();
+        UserModel currentUser = device.user();
+        String userId = currentUser.getId();
+        CredentialModel currentCredential = device.credential();
+        String keycloakCredentialId = currentCredential.getId();
+        runInTransaction(txSession -> {
+            RealmModel txRealm = getRealm(txSession, currentRealm.getId(), currentRealm);
+            UserModel txUser = getUser(txSession, txRealm, userId, currentUser);
+            CredentialModel txCredential = getCredential(txUser, keycloakCredentialId, currentCredential);
+            PushCredentialService.updateCredential(txUser, txCredential, updated);
+        });
         LOG.infof(
                 "Updated push provider {type=%s} for device %s (user=%s)",
                 pushProviderType, current.getDeviceId(), device.user().getId());
@@ -580,17 +620,29 @@ public class PushMfaResource {
                     current.getPushProviderType(),
                     current.getDeviceCredentialId(),
                     current.getDeviceId());
-            PushCredentialService.updateCredential(device.user(), device.credential(), updated);
+            RealmModel currentRealm = realm();
+            UserModel currentUser = device.user();
+            String userId = currentUser.getId();
+            CredentialModel currentCredential = device.credential();
+            String keycloakCredentialId = currentCredential.getId();
+            String clientId = device.clientId();
+            Instant rotatedAt = Instant.now();
+            runInTransaction(txSession -> {
+                RealmModel txRealm = getRealm(txSession, currentRealm.getId(), currentRealm);
+                UserModel txUser = getUser(txSession, txRealm, userId, currentUser);
+                CredentialModel txCredential = getCredential(txUser, keycloakCredentialId, currentCredential);
+                PushCredentialService.updateCredential(txUser, txCredential, updated);
 
-            PushMfaEventService.fire(
-                    session,
-                    new KeyRotatedEvent(
-                            realm().getId(),
-                            device.user().getId(),
-                            current.getDeviceCredentialId(),
-                            device.clientId(),
-                            current.getDeviceId(),
-                            Instant.now()));
+                PushMfaEventService.fire(
+                        txSession,
+                        new KeyRotatedEvent(
+                                currentRealm.getId(),
+                                userId,
+                                updated.getDeviceCredentialId(),
+                                clientId,
+                                updated.getDeviceId(),
+                                rotatedAt));
+            });
 
             LOG.infof(
                     "Rotated device key for %s (user=%s)",
@@ -614,8 +666,54 @@ public class PushMfaResource {
         return session.getContext().getRealm();
     }
 
+    private void runInTransaction(KeycloakSessionTask task) {
+        if (session.getKeycloakSessionFactory() == null || session.getContext() == null) {
+            task.run(session);
+            return;
+        }
+        KeycloakModelUtils.runJobInTransaction(session.getKeycloakSessionFactory(), session.getContext(), task);
+    }
+
+    private CredentialModel getCredential(
+            UserModel user, String keycloakCredentialId, CredentialModel currentCredential) {
+        if (session.getKeycloakSessionFactory() == null && currentCredential != null) {
+            return currentCredential;
+        }
+        CredentialModel credential = PushCredentialService.getCredentialById(user, keycloakCredentialId);
+        if (credential == null) {
+            throw new NotFoundException("Credential not found");
+        }
+        return credential;
+    }
+
+    private RealmModel getRealm(KeycloakSession lookupSession, String realmId) {
+        return getRealm(lookupSession, realmId, null);
+    }
+
+    private RealmModel getRealm(KeycloakSession lookupSession, String realmId, RealmModel currentRealm) {
+        if (session.getKeycloakSessionFactory() == null && currentRealm != null) {
+            return currentRealm;
+        }
+        RealmModel realm = lookupSession.realms().getRealm(realmId);
+        if (realm == null) {
+            throw new NotFoundException("Realm not found");
+        }
+        return realm;
+    }
+
     private UserModel getUser(String userId) {
-        UserModel user = session.users().getUserById(realm(), userId);
+        return getUser(session, realm(), userId);
+    }
+
+    private UserModel getUser(KeycloakSession lookupSession, RealmModel realm, String userId) {
+        return getUser(lookupSession, realm, userId, null);
+    }
+
+    private UserModel getUser(KeycloakSession lookupSession, RealmModel realm, String userId, UserModel currentUser) {
+        if (session.getKeycloakSessionFactory() == null && currentUser != null) {
+            return currentUser;
+        }
+        UserModel user = lookupSession.users().getUserById(realm, userId);
         if (user == null) {
             throw new NotFoundException("User not found");
         }

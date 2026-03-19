@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.8.1](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.8.0...v1.8.1) (2026-03-19)
+
+
+### Bug Fixes
+
+* close sse streams when auth session is gone ([806bad3](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/806bad3b760888d68f40a4444e1319310cfecb83))
+* run model mutating endpoint code in txn ([c1ca785](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/c1ca78583ffe72a4c382f46ce17d82754c50da66))
+
+
+### Dependencies
+
+* **deps-dev:** bump org.apache.maven.plugins:maven-failsafe-plugin ([68cf3c0](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/68cf3c0f1394d8e3d4a045941f562683fba3718e))
+* **deps-dev:** bump org.mockito:mockito-core from 5.17.0 to 5.23.0 ([20d494a](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/20d494a62f40fcdc5245386374deb54e094bf023))
+
 ## [1.8.0](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.7.1...v1.8.0) (2026-03-17)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.2](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.8.1...v1.8.2) (2026-04-01)
+
+
+### Bug Fixes
+
+* harden SSE delivery and make challenge resolution explicit ([aab6527](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/aab652756dd31cc2773d7e2223e269261d1b9bba))
+
 ## [1.8.1](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.8.0...v1.8.1) (2026-03-19)
 
 

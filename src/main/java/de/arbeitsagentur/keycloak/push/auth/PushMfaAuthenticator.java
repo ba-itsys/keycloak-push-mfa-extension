@@ -243,7 +243,7 @@ public class PushMfaAuthenticator implements Authenticator {
         }
 
         if (cancelRequested) {
-            store.resolve(challengeId, PushChallengeStatus.DENIED);
+            store.tryResolve(challengeId, PushChallengeStatus.DENIED);
             store.remove(challengeId);
             ChallengeNoteHelper.clear(authSession);
             context.forkWithErrorMessage(new FormMessage("push-mfa-cancelled-message"));

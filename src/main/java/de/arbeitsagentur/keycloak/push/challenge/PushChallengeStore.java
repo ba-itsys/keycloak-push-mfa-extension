@@ -38,8 +38,10 @@ public class PushChallengeStore {
     private static final String CHALLENGE_PREFIX = "push-mfa:challenge:";
     private static final String USER_INDEX_PREFIX = "push-mfa:user-index:";
     private static final String CREATION_LOCK_PREFIX = "push-mfa:create-lock:";
+    private static final String RESOLVE_LOCK_PREFIX = "push-mfa:resolve-lock:";
     private static final String INDEX_CHALLENGE_IDS = "challengeIds";
     private static final long CREATION_LOCK_TTL_SECONDS = 10;
+    private static final long RESOLVE_LOCK_TTL_SECONDS = 10;
     private static final String USER_VERIFICATION_MODE = "userVerificationMode";
     private static final String USER_VERIFICATION_VALUE = "userVerificationValue";
     private static final String USER_VERIFICATION_OPTIONS = "userVerificationOptions";
@@ -174,31 +176,41 @@ public class PushChallengeStore {
         return Optional.ofNullable(challenge);
     }
 
-    public void resolve(String challengeId, PushChallengeStatus status) {
-        Map<String, String> data = singleUse.get(challengeKey(challengeId));
-        if (data == null) {
-            return;
+    public ResolveResult tryResolve(String challengeId, PushChallengeStatus status) {
+        String lockKey = resolveLockKey(challengeId);
+        if (!singleUse.putIfAbsent(lockKey, RESOLVE_LOCK_TTL_SECONDS)) {
+            return ResolveResult.busy(get(challengeId).orElse(null));
         }
 
-        PushChallenge current = fromMap(challengeId, data);
-        if (current == null) {
-            singleUse.remove(challengeKey(challengeId));
-            return;
-        }
-        if (current.getStatus() != PushChallengeStatus.PENDING) {
-            return;
-        }
-        if (Instant.now().isAfter(current.getExpiresAt())) {
-            updateStatus(challengeId, data, PushChallengeStatus.EXPIRED);
-            if (current.getType() == PushChallenge.Type.AUTHENTICATION) {
-                refreshAuthenticationIndex(current.getRealmId(), current.getUserId());
+        try {
+            Map<String, String> data = singleUse.get(challengeKey(challengeId));
+            if (data == null) {
+                return ResolveResult.notFound();
             }
-            return;
-        }
 
-        PushChallenge updated = updateStatus(challengeId, data, status);
-        if (updated != null && updated.getType() == PushChallenge.Type.AUTHENTICATION) {
-            refreshAuthenticationIndex(updated.getRealmId(), updated.getUserId());
+            PushChallenge current = fromMap(challengeId, data);
+            if (current == null) {
+                singleUse.remove(challengeKey(challengeId));
+                return ResolveResult.notFound();
+            }
+            if (current.getStatus() != PushChallengeStatus.PENDING) {
+                return ResolveResult.alreadyFinal(current);
+            }
+            if (Instant.now().isAfter(current.getExpiresAt())) {
+                PushChallenge expired = updateStatus(challengeId, data, PushChallengeStatus.EXPIRED);
+                if (current.getType() == PushChallenge.Type.AUTHENTICATION) {
+                    refreshAuthenticationIndex(current.getRealmId(), current.getUserId());
+                }
+                return ResolveResult.alreadyFinal(expired);
+            }
+
+            PushChallenge updated = updateStatus(challengeId, data, status);
+            if (updated != null && updated.getType() == PushChallenge.Type.AUTHENTICATION) {
+                refreshAuthenticationIndex(updated.getRealmId(), updated.getUserId());
+            }
+            return ResolveResult.applied(updated);
+        } finally {
+            singleUse.remove(lockKey);
         }
     }
 
@@ -307,6 +319,10 @@ public class PushChallengeStore {
 
     private String creationLockKey(String realmId, String userId) {
         return StorageKeyUtil.buildKey(CREATION_LOCK_PREFIX, realmId, userId);
+    }
+
+    private String resolveLockKey(String challengeId) {
+        return RESOLVE_LOCK_PREFIX + challengeId;
     }
 
     public void removeAllAuthentication(String realmId, String userId) {
@@ -487,5 +503,34 @@ public class PushChallengeStore {
 
     public static String encodeNonce(byte[] nonceBytes) {
         return Base64.getEncoder().withoutPadding().encodeToString(nonceBytes);
+    }
+
+    public enum ResolveOutcome {
+        APPLIED,
+        ALREADY_FINAL,
+        NOT_FOUND,
+        BUSY
+    }
+
+    public record ResolveResult(ResolveOutcome outcome, PushChallenge challenge) {
+        public static ResolveResult applied(PushChallenge challenge) {
+            return new ResolveResult(ResolveOutcome.APPLIED, challenge);
+        }
+
+        public static ResolveResult alreadyFinal(PushChallenge challenge) {
+            return new ResolveResult(ResolveOutcome.ALREADY_FINAL, challenge);
+        }
+
+        public static ResolveResult notFound() {
+            return new ResolveResult(ResolveOutcome.NOT_FOUND, null);
+        }
+
+        public static ResolveResult busy(PushChallenge challenge) {
+            return new ResolveResult(ResolveOutcome.BUSY, challenge);
+        }
+
+        public boolean applied() {
+            return outcome == ResolveOutcome.APPLIED;
+        }
     }
 }

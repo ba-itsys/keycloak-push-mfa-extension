@@ -62,7 +62,7 @@ These protect the device-facing endpoints against abuse. Configure via Java syst
 
 **Example (Docker/container):**
 ```bash
-JAVA_OPTS_APPEND="-Dkeycloak.push-mfa.input.maxJwtLength=8192 -Dkeycloak.push-mfa.sse.maxConnections=32"
+JAVA_OPTS_APPEND="-Dkeycloak.push-mfa.input.maxJwtLength=8192 -Dkeycloak.push-mfa.sse.maxConnections=32 -Dkeycloak.push-mfa.sse.heartbeatIntervalSeconds=15 -Dkeycloak.push-mfa.sse.maxConnectionLifetimeSeconds=55 -Dkeycloak.push-mfa.sse.reconnectDelayMillis=3000"
 ```
 
 ### DPoP Replay Protection
@@ -93,5 +93,8 @@ JAVA_OPTS_APPEND="-Dkeycloak.push-mfa.input.maxJwtLength=8192 -Dkeycloak.push-mf
 |----------|---------|-------|-------------|
 | `keycloak.push-mfa.sse.maxConnections` | `256` | 1–1024 | Max number of concurrently registered SSE clients per Keycloak node |
 | `keycloak.push-mfa.sse.maxSecretLength` | `128` | 16–1024 | Max SSE secret query parameter length |
+| `keycloak.push-mfa.sse.heartbeatIntervalSeconds` | `15` | 5–300 | Interval for SSE keepalive comments while a challenge is still `PENDING` |
+| `keycloak.push-mfa.sse.maxConnectionLifetimeSeconds` | `55` | 15–1800 | Maximum time to keep one SSE connection open before closing it and letting `EventSource` reconnect |
+| `keycloak.push-mfa.sse.reconnectDelayMillis` | `3000` | 250–30000 | `retry:` hint used for overload responses such as `TOO_MANY_CONNECTIONS`; normal `PENDING` streams do not use it |
 
-> **Implementation note:** SSE streams stay open while a challenge is pending. Each Keycloak node runs one node-local poller that checks shared challenge storage for all registered local SSE clients. This avoids one sleeping worker thread per connection while still working across multiple Keycloak nodes, as long as every node can read the same backing store.
+> **Implementation note:** Each Keycloak node runs one node-local poller that checks shared challenge storage for all registered local SSE clients, grouped by challenge. While a challenge stays `PENDING`, the server sends periodic heartbeat comments and rotates long-lived connections after the configured maximum lifetime so browsers reconnect cleanly through proxies and firewalls. This avoids one sleeping worker thread per connection while still working across multiple Keycloak nodes, as long as every node can read the same backing store.

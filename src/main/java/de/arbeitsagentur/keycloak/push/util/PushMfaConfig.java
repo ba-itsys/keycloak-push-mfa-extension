@@ -33,7 +33,12 @@ public record PushMfaConfig(Dpop dpop, Input input, Sse sse) {
             int maxPushProviderTypeLength,
             int maxJwkJsonLength) {}
 
-    public record Sse(int maxConnections, int maxSecretLength) {}
+    public record Sse(
+            int maxConnections,
+            int maxSecretLength,
+            int heartbeatIntervalSeconds,
+            int maxConnectionLifetimeSeconds,
+            int reconnectDelayMillis) {}
 
     public static PushMfaConfig load() {
         Config.Scope root = Config.scope("push-mfa");
@@ -62,7 +67,10 @@ public record PushMfaConfig(Dpop dpop, Input input, Sse sse) {
                         boundedInt(input, keycloakInput, "input", "maxJwkJsonLength", 8192, 512, 65536)),
                 new Sse(
                         boundedInt(sse, keycloakSse, "sse", "maxConnections", 256, 1, 1024),
-                        boundedInt(sse, keycloakSse, "sse", "maxSecretLength", 128, 16, 1024)));
+                        boundedInt(sse, keycloakSse, "sse", "maxSecretLength", 128, 16, 1024),
+                        boundedInt(sse, keycloakSse, "sse", "heartbeatIntervalSeconds", 15, 5, 300),
+                        boundedInt(sse, keycloakSse, "sse", "maxConnectionLifetimeSeconds", 55, 15, 1800),
+                        boundedInt(sse, keycloakSse, "sse", "reconnectDelayMillis", 3000, 250, 30000)));
     }
 
     private static int boundedInt(

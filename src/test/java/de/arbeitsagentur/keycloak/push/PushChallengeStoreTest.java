@@ -73,7 +73,7 @@ class PushChallengeStoreTest {
     }
 
     @Test
-    void resolveDoesNotOverrideExpiredChallenge() throws Exception {
+    void tryResolveDoesNotOverrideExpiredChallenge() throws Exception {
         PushChallenge challenge = store.create(
                 REALM_ID,
                 USER_ID,
@@ -86,20 +86,44 @@ class PushChallengeStoreTest {
                 "root-session");
 
         Thread.sleep(100);
-        store.resolve(challenge.getId(), PushChallengeStatus.APPROVED);
+        store.tryResolve(challenge.getId(), PushChallengeStatus.APPROVED);
 
         PushChallenge updated = store.get(challenge.getId()).orElseThrow();
         assertEquals(PushChallengeStatus.EXPIRED, updated.getStatus());
     }
 
     @Test
-    void resolveDoesNotOverrideResolvedChallenge() {
+    void tryResolveDoesNotOverrideResolvedChallenge() {
         PushChallenge challenge = createAuthChallenge("cred-1");
-        store.resolve(challenge.getId(), PushChallengeStatus.APPROVED);
-        store.resolve(challenge.getId(), PushChallengeStatus.DENIED);
+        store.tryResolve(challenge.getId(), PushChallengeStatus.APPROVED);
+        store.tryResolve(challenge.getId(), PushChallengeStatus.DENIED);
 
         PushChallenge updated = store.get(challenge.getId()).orElseThrow();
         assertEquals(PushChallengeStatus.APPROVED, updated.getStatus());
+    }
+
+    @Test
+    void tryResolveIsIdempotentForSameTargetStatus() {
+        PushChallenge challenge = createAuthChallenge("cred-1");
+
+        PushChallengeStore.ResolveResult first = store.tryResolve(challenge.getId(), PushChallengeStatus.APPROVED);
+        PushChallengeStore.ResolveResult second = store.tryResolve(challenge.getId(), PushChallengeStatus.APPROVED);
+
+        assertTrue(first.applied());
+        assertEquals(PushChallengeStore.ResolveOutcome.ALREADY_FINAL, second.outcome());
+        assertEquals(PushChallengeStatus.APPROVED, second.challenge().getStatus());
+    }
+
+    @Test
+    void tryResolveReportsExistingFinalStatusForConflictingResponse() {
+        PushChallenge challenge = createAuthChallenge("cred-1");
+
+        PushChallengeStore.ResolveResult first = store.tryResolve(challenge.getId(), PushChallengeStatus.APPROVED);
+        PushChallengeStore.ResolveResult second = store.tryResolve(challenge.getId(), PushChallengeStatus.DENIED);
+
+        assertTrue(first.applied());
+        assertEquals(PushChallengeStore.ResolveOutcome.ALREADY_FINAL, second.outcome());
+        assertEquals(PushChallengeStatus.APPROVED, second.challenge().getStatus());
     }
 
     @Test

@@ -31,13 +31,19 @@ class PushMfaConfigTest {
         Map<String, String> properties = Map.of(
                 "keycloak.push-mfa.input.maxJwtLength", "2048",
                 "keycloak.push-mfa.dpop.jtiMaxLength", "40",
-                "keycloak.push-mfa.sse.maxConnections", "1");
+                "keycloak.push-mfa.sse.maxConnections", "1",
+                "keycloak.push-mfa.sse.heartbeatIntervalSeconds", "20",
+                "keycloak.push-mfa.sse.maxConnectionLifetimeSeconds", "120",
+                "keycloak.push-mfa.sse.reconnectDelayMillis", "1500");
 
         withSystemProperties(properties, () -> {
             PushMfaConfig config = PushMfaConfig.load();
             assertEquals(2048, config.input().maxJwtLength());
             assertEquals(40, config.dpop().jtiMaxLength());
             assertEquals(1, config.sse().maxConnections());
+            assertEquals(20, config.sse().heartbeatIntervalSeconds());
+            assertEquals(120, config.sse().maxConnectionLifetimeSeconds());
+            assertEquals(1500, config.sse().reconnectDelayMillis());
         });
     }
 

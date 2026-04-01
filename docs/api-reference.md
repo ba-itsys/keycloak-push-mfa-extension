@@ -15,6 +15,8 @@ Content-Type: application/json
 
 Keycloak verifies the signature using `cnf.jwk`, persists the credential (JWK, deviceType, `pushProviderId`, `pushProviderType`, credentialId, deviceId, deviceLabel), and resolves the enrollment challenge. The `pushProviderId` value is whatever identifier your push backend requires (for example an FCM registration token or an APNs device token), while `pushProviderType` selects the Keycloak `PushNotificationSender` provider that should deliver the confirm token. The bundled logging implementation exposes the type `log`, which simply prints the payload. Your scripts use `pushProviderType=log` by default, but real deployments can plug in any provider via the [Push Notification SPI](spi-reference.md#push-notification-spi). The `deviceLabel` is read from the JWT payload (falls back to `PushMfaConstants.USER_CREDENTIAL_DISPLAY_NAME` when absent).
 
+If two completion requests race for the same enrollment challenge, the loser receives `409 Conflict` with `Challenge is currently being resolved` or `Challenge already resolved or expired`.
+
 **Response:**
 ```json
 {
@@ -72,6 +74,8 @@ Content-Type: application/json
 
 Keycloak verifies the DPoP proof to authenticate the device, then validates the login token (stored in the request body) with the saved JWK. The login token must carry `cid`, `credId`, `deviceId`, and `action`. `"action": "approve"` marks the challenge as approved; `"action": "deny"` marks it as denied. Any other value is rejected. When `userVerification` is enabled, `"action": "approve"` also requires `userVerification` (selected number / entered PIN); `"deny"` never does.
 
+If two response requests race for the same challenge, the loser may receive `409 Conflict`. Clients should treat that as a same-challenge concurrency signal and re-read current state rather than assuming the operation failed globally.
+
 **Success Response:**
 ```json
 { "status": "approved" }
@@ -87,6 +91,11 @@ Missing (`400`):
 Mismatch (`403`):
 ```json
 { "error": "User verification mismatch" }
+```
+
+Concurrent same-challenge resolution (`409`):
+```json
+{ "error": "Challenge is currently being resolved" }
 ```
 
 ## Lock Out User

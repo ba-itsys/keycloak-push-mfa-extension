@@ -39,6 +39,7 @@ import de.arbeitsagentur.keycloak.push.util.PushMfaKeyUtil;
 import de.arbeitsagentur.keycloak.push.util.PushSignatureVerifier;
 import de.arbeitsagentur.keycloak.push.util.TokenLogHelper;
 import jakarta.ws.rs.BadRequestException;
+import jakarta.ws.rs.ClientErrorException;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.GET;
@@ -208,24 +209,21 @@ public class PushMfaResource {
             if (!Objects.equals(txChallenge.getUserId(), challenge.getUserId())) {
                 throw new ForbiddenException("Challenge does not belong to user");
             }
-            if (txChallenge.getStatus() != PushChallengeStatus.PENDING) {
-                throw new BadRequestException("Challenge already resolved or expired");
-            }
-
             RealmModel txRealm = getRealm(txSession, txChallenge.getRealmId());
             UserModel txUser = getUser(txSession, txRealm, txChallenge.getUserId());
+            PushChallenge resolved = requireAppliedResolution(
+                    txChallengeStore.tryResolve(txChallenge.getId(), PushChallengeStatus.APPROVED));
 
             PushCredentialService.createCredential(txUser, label, data);
-            txChallengeStore.resolve(txChallenge.getId(), PushChallengeStatus.APPROVED);
 
             PushMfaEventService.fire(
                     txSession,
                     new EnrollmentCompletedEvent(
-                            txChallenge.getRealmId(),
-                            txChallenge.getUserId(),
-                            txChallenge.getId(),
+                            resolved.getRealmId(),
+                            resolved.getUserId(),
+                            resolved.getId(),
                             data.getDeviceCredentialId(),
-                            txChallenge.getClientId(),
+                            resolved.getClientId(),
                             data.getDeviceId(),
                             data.getDeviceType(),
                             completedAt));
@@ -349,15 +347,17 @@ public class PushMfaResource {
         }
 
         if (PushMfaConstants.CHALLENGE_DENY.equals(tokenAction)) {
-            challengeStore.resolve(challengeId, PushChallengeStatus.DENIED);
+            PushChallengeStore.ResolveResult resolveResult =
+                    challengeStore.tryResolve(challengeId, PushChallengeStatus.DENIED);
+            PushChallenge resolved = requireResponseResolution(resolveResult, PushChallengeStatus.DENIED);
 
             PushMfaEventService.fire(
                     session,
                     new ChallengeDeniedEvent(
-                            challenge.getRealmId(),
-                            challenge.getUserId(),
-                            challenge.getId(),
-                            challenge.getType(),
+                            resolved.getRealmId(),
+                            resolved.getUserId(),
+                            resolved.getId(),
+                            resolved.getType(),
                             data.getDeviceCredentialId(),
                             device.clientId(),
                             data.getDeviceId(),
@@ -370,15 +370,17 @@ public class PushMfaResource {
         }
 
         verifyUserVerification(session, challenge, payload, data.getDeviceCredentialId(), device.clientId());
-        challengeStore.resolve(challengeId, PushChallengeStatus.APPROVED);
+        PushChallengeStore.ResolveResult resolveResult =
+                challengeStore.tryResolve(challengeId, PushChallengeStatus.APPROVED);
+        PushChallenge resolved = requireResponseResolution(resolveResult, PushChallengeStatus.APPROVED);
 
         PushMfaEventService.fire(
                 session,
                 new ChallengeAcceptedEvent(
-                        challenge.getRealmId(),
-                        challenge.getUserId(),
-                        challenge.getId(),
-                        challenge.getType(),
+                        resolved.getRealmId(),
+                        resolved.getUserId(),
+                        resolved.getId(),
+                        resolved.getType(),
                         data.getDeviceCredentialId(),
                         device.clientId(),
                         data.getDeviceId(),
@@ -413,7 +415,7 @@ public class PushMfaResource {
             PushChallengeStore txChallengeStore = new PushChallengeStore(txSession);
             List<PushChallenge> pending = txChallengeStore.findPendingAuthenticationForUser(realmId, userId);
             for (PushChallenge ch : pending) {
-                txChallengeStore.resolve(ch.getId(), PushChallengeStatus.USER_LOCKED_OUT);
+                txChallengeStore.tryResolve(ch.getId(), PushChallengeStatus.USER_LOCKED_OUT);
             }
 
             PushMfaEventService.fire(
@@ -459,13 +461,13 @@ public class PushMfaResource {
         PushMfaSseRegistry registry = getSseRegistry(session);
         if (StringUtil.isBlank(secret)) {
             LOG.warnf("%s SSE rejected for %s due to missing secret", type, challengeId);
-            closeAfterStatus(sink, sse, "INVALID", null, type, SSE_RETRY_AFTER_MILLIS);
+            closeAfterStatus(sink, sse, "INVALID", null, type, null);
             return;
         }
 
         PushMfaSseRegistry.ChallengeReadResult readResult = registry.readChallenge(challengeId, secret, expectedType);
         if (readResult.failureStatus() != null) {
-            closeAfterStatus(sink, sse, readResult.failureStatus(), null, type, SSE_RETRY_AFTER_MILLIS);
+            closeAfterStatus(sink, sse, readResult.failureStatus(), null, type, null);
             return;
         }
 
@@ -502,6 +504,8 @@ public class PushMfaResource {
             if (registry == null) {
                 registry = new PushMfaSseRegistry(
                         CONFIG.sse().maxConnections(),
+                        CONFIG.sse().heartbeatIntervalSeconds() * 1000L,
+                        CONFIG.sse().maxConnectionLifetimeSeconds() * 1000L,
                         session.getKeycloakSessionFactory(),
                         resolveManagedExecutor(session));
                 sseRegistry = registry;
@@ -534,9 +538,54 @@ public class PushMfaResource {
             PushChallenge challenge,
             SseEventEmitter.EventType type,
             Long retryAfterMillis) {
-        try (SseEventSink eventSink = sink) {
-            sseEmitter.sendStatusEvent(eventSink, sse, status, challenge, type, retryAfterMillis);
+        sseEmitter
+                .sendStatusEvent(sink, sse, status, challenge, type, retryAfterMillis)
+                .whenComplete((ignored, ex) -> {
+                    try {
+                        sink.close();
+                    } catch (Exception closeEx) {
+                        // no-op
+                    }
+                });
+    }
+
+    private PushChallenge requireResponseResolution(
+            PushChallengeStore.ResolveResult resolveResult, PushChallengeStatus requestedStatus) {
+        if (resolveResult.applied()) {
+            return resolveResult.challenge();
         }
+        if (resolveResult.outcome() == PushChallengeStore.ResolveOutcome.NOT_FOUND) {
+            throw new NotFoundException("Challenge not found");
+        }
+        if (resolveResult.outcome() == PushChallengeStore.ResolveOutcome.BUSY) {
+            throw new ClientErrorException("Challenge is currently being resolved", Response.Status.CONFLICT);
+        }
+
+        PushChallenge current = resolveResult.challenge();
+        if (current == null) {
+            throw new NotFoundException("Challenge not found");
+        }
+        if (current.getStatus() == requestedStatus) {
+            return current;
+        }
+        if (current.getStatus() == PushChallengeStatus.EXPIRED) {
+            throw new BadRequestException("Challenge already resolved or expired");
+        }
+        throw new ClientErrorException(
+                "Challenge already resolved as " + current.getStatus().name(), Response.Status.CONFLICT);
+    }
+
+    private PushChallenge requireAppliedResolution(PushChallengeStore.ResolveResult resolveResult) {
+        if (resolveResult.applied()) {
+            return resolveResult.challenge();
+        }
+        if (resolveResult.outcome() == PushChallengeStore.ResolveOutcome.NOT_FOUND) {
+            throw new NotFoundException("Challenge not found");
+        }
+        if (resolveResult.outcome() == PushChallengeStore.ResolveOutcome.BUSY) {
+            throw new ClientErrorException("Challenge is currently being resolved", Response.Status.CONFLICT);
+        }
+        throw new BadRequestException("Challenge already resolved or expired");
     }
 
     @PUT

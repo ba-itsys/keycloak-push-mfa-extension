@@ -21,6 +21,8 @@ import jakarta.ws.rs.sse.Sse;
 import jakarta.ws.rs.sse.SseEventSink;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 import org.jboss.logging.Logger;
 import org.keycloak.util.JsonSerialization;
 
@@ -34,14 +36,15 @@ public final class SseEventEmitter {
         ENROLLMENT
     }
 
-    public boolean sendStatusEvent(SseEventSink sink, Sse sse, String status, PushChallenge challenge, EventType type) {
+    public CompletionStage<Boolean> sendStatusEvent(
+            SseEventSink sink, Sse sse, String status, PushChallenge challenge, EventType type) {
         return sendStatusEvent(sink, sse, status, challenge, type, null);
     }
 
-    public boolean sendStatusEvent(
+    public CompletionStage<Boolean> sendStatusEvent(
             SseEventSink sink, Sse sse, String status, PushChallenge challenge, EventType type, Long retryAfterMillis) {
         if (sink.isClosed()) {
-            return false;
+            return CompletableFuture.completedFuture(false);
         }
         try {
             String targetChallengeId = challenge != null ? challenge.getId() : "n/a";
@@ -68,8 +71,18 @@ public final class SseEventEmitter {
             if (retryAfterMillis != null) {
                 builder.reconnectDelay(retryAfterMillis);
             }
-            sink.send(builder.build());
-            return true;
+            return sink.send(builder.build()).handle((ignored, ex) -> {
+                if (ex != null) {
+                    LOG.warnf(
+                            ex,
+                            "Unable to send %s SSE status %s for %s",
+                            typeLabel,
+                            status,
+                            challenge != null ? challenge.getId() : "n/a");
+                    return false;
+                }
+                return true;
+            });
         } catch (Exception ex) {
             String typeLabel = type == EventType.LOGIN ? "login" : "enrollment";
             LOG.warnf(
@@ -78,7 +91,26 @@ public final class SseEventEmitter {
                     typeLabel,
                     status,
                     challenge != null ? challenge.getId() : "n/a");
-            return false;
+            return CompletableFuture.completedFuture(false);
+        }
+    }
+
+    public CompletionStage<Boolean> sendHeartbeat(SseEventSink sink, Sse sse) {
+        if (sink.isClosed()) {
+            return CompletableFuture.completedFuture(false);
+        }
+        try {
+            LOG.debug("Emitting SSE heartbeat");
+            return sink.send(sse.newEventBuilder().comment("keepalive").build()).handle((ignored, ex) -> {
+                if (ex != null) {
+                    LOG.warn("Unable to send SSE heartbeat", ex);
+                    return false;
+                }
+                return true;
+            });
+        } catch (Exception ex) {
+            LOG.warn("Unable to send SSE heartbeat", ex);
+            return CompletableFuture.completedFuture(false);
         }
     }
 }

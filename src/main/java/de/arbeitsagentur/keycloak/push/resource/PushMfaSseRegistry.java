@@ -33,7 +33,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import org.jboss.logging.Logger;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
@@ -46,25 +46,41 @@ final class PushMfaSseRegistry {
     private static final Logger LOG = Logger.getLogger(PushMfaSseRegistry.class);
     private static final long POLL_INTERVAL_MILLIS = 1000L;
 
-    interface ChallengeReader {
-        ChallengeReadResult read(String challengeId, String secret, PushChallenge.Type expectedType);
-    }
-
     private final int maxConnections;
+    private final long heartbeatIntervalMillis;
+    private final long maxConnectionLifetimeMillis;
     private final Semaphore permits;
     private final Executor executor;
-    private final ChallengeReader challengeReader;
+    private final Function<ChallengeReadRequest, ChallengeReadResult> challengeReader;
     private final SseEventEmitter emitter;
     private final AtomicBoolean pollerStarted = new AtomicBoolean();
-    private final Map<String, Registration> registrations = new HashMap<>();
+    private final Map<String, ChallengeWatchGroup> registrations = new HashMap<>();
 
-    PushMfaSseRegistry(int maxConnections, KeycloakSessionFactory sessionFactory, ExecutorService executor) {
-        this(maxConnections, createChallengeReader(sessionFactory), new SseEventEmitter(), executor);
+    PushMfaSseRegistry(
+            int maxConnections,
+            long heartbeatIntervalMillis,
+            long maxConnectionLifetimeMillis,
+            KeycloakSessionFactory sessionFactory,
+            ExecutorService executor) {
+        this(
+                maxConnections,
+                heartbeatIntervalMillis,
+                maxConnectionLifetimeMillis,
+                createChallengeReader(sessionFactory),
+                new SseEventEmitter(),
+                executor);
     }
 
     PushMfaSseRegistry(
-            int maxConnections, ChallengeReader challengeReader, SseEventEmitter emitter, ExecutorService executor) {
+            int maxConnections,
+            long heartbeatIntervalMillis,
+            long maxConnectionLifetimeMillis,
+            Function<ChallengeReadRequest, ChallengeReadResult> challengeReader,
+            SseEventEmitter emitter,
+            ExecutorService executor) {
         this.maxConnections = maxConnections;
+        this.heartbeatIntervalMillis = heartbeatIntervalMillis;
+        this.maxConnectionLifetimeMillis = maxConnectionLifetimeMillis;
         this.permits = new Semaphore(maxConnections);
         this.challengeReader = Objects.requireNonNull(challengeReader);
         this.emitter = Objects.requireNonNull(emitter);
@@ -76,7 +92,7 @@ final class PushMfaSseRegistry {
     }
 
     ChallengeReadResult readChallenge(String challengeId, String secret, PushChallenge.Type expectedType) {
-        return challengeReader.read(challengeId, secret, expectedType);
+        return challengeReader.apply(new ChallengeReadRequest(challengeId, secret, expectedType));
     }
 
     boolean register(
@@ -91,57 +107,127 @@ final class PushMfaSseRegistry {
             return false;
         }
 
-        Registration registration = new Registration(
-                UUID.randomUUID().toString(), challengeId, secret, sink, sse, type, expectedType, lastStatus);
+        Watcher watcher = new Watcher(
+                UUID.randomUUID().toString(), challengeId, sink, sse, type, lastStatus, System.currentTimeMillis());
 
+        boolean registered = false;
         synchronized (registrations) {
-            registrations.put(registration.id(), registration);
+            ChallengeWatchGroup group = registrations.computeIfAbsent(
+                    challengeId, id -> new ChallengeWatchGroup(challengeId, secret, expectedType));
+            if (group.matches(secret, expectedType)) {
+                group.watchers().put(watcher.id(), watcher);
+                registered = true;
+            }
         }
 
-        if (!startPoller()) {
-            unregister(registration, true);
+        if (!registered) {
+            permits.release();
             return false;
         }
-
+        if (!startPoller()) {
+            unregister(watcher, true);
+            return false;
+        }
         return true;
     }
 
     void pollOnce() {
-        for (Registration registration : snapshotRegistrations()) {
-            if (registration.sink().isClosed()) {
-                unregister(registration, false);
+        long now = System.currentTimeMillis();
+        for (ChallengeWatchGroup group : snapshotGroups()) {
+            ArrayList<Watcher> activeWatchers = new ArrayList<>();
+            for (Watcher watcher : snapshotWatchers(group)) {
+                if (ensureWatcherActive(watcher, now)) {
+                    activeWatchers.add(watcher);
+                }
+            }
+            if (activeWatchers.isEmpty()) {
                 continue;
             }
 
-            ChallengeReadResult readResult = challengeReader.read(
-                    registration.challengeId(), registration.secret(), registration.expectedType());
+            ChallengeReadResult readResult = challengeReader.apply(
+                    new ChallengeReadRequest(group.challengeId(), group.secret(), group.expectedType()));
             if (readResult.failureStatus() != null) {
-                String failureStatus = readResult.failureStatus();
-                if ("NOT_FOUND".equals(failureStatus) && registration.lastStatus() == PushChallengeStatus.PENDING) {
-                    failureStatus = PushChallengeStatus.EXPIRED.name();
+                for (Watcher watcher : activeWatchers) {
+                    sendFailureStatus(watcher, readResult.failureStatus(), now);
                 }
-                emitter.sendStatusEvent(
-                        registration.sink(), registration.sse(), failureStatus, null, registration.type());
-                unregister(registration, true);
                 continue;
             }
 
             PushChallenge challenge = readResult.challenge();
             PushChallengeStatus currentStatus = challenge.getStatus();
-            if (registration.lastStatus() != currentStatus) {
-                boolean sent = emitter.sendStatusEvent(
-                        registration.sink(), registration.sse(), currentStatus.name(), challenge, registration.type());
-                if (!sent) {
-                    unregister(registration, true);
-                    continue;
-                }
-                registration.lastStatus(currentStatus);
-            }
-
-            if (currentStatus != PushChallengeStatus.PENDING) {
-                unregister(registration, true);
+            for (Watcher watcher : activeWatchers) {
+                dispatchWatcherUpdate(watcher, challenge, currentStatus, now);
             }
         }
+    }
+
+    private boolean ensureWatcherActive(Watcher watcher, long now) {
+        if (watcher.sink().isClosed()) {
+            unregister(watcher, false);
+            return false;
+        }
+        if (!watcher.isSendInProgress() && now - watcher.connectedAtMillis() >= maxConnectionLifetimeMillis) {
+            unregister(watcher, true);
+            return false;
+        }
+        return true;
+    }
+
+    private void sendFailureStatus(Watcher watcher, String failureStatus, long now) {
+        if (!watcher.startSend()) {
+            return;
+        }
+        String effectiveStatus = failureStatus;
+        if ("NOT_FOUND".equals(effectiveStatus) && watcher.lastStatus() == PushChallengeStatus.PENDING) {
+            effectiveStatus = PushChallengeStatus.EXPIRED.name();
+        }
+        emitter.sendStatusEvent(watcher.sink(), watcher.sse(), effectiveStatus, null, watcher.type())
+                .whenComplete((sent, ex) -> {
+                    watcher.finishSend(null, now);
+                    unregister(watcher, true);
+                });
+    }
+
+    private void dispatchWatcherUpdate(
+            Watcher watcher, PushChallenge challenge, PushChallengeStatus currentStatus, long now) {
+        if (watcher.lastStatus() != currentStatus) {
+            if (!watcher.startSend()) {
+                return;
+            }
+            emitter.sendStatusEvent(
+                            watcher.sink(), watcher.sse(), currentStatus.name(), challenge, watcher.type(), null)
+                    .whenComplete((sent, ex) -> {
+                        if (!Boolean.TRUE.equals(sent)) {
+                            watcher.finishSend(null, now);
+                            unregister(watcher, true);
+                            return;
+                        }
+                        watcher.finishSend(currentStatus, now);
+                        if (currentStatus != PushChallengeStatus.PENDING) {
+                            unregister(watcher, true);
+                        }
+                    });
+            return;
+        }
+
+        if (currentStatus != PushChallengeStatus.PENDING) {
+            if (!watcher.isSendInProgress()) {
+                unregister(watcher, true);
+            }
+            return;
+        }
+
+        if (now - watcher.lastActivityMillis() < heartbeatIntervalMillis || !watcher.startSend()) {
+            return;
+        }
+        emitter.sendHeartbeat(watcher.sink(), watcher.sse()).whenComplete((sent, ex) -> {
+            if (!Boolean.TRUE.equals(sent)) {
+                watcher.finishSend(null, now);
+                unregister(watcher, true);
+                return;
+            }
+            watcher.finishSend(null, now);
+        });
     }
 
     private boolean startPoller() {
@@ -171,16 +257,28 @@ final class PushMfaSseRegistry {
         }
     }
 
-    private ArrayList<Registration> snapshotRegistrations() {
+    private ArrayList<ChallengeWatchGroup> snapshotGroups() {
         synchronized (registrations) {
             return new ArrayList<>(registrations.values());
         }
     }
 
-    private void unregister(Registration registration, boolean closeSink) {
-        boolean removed;
+    private ArrayList<Watcher> snapshotWatchers(ChallengeWatchGroup group) {
         synchronized (registrations) {
-            removed = registrations.remove(registration.id(), registration);
+            return new ArrayList<>(group.watchers().values());
+        }
+    }
+
+    private void unregister(Watcher watcher, boolean closeSink) {
+        boolean removed = false;
+        synchronized (registrations) {
+            ChallengeWatchGroup group = registrations.get(watcher.challengeId());
+            if (group != null) {
+                removed = group.watchers().remove(watcher.id(), watcher);
+                if (group.watchers().isEmpty()) {
+                    registrations.remove(watcher.challengeId());
+                }
+            }
         }
         if (!removed) {
             return;
@@ -188,36 +286,36 @@ final class PushMfaSseRegistry {
         permits.release();
         if (closeSink) {
             try {
-                registration.sink().close();
+                watcher.sink().close();
             } catch (Exception ignored) {
                 // no-op
             }
         }
     }
 
-    private static ChallengeReader createChallengeReader(KeycloakSessionFactory sessionFactory) {
-        return (challengeId, secret, expectedType) ->
-                KeycloakModelUtils.runJobInTransactionWithResult(sessionFactory, session -> {
-                    PushChallengeStore challengeStore = new PushChallengeStore(session);
-                    Optional<PushChallenge> challengeOpt = challengeStore.get(challengeId);
-                    if (challengeOpt.isEmpty()) {
-                        return ChallengeReadResult.failure("NOT_FOUND");
-                    }
+    private static Function<ChallengeReadRequest, ChallengeReadResult> createChallengeReader(
+            KeycloakSessionFactory sessionFactory) {
+        return request -> KeycloakModelUtils.runJobInTransactionWithResult(sessionFactory, session -> {
+            PushChallengeStore challengeStore = new PushChallengeStore(session);
+            Optional<PushChallenge> challengeOpt = challengeStore.get(request.challengeId());
+            if (challengeOpt.isEmpty()) {
+                return ChallengeReadResult.failure("NOT_FOUND");
+            }
 
-                    PushChallenge challenge = challengeOpt.get();
-                    if (expectedType != null && challenge.getType() != expectedType) {
-                        return ChallengeReadResult.failure("BAD_TYPE");
-                    }
-                    if (challenge.getType() == PushChallenge.Type.AUTHENTICATION
-                            && !isAuthenticationSessionActive(session, challenge)) {
-                        challengeStore.remove(challengeId);
-                        return ChallengeReadResult.failure(PushChallengeStatus.EXPIRED.name());
-                    }
-                    if (!Objects.equals(secret, challenge.getWatchSecret())) {
-                        return ChallengeReadResult.failure("FORBIDDEN");
-                    }
-                    return ChallengeReadResult.success(challenge);
-                });
+            PushChallenge challenge = challengeOpt.get();
+            if (request.expectedType() != null && challenge.getType() != request.expectedType()) {
+                return ChallengeReadResult.failure("BAD_TYPE");
+            }
+            if (challenge.getType() == PushChallenge.Type.AUTHENTICATION
+                    && !isAuthenticationSessionActive(session, challenge)) {
+                challengeStore.remove(request.challengeId());
+                return ChallengeReadResult.failure(PushChallengeStatus.EXPIRED.name());
+            }
+            if (!Objects.equals(request.secret(), challenge.getWatchSecret())) {
+                return ChallengeReadResult.failure("FORBIDDEN");
+            }
+            return ChallengeReadResult.success(challenge);
+        });
     }
 
     static boolean isAuthenticationSessionActive(KeycloakSession session, PushChallenge challenge) {
@@ -261,33 +359,120 @@ final class PushMfaSseRegistry {
         }
     }
 
-    private record Registration(
-            String id,
-            String challengeId,
-            String secret,
-            SseEventSink sink,
-            Sse sse,
-            SseEventEmitter.EventType type,
-            PushChallenge.Type expectedType,
-            AtomicReference<PushChallengeStatus> lastStatusRef) {
-        Registration(
+    record ChallengeReadRequest(String challengeId, String secret, PushChallenge.Type expectedType) {}
+
+    private static final class ChallengeWatchGroup {
+        private final String challengeId;
+        private final String secret;
+        private final PushChallenge.Type expectedType;
+        private final Map<String, Watcher> watchers = new HashMap<>();
+
+        private ChallengeWatchGroup(String challengeId, String secret, PushChallenge.Type expectedType) {
+            this.challengeId = challengeId;
+            this.secret = secret;
+            this.expectedType = expectedType;
+        }
+
+        private String challengeId() {
+            return challengeId;
+        }
+
+        private String secret() {
+            return secret;
+        }
+
+        private PushChallenge.Type expectedType() {
+            return expectedType;
+        }
+
+        private Map<String, Watcher> watchers() {
+            return watchers;
+        }
+
+        private boolean matches(String secret, PushChallenge.Type expectedType) {
+            return Objects.equals(this.secret, secret) && this.expectedType == expectedType;
+        }
+    }
+
+    private static final class Watcher {
+        private final String id;
+        private final String challengeId;
+        private final SseEventSink sink;
+        private final Sse sse;
+        private final SseEventEmitter.EventType type;
+        private final long connectedAtMillis;
+        private PushChallengeStatus lastStatus;
+        private long lastActivityMillis;
+        private boolean sendInProgress;
+
+        private Watcher(
                 String id,
                 String challengeId,
-                String secret,
                 SseEventSink sink,
                 Sse sse,
                 SseEventEmitter.EventType type,
-                PushChallenge.Type expectedType,
-                PushChallengeStatus lastStatus) {
-            this(id, challengeId, secret, sink, sse, type, expectedType, new AtomicReference<>(lastStatus));
+                PushChallengeStatus lastStatus,
+                long connectedAtMillis) {
+            this.id = id;
+            this.challengeId = challengeId;
+            this.sink = sink;
+            this.sse = sse;
+            this.type = type;
+            this.lastStatus = lastStatus;
+            this.connectedAtMillis = connectedAtMillis;
+            this.lastActivityMillis = connectedAtMillis;
         }
 
-        PushChallengeStatus lastStatus() {
-            return lastStatusRef.get();
+        private String id() {
+            return id;
         }
 
-        void lastStatus(PushChallengeStatus status) {
-            lastStatusRef.set(status);
+        private String challengeId() {
+            return challengeId;
+        }
+
+        private SseEventSink sink() {
+            return sink;
+        }
+
+        private Sse sse() {
+            return sse;
+        }
+
+        private SseEventEmitter.EventType type() {
+            return type;
+        }
+
+        private synchronized PushChallengeStatus lastStatus() {
+            return lastStatus;
+        }
+
+        private long connectedAtMillis() {
+            return connectedAtMillis;
+        }
+
+        private synchronized long lastActivityMillis() {
+            return lastActivityMillis;
+        }
+
+        private synchronized boolean startSend() {
+            if (sendInProgress) {
+                return false;
+            }
+            sendInProgress = true;
+            return true;
+        }
+
+        private synchronized void finishSend(PushChallengeStatus newStatus, long now) {
+            if (newStatus != null) {
+                lastStatus = newStatus;
+            }
+            lastActivityMillis = now;
+            sendInProgress = false;
+        }
+
+        private synchronized boolean isSendInProgress() {
+            return sendInProgress;
         }
     }
 }

@@ -174,7 +174,7 @@ The DPoP proof must be signed with the *existing* user key. After validation, Ke
 
 The repository includes thin shell wrappers that simulate a device:
 
-- `scripts/enroll.sh <enrollment-token>` decodes the enrollment JWT, generates a key pair (RSA or EC), and completes enrollment.
+- `scripts/enroll.sh <enrollment-token|request-uri|deep-link>` resolves the enrollment input to the enrollment JWT, decodes it, generates a key pair (RSA or EC), and completes enrollment.
 - `scripts/confirm-login.sh <confirm-token>` decodes the Firebase-style payload, lists pending challenges (for demo visibility), and approves/denies the challenge (set `LOGIN_USER_VERIFICATION` or use the prompt when `userVerification` is enabled).
 - `scripts/update-push-provider.sh <credential-id> <provider-id> [provider-type]` updates the stored push provider metadata (defaults to the `log` provider used in this demo).
 - `scripts/rotate-user-key.sh <credential-id>` rotates the user key material and immediately persists the new JWK.

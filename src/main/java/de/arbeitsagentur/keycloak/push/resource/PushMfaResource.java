@@ -489,11 +489,6 @@ public class PushMfaResource {
         }
 
         PushChallenge challenge = readResult.challenge();
-        if (challenge.getStatus() != PushChallengeStatus.PENDING) {
-            closeAfterStatus(sink, sse, challenge.getStatus().name(), challenge, type, null);
-            return;
-        }
-
         boolean accepted = registry.register(challengeId, secret, sink, sse, type, expectedType, null);
         if (!accepted) {
             LOG.warnf("Rejecting %s SSE for %s due to maxConnections=%d", type, challengeId, registry.maxConnections());

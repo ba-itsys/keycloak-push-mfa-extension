@@ -255,6 +255,29 @@ class PushMfaIntegrationIT {
     }
 
     @Test
+    void loginSseStreamsResolvedStatusWhenClientSubscribesLate() throws Exception {
+        DeviceClient deviceClient = enrollDevice();
+        BrowserSession session = new BrowserSession(baseUri);
+
+        HtmlPage loginPage = session.startAuthorization("test-app");
+        HtmlPage waitingPage = session.submitLogin(loginPage, TEST_USERNAME, TEST_PASSWORD);
+        BrowserSession.DeviceChallenge challenge = session.extractDeviceChallenge(waitingPage);
+        URI eventsUri = session.extractLoginEventsUri(waitingPage);
+
+        assertEquals(
+                "approved",
+                deviceClient.respondToChallenge(
+                        challenge.confirmToken(), challenge.challengeId(), PushMfaConstants.CHALLENGE_APPROVE));
+
+        try (SseClient sseClient = new SseClient(eventsUri)) {
+            assertEquals(200, sseClient.awaitStatusCode(Duration.ofSeconds(5)));
+            assertEquals("APPROVED", sseClient.awaitStatus(Duration.ofSeconds(5)));
+        }
+
+        session.completePushChallenge(challenge.formAction());
+    }
+
+    @Test
     void loginSseStreamsExpiryWithoutPerConnectionPollingThread() throws Exception {
         adminClient.configurePushMfaLoginChallengeTtlSeconds(1);
         try {

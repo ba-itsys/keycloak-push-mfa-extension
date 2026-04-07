@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.9.0](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.8.2...v1.9.0) (2026-04-07)
+
+
+### Features
+
+* add request_uri mode instead of rendering the whole token in the qr-code ([e8102cb](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/e8102cb5717d3cc0dd73008dd8687a0a4b1739f4))
+
+
+### Bug Fixes
+
+* race condition if challenge has been answered before sse-stream is active (automated tests etc) ([16a7d4d](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/16a7d4dda81f6f80dec360dbd18f9c9231166131))
+
+
+### Dependencies
+
+* **deps-dev:** bump com.diffplug.spotless:spotless-maven-plugin ([beb989d](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/beb989df3edf5e4863a878a6262d950d1fe9b439))
+* **deps-dev:** bump com.nimbusds:nimbus-jose-jwt from 9.40 to 10.8 ([88651e7](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/88651e797ecb35367e74a91037e2e9913c951a9f))
+
 ## [1.8.2](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.8.1...v1.8.2) (2026-04-01)
 
 

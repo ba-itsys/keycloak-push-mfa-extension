@@ -81,10 +81,16 @@
              data-push-events-url="${enrollEventsUrl!""}"
              data-push-poll-form-id="kc-push-register-poll"
              data-push-qr-id="kc-push-qr"
-             data-push-qr-value="${pushQrUri!""}">
+             data-push-qr-value="${qrPayload!""}">
             <div class="${properties.kcFormGroupClass!}">
                 <p class="kc-push-register__hint">${msg("push-mfa-register-instructions", pushUsername!"")}</p>
-                <p class="kc-push-register__hint">${msg("push-mfa-register-help")}</p>
+                <p class="kc-push-register__hint">
+                    <#if enrollmentUseRequestUri?? && enrollmentUseRequestUri>
+                        ${msg("push-mfa-register-request-uri-help")}
+                    <#else>
+                        ${msg("push-mfa-register-help")}
+                    </#if>
+                </p>
             </div>
 
             <div class="kc-push-register-grid">
@@ -102,19 +108,35 @@
                     </div>
                 </div>
                 <div class="kc-push-register-card">
-                    <h3>${msg("push-mfa-register-token-label")}</h3>
+                    <h3>
+                        <#if enrollmentUseRequestUri?? && enrollmentUseRequestUri>
+                            ${msg("push-mfa-register-request-uri-label")}
+                        <#else>
+                            ${msg("push-mfa-register-token-label")}
+                        </#if>
+                    </h3>
                     <div class="kc-push-register-token-group">
-                        <pre id="kc-push-token" class="kc-push-register-token" tabindex="0">${enrollmentToken!''}</pre>
+                        <pre id="kc-push-token" class="kc-push-register-token" tabindex="0">${qrPayload!''}</pre>
                         <div class="kc-push-register-actions">
                             <button id="kc-push-copy-token"
                                     type="button"
                                     class="${properties.kcButtonClass!} ${properties.kcButtonSecondaryClass!} kc-push-register-copy"
-                                    data-default-label="${msg("push-mfa-register-copy-token")!"Copy token"}"
+                                    data-default-label="<#if enrollmentUseRequestUri?? && enrollmentUseRequestUri>${msg("push-mfa-register-copy-request-uri")!"Copy request_uri"}<#else>${msg("push-mfa-register-copy-token")!"Copy token"}</#if>"
                                     data-success-label="${msg("push-mfa-register-copied")!"Copied"}">
-                                ${msg("push-mfa-register-copy-token")!"Copy token"}
+                                <#if enrollmentUseRequestUri?? && enrollmentUseRequestUri>
+                                    ${msg("push-mfa-register-copy-request-uri")!"Copy request_uri"}
+                                <#else>
+                                    ${msg("push-mfa-register-copy-token")!"Copy token"}
+                                </#if>
                             </button>
                         </div>
-                        <p class="kc-push-register__hint">${msg("push-mfa-register-token-hint")}</p>
+                        <p class="kc-push-register__hint">
+                            <#if enrollmentUseRequestUri?? && enrollmentUseRequestUri>
+                                ${msg("push-mfa-register-request-uri-hint")}
+                            <#else>
+                                ${msg("push-mfa-register-token-hint")}
+                            </#if>
+                        </p>
                     </div>
                 </div>
             </div>
@@ -126,7 +148,11 @@
                 </button>
                 <button class="${properties.kcButtonClass!} ${properties.kcButtonSecondaryClass!}" type="submit"
                         name="refresh" value="true">
-                    ${msg("push-mfa-register-refresh")!"Generate new QR"}
+                    <#if enrollmentUseRequestUri?? && enrollmentUseRequestUri>
+                        ${msg("push-mfa-register-refresh-request-uri")!"Generate new request_uri"}
+                    <#else>
+                        ${msg("push-mfa-register-refresh")!"Generate new QR"}
+                    </#if>
                 </button>
             </form>
             <form id="kc-push-register-poll" action="${url.loginAction}" method="post" style="display:none"

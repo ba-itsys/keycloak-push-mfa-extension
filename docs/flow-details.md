@@ -18,7 +18,7 @@ Each Push MFA credential has **two distinct IDs**:
 
 ## Enrollment Flow
 
-1. **Enrollment challenge (RequiredAction):** Keycloak renders a QR code that encodes the realm-signed `enrollmentToken` (the default theme emits `my-secure://enroll?token=<enrollmentToken>`, but you can change the URI scheme/payload in your own theme or override the server-side prefix via `--spi-required-action-push-mfa-register-app-uri-prefix=...`). The token is a JWT signed with the realm key and contains user id (`sub`), username, `enrollmentId`, and a Base64URL nonce.
+1. **Enrollment challenge (RequiredAction):** Keycloak renders a QR code that opens the companion app. By default the theme emits `my-secure://enroll?token=<enrollmentToken>`. When `enrollmentUseRequestUri=true`, it instead emits `my-secure://enroll?request_uri=<https://.../push-mfa/enroll/request-token/{handle}>`, so the app fetches the real token by reference first. The enrollment token itself is a JWT signed with the realm key and contains user id (`sub`), username, `enrollmentId`, and a Base64URL nonce.
 
    ```json
    {
@@ -150,7 +150,7 @@ Each Push MFA credential has **two distinct IDs**:
 
 ## Validation Checks by Step
 
-- **Enrollment token / QR:** Keycloak signs the `enrollmentToken` with the realm key and encodes `sub`, `enrollmentId`, `nonce`, and `exp` in the QR. The app should verify the signature against `/realms/demo/protocol/openid-connect/certs` plus issuer/audience/expiry before using it.
+- **Enrollment token / QR:** Keycloak signs the `enrollmentToken` with the realm key. The QR code carries either that token directly or a short-lived `request_uri` that returns the same token. In both cases the app should verify the JWT against `/realms/demo/protocol/openid-connect/certs` plus issuer/audience/expiry before using it.
 - **Complete enrollment (`POST /realms/demo/push-mfa/enroll/complete`):** The server ensures the challenge exists, belongs to the user, and is still `PENDING`, checks `exp` and nonce, requires a supported algorithm embedded in `cnf.jwk` (no extra `algorithm` field), enforces header/`cnf` algorithm compatibility, and verifies the JWT signature with the posted JWK before persisting the credential id and optional `deviceId`. Same-challenge duplicate completions are serialized; a concurrent loser receives `409 Conflict` instead of being retried server-side.
 - **Confirm token + SSE:** Each login creates a fresh challenge and confirm token signed by the realm key containing only the credential id and `cid` (plus `typ`/`ver` and `exp`). The confirm token intentionally omits `client_id`/`client_name`, so the mobile app must call `/push-mfa/login/pending` after receiving a push to fetch the username and client metadata and surface that information to the user before asking for approval. SSE status reads require the per-challenge `watchSecret` and reject missing/mismatched secrets or the wrong challenge type before returning any status, but they are capability-URL based rather than session-bound.
 - **DPoP-protected API calls (`/login/pending`, `/login/challenges/{cid}/respond`, `/device/*`):** Keycloak re-verifies the access token, confirms the `cnf.jkt` thumbprint matches the stored JWK, checks the DPoP proof `htm`/`htu`, ensures `iat` is within ±120 seconds, and requires `sub` + `deviceId` to match a stored credential (enforcing the algorithm declared in the JWK) before accepting the request-level DPoP signature.

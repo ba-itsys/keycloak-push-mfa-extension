@@ -30,6 +30,7 @@ import de.arbeitsagentur.keycloak.push.support.DeviceState;
 import de.arbeitsagentur.keycloak.push.support.HtmlPage;
 import de.arbeitsagentur.keycloak.push.support.JacocoContainerSupport;
 import de.arbeitsagentur.keycloak.push.support.KeycloakAdminBootstrap;
+import de.arbeitsagentur.keycloak.push.support.KeycloakContainerImageSupport;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.URI;
@@ -49,7 +50,6 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
 import org.testcontainers.utility.MountableFile;
 
 @Testcontainers
@@ -167,7 +167,7 @@ class PushMfaLockoutSpiIT {
     private static GenericContainer<?> instrumentedKeycloakContainer() {
         try {
             return JacocoContainerSupport.instrumentKeycloakContainer(
-                    new GenericContainer<>(DockerImageName.parse("quay.io/keycloak/keycloak:26.4.5"))
+                    new GenericContainer<>(KeycloakContainerImageSupport.imageName())
                             .withExposedPorts(8080)
                             .withCopyFileToContainer(
                                     MountableFile.forHostPath(EXTENSION_JAR),
@@ -183,7 +183,7 @@ class PushMfaLockoutSpiIT {
                                     "start-dev --hostname=localhost --hostname-strict=false --http-enabled=true --import-realm --features=dpop --spi-push-mfa-lockout-handler--provider="
                                             + TestAttributePushMfaLockoutHandlerFactory.ID)
                             .waitingFor(Wait.forHttp("/realms/master").forStatusCode(200))
-                            .withStartupTimeout(Duration.ofMinutes(5)),
+                            .withStartupTimeout(Duration.ofMinutes(10)),
                     JACOCO_EXEC_FILE);
         } catch (Exception ex) {
             throw new IllegalStateException("Failed to configure lockout SPI Keycloak coverage", ex);

@@ -26,20 +26,22 @@ import de.arbeitsagentur.keycloak.push.support.AdminClient;
 import de.arbeitsagentur.keycloak.push.support.BrowserSession;
 import de.arbeitsagentur.keycloak.push.support.ContainerLogWatcher;
 import de.arbeitsagentur.keycloak.push.support.HtmlPage;
+import de.arbeitsagentur.keycloak.push.support.KeycloakAdminBootstrap;
+import de.arbeitsagentur.keycloak.push.support.KeycloakTestContainerSupport;
 import de.arbeitsagentur.keycloak.push.support.MockMobileClient;
-import de.arbeitsagentur.keycloak.push.support.SharedKeycloakContainerSupport;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import java.net.URI;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.Network;
 import org.testcontainers.containers.wait.strategy.Wait;
+import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.MountableFile;
 
@@ -49,12 +51,16 @@ import org.testcontainers.utility.MountableFile;
 class MockMobileIntegrationIT {
 
     private static final Path MOCK_APP_DIR = Paths.get("mock", "mobile").toAbsolutePath();
-    private static final String SHARED_KEYCLOAK_OWNER = MockMobileIntegrationIT.class.getSimpleName();
     private static final String TEST_USERNAME = "test";
-    private static final GenericContainer<?> KEYCLOAK = sharedKeycloak();
+    private static final Network NETWORK = Network.newNetwork();
 
+    @Container
+    private static final GenericContainer<?> KEYCLOAK =
+            KeycloakTestContainerSupport.newKeycloakContainer("MockMobileIntegrationIT.exec", NETWORK, "keycloak");
+
+    @Container
     private static final GenericContainer<?> MOBILE = new GenericContainer<>("node:24-bullseye")
-            .withNetwork(SharedKeycloakContainerSupport.network())
+            .withNetwork(NETWORK)
             .withExposedPorts(3001)
             .withCopyFileToContainer(MountableFile.forHostPath(MOCK_APP_DIR), "/app")
             .withEnv("REALM_BASE", "http://keycloak:8080/realms/demo")
@@ -72,22 +78,11 @@ class MockMobileIntegrationIT {
 
     @BeforeAll
     void setup() throws Exception {
-        SharedKeycloakContainerSupport.acquire(SHARED_KEYCLOAK_OWNER);
-        if (!MOBILE.isRunning()) {
-            MOBILE.start();
-        }
-        baseUri = SharedKeycloakContainerSupport.baseUri();
+        KeycloakAdminBootstrap.allowHttpAdminLogin(KEYCLOAK);
+        baseUri = KeycloakTestContainerSupport.baseUri(KEYCLOAK);
         adminClient = new AdminClient(baseUri);
         mockMobileClient = new MockMobileClient(
                 URI.create(String.format("http://%s:%d", MOBILE.getHost(), MOBILE.getMappedPort(3001))));
-    }
-
-    @AfterAll
-    void captureContainerCoverage() throws Exception {
-        if (MOBILE.isRunning()) {
-            MOBILE.stop();
-        }
-        SharedKeycloakContainerSupport.release(SHARED_KEYCLOAK_OWNER);
     }
 
     @Test
@@ -276,10 +271,6 @@ class MockMobileIntegrationIT {
 
     private String subjectFromToken(String token) throws Exception {
         return SignedJWT.parse(token).getJWTClaimsSet().getSubject();
-    }
-
-    private static GenericContainer<?> sharedKeycloak() {
-        return SharedKeycloakContainerSupport.container();
     }
 
     private record EnrollmentFlow(BrowserSession session, HtmlPage enrollmentPage, String enrollmentToken) {}

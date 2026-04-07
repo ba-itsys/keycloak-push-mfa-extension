@@ -2,6 +2,17 @@
 
 All endpoints live under `/realms/<realm>/push-mfa`. Enrollment completion posts the device JWT in the request body, while every other endpoint requires a DPoP header signed with the user key (see [Flow Details](flow-details.md#dpop-authentication)). Access tokens still come from the device client credentials, but they are DPoP-bound so every request is cryptographically tied to the hardware key material.
 
+## Fetch Enrollment Token By Reference
+
+When the required action is configured with `enrollmentUseRequestUri=true`, the QR code and same-device app link no longer embed the full enrollment token directly. Instead they carry a short-lived `request_uri` that points to this endpoint:
+
+```
+GET /realms/<realm>/push-mfa/enroll/request-token/{requestHandle}
+Accept: application/jwt
+```
+
+The response body is the same realm-signed enrollment JWT that would otherwise have been embedded in the QR code directly. The endpoint is intentionally capability-URL based: possession of the random `requestHandle` is what authorizes the fetch. The handle stays valid only while the enrollment challenge is still pending and the handle itself has not expired. Its lifetime defaults to the enrollment challenge lifetime, and can be shortened independently with `enrollmentRequestUriTtlSeconds`.
+
 ## Complete Enrollment
 
 ```
@@ -163,7 +174,7 @@ The DPoP proof must be signed with the *existing* user key. After validation, Ke
 
 The repository includes thin shell wrappers that simulate a device:
 
-- `scripts/enroll.sh <enrollment-token>` decodes the QR payload, generates a key pair (RSA or EC), and completes enrollment.
+- `scripts/enroll.sh <enrollment-token>` decodes the enrollment JWT, generates a key pair (RSA or EC), and completes enrollment.
 - `scripts/confirm-login.sh <confirm-token>` decodes the Firebase-style payload, lists pending challenges (for demo visibility), and approves/denies the challenge (set `LOGIN_USER_VERIFICATION` or use the prompt when `userVerification` is enabled).
 - `scripts/update-push-provider.sh <credential-id> <provider-id> [provider-type]` updates the stored push provider metadata (defaults to the `log` provider used in this demo).
 - `scripts/rotate-user-key.sh <credential-id>` rotates the user key material and immediately persists the new JWK.

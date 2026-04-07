@@ -37,7 +37,9 @@ class PushMfaRegisterRequiredActionFactoryTest {
         assertEquals(
                 List.of(
                         PushMfaConstants.ENROLLMENT_CHALLENGE_TTL_CONFIG,
-                        PushMfaConstants.ENROLLMENT_APP_UNIVERSAL_LINK_CONFIG),
+                        PushMfaConstants.ENROLLMENT_APP_UNIVERSAL_LINK_CONFIG,
+                        PushMfaConstants.ENROLLMENT_USE_REQUEST_URI_CONFIG,
+                        PushMfaConstants.ENROLLMENT_REQUEST_URI_TTL_CONFIG),
                 factory.getConfigMetadata().stream()
                         .map(property -> property.getName())
                         .toList());

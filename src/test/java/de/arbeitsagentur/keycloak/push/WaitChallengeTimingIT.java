@@ -27,7 +27,8 @@ import de.arbeitsagentur.keycloak.push.support.DeviceClient;
 import de.arbeitsagentur.keycloak.push.support.DeviceKeyType;
 import de.arbeitsagentur.keycloak.push.support.DeviceState;
 import de.arbeitsagentur.keycloak.push.support.HtmlPage;
-import de.arbeitsagentur.keycloak.push.support.SharedKeycloakContainerSupport;
+import de.arbeitsagentur.keycloak.push.support.KeycloakAdminBootstrap;
+import de.arbeitsagentur.keycloak.push.support.KeycloakTestContainerSupport;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import java.net.URI;
 import java.util.ArrayList;
@@ -39,7 +40,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -48,6 +48,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
@@ -66,7 +67,6 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class WaitChallengeTimingIT {
 
-    private static final String SHARED_KEYCLOAK_OWNER = WaitChallengeTimingIT.class.getSimpleName();
     // Dedicated users for timing tests to ensure complete isolation
     private static final String TIMING_USER_1 = "timing-user-1";
     private static final String TIMING_USER_3 = "timing-user-3";
@@ -74,15 +74,18 @@ class WaitChallengeTimingIT {
     private static final String TIMING_USER_8 = "timing-user-8";
 
     private static final String TIMING_PASSWORD = "timing-test";
-    private static final GenericContainer<?> KEYCLOAK = sharedKeycloak();
+
+    @Container
+    private static final GenericContainer<?> KEYCLOAK =
+            KeycloakTestContainerSupport.newKeycloakContainer("WaitChallengeTimingIT.exec");
 
     private URI baseUri;
     private AdminClient adminClient;
 
     @BeforeAll
     void setup() throws Exception {
-        SharedKeycloakContainerSupport.acquire(SHARED_KEYCLOAK_OWNER);
-        baseUri = SharedKeycloakContainerSupport.baseUri();
+        KeycloakAdminBootstrap.allowHttpAdminLogin(KEYCLOAK);
+        baseUri = KeycloakTestContainerSupport.baseUri(KEYCLOAK);
         adminClient = new AdminClient(baseUri);
 
         // Create dedicated users for timing tests
@@ -90,11 +93,6 @@ class WaitChallengeTimingIT {
         adminClient.ensureUser(TIMING_USER_3, TIMING_PASSWORD);
         adminClient.ensureUser(TIMING_USER_7, TIMING_PASSWORD);
         adminClient.ensureUser(TIMING_USER_8, TIMING_PASSWORD);
-    }
-
-    @AfterAll
-    void captureContainerCoverage() throws Exception {
-        SharedKeycloakContainerSupport.release(SHARED_KEYCLOAK_OWNER);
     }
 
     @BeforeEach
@@ -454,9 +452,5 @@ class WaitChallengeTimingIT {
         }
         JsonNode pending = deviceClient.fetchPendingChallenges();
         assertEquals(0, pending.size(), () -> "Expected pending challenges to expire but got: " + pending);
-    }
-
-    private static GenericContainer<?> sharedKeycloak() {
-        return SharedKeycloakContainerSupport.container();
     }
 }

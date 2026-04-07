@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: scripts/confirm-login.sh <confirm-token>
+Usage: scripts/confirm-login.sh <confirm-token|request-uri|deep-link>
 
 Environment overrides:
   REALM_BASE               Realm base URL (default: http://localhost:8080/realms/demo). Falls back to stored value.
@@ -35,7 +35,7 @@ if [[ ${1:-} == "-h" || ${1:-} == "--help" || $# -ne 1 ]]; then
   exit $([[ $# -eq 1 ]] && [[ ${1:-} != "-h" && ${1:-} != "--help" ]] && echo 1 || echo 0)
 fi
 
-CONFIRM_TOKEN=$1
+CONFIRM_INPUT=$1
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMMON_SIGN_JWS="${COMMON_SIGN_JWS:-"$SCRIPT_DIR/sign_jws.py"}"
@@ -47,6 +47,13 @@ DEVICE_STATE_DIR=${DEVICE_STATE_DIR:-"$REPO_ROOT/scripts/device-state"}
 
 if [[ ! -d "$DEVICE_STATE_DIR" ]]; then
   echo "error: device state directory '$DEVICE_STATE_DIR' does not exist" >&2
+  exit 1
+fi
+
+echo ">> Resolving confirm input"
+CONFIRM_TOKEN=$(common::resolve_token_input "$CONFIRM_INPUT")
+if [[ -z ${CONFIRM_TOKEN:-} ]]; then
+  echo "error: confirm input did not resolve to a token" >&2
   exit 1
 fi
 

@@ -44,7 +44,7 @@ The mock server listens on a port (e.g., 3001) and exposes endpoints like:
 
 ### Simulating Enrollment
 
-The mock can "scan" a QR code by receiving the `enrollmentToken` (a JWT from Keycloak). It generates a device key pair and sends a signed payload to Keycloak's `/enroll/complete` endpoint.
+The mock can "scan" a QR code by receiving the `enrollmentToken` directly, or by first resolving a `request_uri` to that JWT when by-reference enrollment is enabled. It then generates a device key pair and sends a signed payload to Keycloak's `/enroll/complete` endpoint.
 
 ### Simulating Login Approval
 

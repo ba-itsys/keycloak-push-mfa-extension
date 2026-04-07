@@ -32,10 +32,13 @@ import de.arbeitsagentur.keycloak.push.spi.event.KeyRotatedEvent;
 import de.arbeitsagentur.keycloak.push.spi.event.KeyRotationDeniedEvent;
 import de.arbeitsagentur.keycloak.push.spi.event.PushMfaEventService;
 import de.arbeitsagentur.keycloak.push.spi.event.UserLockedOutEvent;
+import de.arbeitsagentur.keycloak.push.token.PushEnrollmentRequestStore;
+import de.arbeitsagentur.keycloak.push.token.PushEnrollmentTokenBuilder;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConfig;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import de.arbeitsagentur.keycloak.push.util.PushMfaInputValidator;
 import de.arbeitsagentur.keycloak.push.util.PushMfaKeyUtil;
+import de.arbeitsagentur.keycloak.push.util.PushMfaStringUtil;
 import de.arbeitsagentur.keycloak.push.util.PushSignatureVerifier;
 import de.arbeitsagentur.keycloak.push.util.TokenLogHelper;
 import jakarta.ws.rs.BadRequestException;
@@ -78,6 +81,7 @@ import org.keycloak.utils.StringUtil;
 @Produces(MediaType.APPLICATION_JSON)
 public class PushMfaResource {
 
+    private static final String ENROLLMENT_REQUEST_NOT_FOUND_MESSAGE = "Enrollment request not found";
     private static final Logger LOG = Logger.getLogger(PushMfaResource.class);
     private static final PushMfaConfig CONFIG = PushMfaConfig.load();
     private static final long SSE_RETRY_AFTER_MILLIS = 5000L;
@@ -111,6 +115,19 @@ public class PushMfaResource {
                 PushMfaInputValidator.optionalBoundedText(secret, CONFIG.sse().maxSecretLength(), "secret");
         LOG.debugf("Received enrollment SSE stream request for challenge %s", cid);
         submitChallengeStream(cid, sec, sink, sse, SseEventEmitter.EventType.ENROLLMENT, null);
+    }
+
+    @GET
+    @Path("enroll/request-token/{requestHandle}")
+    @Produces("application/jwt")
+    public Response fetchEnrollmentRequestToken(
+            @PathParam("requestHandle") String requestHandle, @Context UriInfo uriInfo) {
+        String token = resolveEnrollmentRequestToken(requestHandle, uriInfo);
+        return Response.ok(token)
+                .type("application/jwt")
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .header("Pragma", "no-cache")
+                .build();
     }
 
     @POST
@@ -715,6 +732,37 @@ public class PushMfaResource {
         return session.getContext().getRealm();
     }
 
+    String resolveEnrollmentRequestToken(String requestHandle, UriInfo uriInfo) {
+        String handle = PushMfaInputValidator.requireUuid(requestHandle, "requestHandle");
+        PushEnrollmentRequestStore requestStore = new PushEnrollmentRequestStore(session);
+        PushEnrollmentRequestStore.Entry requestEntry = requestStore.resolve(handle);
+        if (requestEntry == null || !Objects.equals(requestEntry.realmId(), realm().getId())) {
+            throw new NotFoundException(ENROLLMENT_REQUEST_NOT_FOUND_MESSAGE);
+        }
+
+        PushChallenge challenge = challengeStore.get(requestEntry.challengeId()).orElse(null);
+        if (challenge == null) {
+            requestStore.remove(handle);
+            throw new NotFoundException(ENROLLMENT_REQUEST_NOT_FOUND_MESSAGE);
+        }
+        if (challenge.getType() != PushChallenge.Type.ENROLLMENT
+                || challenge.getStatus() != PushChallengeStatus.PENDING
+                || !Objects.equals(challenge.getRealmId(), requestEntry.realmId())
+                || !Objects.equals(challenge.getUserId(), requestEntry.userId())) {
+            requestStore.remove(handle);
+            throw new NotFoundException(ENROLLMENT_REQUEST_NOT_FOUND_MESSAGE);
+        }
+
+        UserModel user;
+        try {
+            user = getUser(requestEntry.userId());
+        } catch (NotFoundException ex) {
+            requestStore.remove(handle);
+            throw new NotFoundException(ENROLLMENT_REQUEST_NOT_FOUND_MESSAGE);
+        }
+        return PushEnrollmentTokenBuilder.build(session, realm(), user, challenge, uriInfo.getBaseUri());
+    }
+
     private void runInTransaction(KeycloakSessionTask task) {
         if (session.getKeycloakSessionFactory() == null || session.getContext() == null) {
             task.run(session);
@@ -777,8 +825,7 @@ public class PushMfaResource {
         if (client == null) {
             return null;
         }
-        String name = client.getName();
-        return StringUtil.isBlank(name) ? null : name;
+        return PushMfaStringUtil.blankToNull(client.getName());
     }
 
     private boolean ensureAuthSessionActive(PushChallenge challenge) {

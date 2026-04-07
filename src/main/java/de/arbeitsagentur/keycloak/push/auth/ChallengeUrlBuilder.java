@@ -50,12 +50,22 @@ public final class ChallengeUrlBuilder {
     }
 
     public static String buildPushUri(String appUniversalLink, String token) {
-        if (StringUtil.isBlank(token)) return null;
-        if (StringUtil.isBlank(appUniversalLink)) return token;
+        return buildPushUri(appUniversalLink, "token", token);
+    }
+
+    public static String buildPushUriWithRequestUri(String appUniversalLink, String requestUri) {
+        return buildPushUri(appUniversalLink, "request_uri", requestUri);
+    }
+
+    private static String buildPushUri(String appUniversalLink, String parameterName, String parameterValue) {
+        if (StringUtil.isBlank(parameterValue)) return null;
+        if (StringUtil.isBlank(appUniversalLink)) return parameterValue;
         try {
-            return new URIBuilder(appUniversalLink).addParameter("token", token).toString();
+            return new URIBuilder(appUniversalLink)
+                    .addParameter(parameterName, parameterValue)
+                    .toString();
         } catch (URISyntaxException e) {
-            return token;
+            return parameterValue;
         }
     }
 

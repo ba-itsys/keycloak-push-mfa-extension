@@ -92,8 +92,16 @@ class ChallengeUrlBuilderTest {
         assertEquals(
                 "https://app.example/confirm?token=abc",
                 ChallengeUrlBuilder.buildPushUri("https://app.example/confirm", "abc"));
+        assertEquals(
+                "https://app.example/enroll?request_uri=https%3A%2F%2Fkc.example%2Frealms%2Fdemo%2Fpush-mfa%2Fenroll%2Frequest-token%2Fhandle-1",
+                ChallengeUrlBuilder.buildPushUriWithRequestUri(
+                        "https://app.example/enroll",
+                        "https://kc.example/realms/demo/push-mfa/enroll/request-token/handle-1"));
         assertNull(ChallengeUrlBuilder.buildPushUri("https://app.example/confirm", null));
         assertEquals("token-123", ChallengeUrlBuilder.buildPushUri(null, "token-123"));
+        assertEquals(
+                "https://kc.example/request-token/handle-1",
+                ChallengeUrlBuilder.buildPushUriWithRequestUri(null, "https://kc.example/request-token/handle-1"));
         assertEquals("token-123", ChallengeUrlBuilder.buildPushUri("://bad-uri", "token-123"));
     }
 

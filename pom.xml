@@ -254,6 +254,9 @@
         <configuration>
           <argLine>@{surefireArgLine}</argLine>
           <useModulePath>false</useModulePath>
+          <systemPropertyVariables>
+            <test.keycloak.version>${keycloak.version}</test.keycloak.version>
+          </systemPropertyVariables>
         </configuration>
       </plugin>
 
@@ -276,6 +279,7 @@
           <systemPropertyVariables>
             <api.version>${docker.api.version}</api.version>
             <junit.jupiter.execution.parallel.enabled>false</junit.jupiter.execution.parallel.enabled>
+            <test.keycloak.version>${keycloak.version}</test.keycloak.version>
           </systemPropertyVariables>
           <!-- Fork multiple JVMs to run test classes in parallel -->
           <forkCount>1</forkCount>

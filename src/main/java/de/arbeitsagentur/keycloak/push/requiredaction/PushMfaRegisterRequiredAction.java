@@ -23,6 +23,7 @@ import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStore;
 import de.arbeitsagentur.keycloak.push.credential.PushCredentialService;
 import de.arbeitsagentur.keycloak.push.spi.event.ChallengeCreatedEvent;
 import de.arbeitsagentur.keycloak.push.spi.event.PushMfaEventService;
+import de.arbeitsagentur.keycloak.push.token.PushEnrollmentRequestStore;
 import de.arbeitsagentur.keycloak.push.token.PushEnrollmentTokenBuilder;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import jakarta.ws.rs.core.MultivaluedMap;
@@ -53,6 +54,16 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Cr
      */
     protected PushChallengeStore createChallengeStore(KeycloakSession session) {
         return new PushChallengeStore(session);
+    }
+
+    /**
+     * Creates a new PushEnrollmentRequestStore. Override to provide a custom store implementation.
+     *
+     * @param session the Keycloak session
+     * @return the request store
+     */
+    protected PushEnrollmentRequestStore createEnrollmentRequestStore(KeycloakSession session) {
+        return new PushEnrollmentRequestStore(session);
     }
 
     /**
@@ -111,7 +122,7 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Cr
         boolean checkOnly = formData.containsKey("check");
 
         if (formData.containsKey("refresh")) {
-            cleanupChallenge(authSession, store);
+            cleanupChallenge(context.getSession(), authSession, store);
             requiredActionChallenge(context);
             return;
         }
@@ -123,7 +134,7 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Cr
                 requiredActionChallenge(context);
                 return;
             }
-            cleanupChallenge(authSession, store);
+            cleanupChallenge(context.getSession(), authSession, store);
             PushChallenge challenge = ensureWatchableChallenge(
                     context, authSession, store, fetchOrCreateChallenge(context, authSession, store, false));
             String enrollmentToken = PushEnrollmentTokenBuilder.build(
@@ -138,7 +149,7 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Cr
             return;
         }
 
-        cleanupChallenge(authSession, store);
+        cleanupChallenge(context.getSession(), authSession, store);
         onEnrollmentCompleted(context);
         context.success();
     }
@@ -168,11 +179,24 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Cr
      */
     protected Response createForm(
             LoginFormsProvider form, RequiredActionContext context, String enrollmentToken, PushChallenge challenge) {
+        AuthenticationSessionModel authSession = context.getAuthenticationSession();
+        PushEnrollmentRequestStore requestStore = createEnrollmentRequestStore(context.getSession());
+        boolean enrollmentUseRequestUri = resolveEnrollmentUseRequestUri(context);
         form.setAttribute("pushUsername", context.getUser().getUsername());
         form.setAttribute("enrollmentToken", enrollmentToken);
-        form.setAttribute("qrPayload", enrollmentToken);
-        form.setAttribute(
-                "pushQrUri", ChallengeUrlBuilder.buildPushUri(resolveAppUniversalLink(context), enrollmentToken));
+        String qrPayload = enrollmentToken;
+        String pushQrUri = ChallengeUrlBuilder.buildPushUri(resolveAppUniversalLink(context), enrollmentToken);
+        if (enrollmentUseRequestUri) {
+            String requestHandle = ensureEnrollmentRequestHandle(context, authSession, challenge, requestStore);
+            String requestUri = buildEnrollmentRequestUri(context, requestHandle);
+            qrPayload = requestUri;
+            pushQrUri = ChallengeUrlBuilder.buildPushUriWithRequestUri(resolveAppUniversalLink(context), requestUri);
+        } else {
+            cleanupEnrollmentRequestHandle(authSession, requestStore);
+        }
+        form.setAttribute("enrollmentUseRequestUri", enrollmentUseRequestUri);
+        form.setAttribute("qrPayload", qrPayload);
+        form.setAttribute("pushQrUri", pushQrUri);
         form.setAttribute("enrollChallengeId", challenge.getId());
         String eventsUrl = buildEnrollmentEventsUrl(context, challenge);
         if (eventsUrl != null) {
@@ -257,13 +281,15 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Cr
      * Cleans up an existing challenge.
      * Override to customize cleanup behavior.
      */
-    protected void cleanupChallenge(AuthenticationSessionModel authSession, PushChallengeStore store) {
+    protected void cleanupChallenge(
+            KeycloakSession session, AuthenticationSessionModel authSession, PushChallengeStore store) {
         String challengeId = authSession.getAuthNote(PushMfaConstants.ENROLL_CHALLENGE_NOTE);
         if (challengeId != null) {
             store.remove(challengeId);
             authSession.removeAuthNote(PushMfaConstants.ENROLL_CHALLENGE_NOTE);
         }
         authSession.removeAuthNote(PushMfaConstants.ENROLL_SSE_TOKEN_NOTE);
+        cleanupEnrollmentRequestHandle(authSession, createEnrollmentRequestStore(session));
     }
 
     /**
@@ -277,7 +303,7 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Cr
             PushChallenge challenge) {
         PushChallenge ensured = challenge;
         if (ensured == null || StringUtil.isBlank(ensured.getWatchSecret())) {
-            cleanupChallenge(authSession, store);
+            cleanupChallenge(context.getSession(), authSession, store);
             ensured = fetchOrCreateChallenge(context, authSession, store, true);
         }
         if (!StringUtil.isBlank(ensured.getWatchSecret())) {
@@ -305,6 +331,23 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Cr
                 .path(challenge.getId())
                 .path("events")
                 .queryParam("secret", watchSecret)
+                .build()
+                .toString();
+    }
+
+    /**
+     * Builds the URL used as the optional request_uri for enrollment by-reference flows.
+     * Override to customize the request token URL.
+     */
+    protected String buildEnrollmentRequestUri(RequiredActionContext context, String requestHandle) {
+        return context.getUriInfo()
+                .getBaseUriBuilder()
+                .path("realms")
+                .path(context.getRealm().getName())
+                .path("push-mfa")
+                .path("enroll")
+                .path("request-token")
+                .path(requestHandle)
                 .build()
                 .toString();
     }
@@ -347,5 +390,80 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Cr
             return PushMfaConstants.DEFAULT_APP_UNIVERSAL_LINK + "enroll";
         }
         return value;
+    }
+
+    /**
+     * Resolves whether QR and same-device enrollment links should use request_uri by reference.
+     * Override to customize the decision.
+     */
+    protected boolean resolveEnrollmentUseRequestUri(RequiredActionContext context) {
+        RequiredActionConfigModel config = context.getConfig();
+        if (config == null || config.getConfig() == null) {
+            return false;
+        }
+        String value = config.getConfig().get(PushMfaConstants.ENROLLMENT_USE_REQUEST_URI_CONFIG);
+        return Boolean.parseBoolean(value);
+    }
+
+    private String ensureEnrollmentRequestHandle(
+            RequiredActionContext context,
+            AuthenticationSessionModel authSession,
+            PushChallenge challenge,
+            PushEnrollmentRequestStore requestStore) {
+        String existingHandle = authSession.getAuthNote(PushMfaConstants.ENROLL_REQUEST_URI_HANDLE_NOTE);
+        if (!StringUtil.isBlank(existingHandle)) {
+            PushEnrollmentRequestStore.Entry existingEntry = requestStore.resolve(existingHandle);
+            if (existingEntry != null
+                    && challenge.getId().equals(existingEntry.challengeId())
+                    && challenge.getUserId().equals(existingEntry.userId())
+                    && challenge.getRealmId().equals(existingEntry.realmId())) {
+                return existingHandle;
+            }
+            cleanupEnrollmentRequestHandle(authSession, requestStore);
+        }
+
+        String requestHandle = KeycloakModelUtils.generateId();
+        requestStore.store(
+                requestHandle,
+                resolveEnrollmentRequestUriTtl(context, challenge),
+                new PushEnrollmentRequestStore.Entry(challenge.getRealmId(), challenge.getUserId(), challenge.getId()));
+        authSession.setAuthNote(PushMfaConstants.ENROLL_REQUEST_URI_HANDLE_NOTE, requestHandle);
+        return requestHandle;
+    }
+
+    private void cleanupEnrollmentRequestHandle(
+            AuthenticationSessionModel authSession, PushEnrollmentRequestStore requestStore) {
+        String requestHandle = authSession.getAuthNote(PushMfaConstants.ENROLL_REQUEST_URI_HANDLE_NOTE);
+        if (!StringUtil.isBlank(requestHandle) && requestStore != null) {
+            requestStore.remove(requestHandle);
+        }
+        authSession.removeAuthNote(PushMfaConstants.ENROLL_REQUEST_URI_HANDLE_NOTE);
+    }
+
+    protected Duration resolveEnrollmentRequestUriTtl(RequiredActionContext context, PushChallenge challenge) {
+        Duration remainingChallengeLifetime = Duration.between(Instant.now(), challenge.getExpiresAt());
+        if (remainingChallengeLifetime.isZero() || remainingChallengeLifetime.isNegative()) {
+            return Duration.ofSeconds(1);
+        }
+
+        RequiredActionConfigModel config = context.getConfig();
+        if (config == null || config.getConfig() == null) {
+            return remainingChallengeLifetime;
+        }
+
+        String value = config.getConfig().get(PushMfaConstants.ENROLLMENT_REQUEST_URI_TTL_CONFIG);
+        if (StringUtil.isBlank(value)) {
+            return remainingChallengeLifetime;
+        }
+        try {
+            long seconds = Long.parseLong(value.trim());
+            if (seconds <= 0) {
+                return remainingChallengeLifetime;
+            }
+            Duration configuredTtl = Duration.ofSeconds(seconds);
+            return configuredTtl.compareTo(remainingChallengeLifetime) < 0 ? configuredTtl : remainingChallengeLifetime;
+        } catch (NumberFormatException ex) {
+            return remainingChallengeLifetime;
+        }
     }
 }

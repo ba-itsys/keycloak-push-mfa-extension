@@ -46,7 +46,22 @@ public class PushMfaRegisterRequiredActionFactory implements RequiredActionFacto
                 "App link (android) or universal link (iOS) for enrollment on the same device, e.g., https://push-mfa-app.com/enroll");
         appUniversalLink.setDefaultValue(PushMfaConstants.DEFAULT_APP_UNIVERSAL_LINK + "enroll");
 
-        CONFIG_PROPERTIES = List.of(challengeTtl, appUniversalLink);
+        ProviderConfigProperty useRequestUri = new ProviderConfigProperty();
+        useRequestUri.setName(PushMfaConstants.ENROLLMENT_USE_REQUEST_URI_CONFIG);
+        useRequestUri.setLabel("Use request_uri for QR and app link");
+        useRequestUri.setType(ProviderConfigProperty.BOOLEAN_TYPE);
+        useRequestUri.setHelpText(
+                "When enabled, the QR code and same-device app link carry a short-lived request_uri instead of the full enrollment token.");
+        useRequestUri.setDefaultValue(Boolean.FALSE);
+
+        ProviderConfigProperty requestUriTtl = new ProviderConfigProperty();
+        requestUriTtl.setName(PushMfaConstants.ENROLLMENT_REQUEST_URI_TTL_CONFIG);
+        requestUriTtl.setLabel("Enrollment request_uri TTL (seconds)");
+        requestUriTtl.setType(ProviderConfigProperty.STRING_TYPE);
+        requestUriTtl.setHelpText(
+                "Optional shorter lifetime for enrollment request_uri handles. Leave empty to reuse the full enrollment challenge TTL.");
+
+        CONFIG_PROPERTIES = List.of(challengeTtl, appUniversalLink, useRequestUri, requestUriTtl);
     }
 
     @Override

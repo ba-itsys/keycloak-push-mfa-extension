@@ -29,11 +29,11 @@ import de.arbeitsagentur.keycloak.push.support.DeviceClient;
 import de.arbeitsagentur.keycloak.push.support.DeviceKeyType;
 import de.arbeitsagentur.keycloak.push.support.DeviceState;
 import de.arbeitsagentur.keycloak.push.support.HtmlPage;
-import de.arbeitsagentur.keycloak.push.support.SharedKeycloakContainerSupport;
+import de.arbeitsagentur.keycloak.push.support.KeycloakAdminBootstrap;
+import de.arbeitsagentur.keycloak.push.support.KeycloakTestContainerSupport;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import java.net.URI;
 import java.time.Instant;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -42,6 +42,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
@@ -63,7 +64,6 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class WaitChallengeBypassIT {
 
-    private static final String SHARED_KEYCLOAK_OWNER = WaitChallengeBypassIT.class.getSimpleName();
     private static final String WAIT_ATTRIBUTE_KEY = "push-mfa-wait-state";
 
     // Dedicated test users for bypass tests to ensure complete isolation
@@ -78,15 +78,18 @@ class WaitChallengeBypassIT {
     private static final String BYPASS_USER_9 = "bypass-user-9";
     private static final String BYPASS_USER_10 = "bypass-user-10";
     private static final String BYPASS_PASSWORD = "bypass-test";
-    private static final GenericContainer<?> KEYCLOAK = sharedKeycloak();
+
+    @Container
+    private static final GenericContainer<?> KEYCLOAK =
+            KeycloakTestContainerSupport.newKeycloakContainer("WaitChallengeBypassIT.exec");
 
     private URI baseUri;
     private AdminClient adminClient;
 
     @BeforeAll
     void setup() throws Exception {
-        SharedKeycloakContainerSupport.acquire(SHARED_KEYCLOAK_OWNER);
-        baseUri = SharedKeycloakContainerSupport.baseUri();
+        KeycloakAdminBootstrap.allowHttpAdminLogin(KEYCLOAK);
+        baseUri = KeycloakTestContainerSupport.baseUri(KEYCLOAK);
         adminClient = new AdminClient(baseUri);
 
         // Create dedicated users for bypass tests
@@ -100,11 +103,6 @@ class WaitChallengeBypassIT {
         adminClient.ensureUser(BYPASS_USER_8, BYPASS_PASSWORD);
         adminClient.ensureUser(BYPASS_USER_9, BYPASS_PASSWORD);
         adminClient.ensureUser(BYPASS_USER_10, BYPASS_PASSWORD);
-    }
-
-    @AfterAll
-    void captureContainerCoverage() throws Exception {
-        SharedKeycloakContainerSupport.release(SHARED_KEYCLOAK_OWNER);
     }
 
     @BeforeEach
@@ -808,9 +806,5 @@ class WaitChallengeBypassIT {
         }
         JsonNode pending = deviceClient.fetchPendingChallenges();
         assertEquals(0, pending.size(), () -> "Expected pending challenges to expire but got: " + pending);
-    }
-
-    private static GenericContainer<?> sharedKeycloak() {
-        return SharedKeycloakContainerSupport.container();
     }
 }

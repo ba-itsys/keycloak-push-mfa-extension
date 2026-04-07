@@ -55,6 +55,8 @@ Configure these in the Required Actions settings.
 |--------|---------|-------------|
 | `enrollmentChallengeTtlSeconds` | `240` | How long the enrollment QR code is valid (in seconds) |
 | `enrollmentAppUniversalLink` | `my-secure://enroll` | Deep link scheme for same-device enrollment |
+| `enrollmentUseRequestUri` | `false` | When enabled, the QR code and same-device link carry a short-lived `request_uri` instead of the full enrollment token |
+| `enrollmentRequestUriTtlSeconds` | unset | Optional shorter lifetime for the `request_uri` handle itself. When unset, it reuses the full enrollment challenge lifetime; it is always capped at the remaining challenge lifetime |
 
 ## Server-Side Hardening Options
 

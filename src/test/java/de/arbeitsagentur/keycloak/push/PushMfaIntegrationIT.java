@@ -36,7 +36,8 @@ import de.arbeitsagentur.keycloak.push.support.DeviceKeyType;
 import de.arbeitsagentur.keycloak.push.support.DeviceSigningKey;
 import de.arbeitsagentur.keycloak.push.support.DeviceState;
 import de.arbeitsagentur.keycloak.push.support.HtmlPage;
-import de.arbeitsagentur.keycloak.push.support.SharedKeycloakContainerSupport;
+import de.arbeitsagentur.keycloak.push.support.KeycloakAdminBootstrap;
+import de.arbeitsagentur.keycloak.push.support.KeycloakTestContainerSupport;
 import de.arbeitsagentur.keycloak.push.support.SseClient;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import java.net.URI;
@@ -51,13 +52,13 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
@@ -74,7 +75,6 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 class PushMfaIntegrationIT {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final String SHARED_KEYCLOAK_OWNER = PushMfaIntegrationIT.class.getSimpleName();
     private static final String TEST_USERNAME = "test";
     private static final String TEST_PASSWORD = "test";
     private static final String ATTACKER_USERNAME = "attacker";
@@ -88,15 +88,18 @@ class PushMfaIntegrationIT {
     private static final String WAIT_CHALLENGE_USER_5 = "wait-user-5";
     private static final String WAIT_CHALLENGE_USER_6 = "wait-user-6";
     private static final String WAIT_CHALLENGE_PASSWORD = "wait-test";
-    private static final GenericContainer<?> KEYCLOAK = sharedKeycloak();
+
+    @Container
+    private static final GenericContainer<?> KEYCLOAK =
+            KeycloakTestContainerSupport.newKeycloakContainer("PushMfaIntegrationIT.exec");
 
     private URI baseUri;
     private AdminClient adminClient;
 
     @BeforeAll
     void setup() throws Exception {
-        SharedKeycloakContainerSupport.acquire(SHARED_KEYCLOAK_OWNER);
-        baseUri = SharedKeycloakContainerSupport.baseUri();
+        KeycloakAdminBootstrap.allowHttpAdminLogin(KEYCLOAK);
+        baseUri = KeycloakTestContainerSupport.baseUri(KEYCLOAK);
         adminClient = new AdminClient(baseUri);
 
         // Create dedicated users for wait challenge tests to ensure complete isolation
@@ -108,35 +111,13 @@ class PushMfaIntegrationIT {
         adminClient.ensureUser(WAIT_CHALLENGE_USER_6, WAIT_CHALLENGE_PASSWORD);
     }
 
-    @AfterAll
-    void cleanupSharedResources() throws Exception {
-        // Clean up dedicated wait challenge test users to reduce DB bloat
-        // These users are created in @BeforeAll and only used by wait challenge tests
-        String[] waitChallengeUsers = {
-            WAIT_CHALLENGE_USER_1,
-            WAIT_CHALLENGE_USER_2,
-            WAIT_CHALLENGE_USER_3,
-            WAIT_CHALLENGE_USER_4,
-            WAIT_CHALLENGE_USER_5,
-            WAIT_CHALLENGE_USER_6
-        };
-        for (String username : waitChallengeUsers) {
-            try {
-                adminClient.deleteUser(username);
-            } catch (Exception e) {
-                // Log but don't fail - cleanup is best effort
-                System.err.println("Failed to delete wait challenge user " + username + ": " + e.getMessage());
-            }
-        }
-        SharedKeycloakContainerSupport.release(SHARED_KEYCLOAK_OWNER);
-    }
-
     @BeforeEach
     void resetUserVerificationConfig() throws Exception {
         adminClient.configurePushMfaUserVerification(
                 PushMfaConstants.USER_VERIFICATION_NONE, PushMfaConstants.DEFAULT_USER_VERIFICATION_PIN_LENGTH);
         adminClient.configurePushMfaSameDeviceUserVerification(false);
         adminClient.configurePushMfaAutoAddRequiredAction(true);
+        adminClient.resetPushMfaEnrollmentConfigToDefaults();
         // Fully reset wait challenge config to defaults (not just disable)
         adminClient.resetPushMfaWaitChallengeToDefaults();
         // Reset max pending challenges to default
@@ -972,6 +953,66 @@ class PushMfaIntegrationIT {
     }
 
     @Test
+    void enrollmentRequestUriFlowServesAbsoluteFetchUrlAndCompletesEnrollment() throws Exception {
+        adminClient.configurePushMfaEnrollmentRequestUri(true, 30);
+        adminClient.resetUserState(TEST_USERNAME);
+
+        BrowserSession session = new BrowserSession(baseUri);
+        HtmlPage loginPage = session.startAuthorization("test-app");
+        HtmlPage enrollmentPage = session.submitLogin(loginPage, TEST_USERNAME, TEST_PASSWORD);
+
+        String visibleEnrollmentValue = session.extractEnrollmentToken(enrollmentPage);
+        String qrPayload = session.extractEnrollmentQrPayload(enrollmentPage);
+        String requestUriFromLink = session.extractEnrollmentRequestUriFromSameDeviceLink(enrollmentPage);
+
+        assertTrue(URI.create(qrPayload).isAbsolute(), "QR payload request_uri must be absolute");
+        assertEquals(qrPayload, visibleEnrollmentValue, "Visible enrollment value should match the request_uri");
+        assertEquals(qrPayload, requestUriFromLink, "QR payload and same-device request_uri should match");
+
+        HttpClient http =
+                HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
+        HttpResponse<String> response = http.send(
+                HttpRequest.newBuilder(URI.create(qrPayload)).GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode(), "request_uri fetch should succeed");
+
+        SignedJWT fetchedJwt = SignedJWT.parse(response.body());
+        JWTClaimsSet fetchedClaims = fetchedJwt.getJWTClaimsSet();
+        assertNotNull(fetchedClaims.getSubject());
+        assertNotNull(fetchedClaims.getStringClaim("enrollmentId"));
+        assertNotNull(fetchedClaims.getStringClaim("nonce"));
+
+        DeviceClient deviceClient = new DeviceClient(baseUri, DeviceState.create(DeviceKeyType.RSA));
+        deviceClient.completeEnrollment(response.body());
+        session.submitEnrollmentCheck(enrollmentPage);
+    }
+
+    @Test
+    void enrollmentRequestUriTtlCanExpireBeforeEnrollmentChallenge() throws Exception {
+        adminClient.configurePushMfaEnrollmentRequestUri(true, 1);
+        adminClient.resetUserState(TEST_USERNAME);
+
+        BrowserSession session = new BrowserSession(baseUri);
+        HtmlPage loginPage = session.startAuthorization("test-app");
+        HtmlPage enrollmentPage = session.submitLogin(loginPage, TEST_USERNAME, TEST_PASSWORD);
+
+        URI requestUri = URI.create(session.extractEnrollmentQrPayload(enrollmentPage));
+        String fetchedEnrollmentToken = fetch(requestUri).body();
+
+        assertEventually(
+                () -> {
+                    HttpResponse<String> response = fetch(requestUri);
+                    assertEquals(
+                            404, response.statusCode(), "request_uri should expire before the enrollment challenge");
+                },
+                Duration.ofSeconds(5),
+                Duration.ofMillis(200));
+
+        DeviceClient deviceClient = new DeviceClient(baseUri, DeviceState.create(DeviceKeyType.RSA));
+        deviceClient.completeEnrollment(fetchedEnrollmentToken);
+        session.submitEnrollmentCheck(enrollmentPage);
+    }
+
+    @Test
     void dpopReplayIsRejected() throws Exception {
         try {
             DeviceClient deviceClient = enrollDevice();
@@ -1341,6 +1382,29 @@ class PushMfaIntegrationIT {
         assertEquals(0, pending.size(), () -> "Expected pending challenges to expire but got: " + pending);
     }
 
+    private HttpResponse<String> fetch(URI uri) throws Exception {
+        HttpClient http =
+                HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
+        return http.send(HttpRequest.newBuilder(uri).GET().build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private void assertEventually(ThrowingRunnable assertion, Duration timeout, Duration interval) throws Exception {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        AssertionError lastAssertion = null;
+        while (System.nanoTime() < deadline) {
+            try {
+                assertion.run();
+                return;
+            } catch (AssertionError ex) {
+                lastAssertion = ex;
+                Thread.sleep(interval.toMillis());
+            }
+        }
+        if (lastAssertion != null) {
+            throw lastAssertion;
+        }
+    }
+
     private ChallengeAttempt awaitChallengeCreationAllowed(String username, String password) throws Exception {
         long deadline = System.currentTimeMillis() + 15000L;
         String lastBlockedPage = null;
@@ -1415,7 +1479,8 @@ class PushMfaIntegrationIT {
 
     private record ChallengeAttempt(BrowserSession session, BrowserSession.DeviceChallenge challenge) {}
 
-    private static GenericContainer<?> sharedKeycloak() {
-        return SharedKeycloakContainerSupport.container();
+    @FunctionalInterface
+    private interface ThrowingRunnable {
+        void run() throws Exception;
     }
 }

@@ -34,7 +34,8 @@ import de.arbeitsagentur.keycloak.push.support.DeviceKeyType;
 import de.arbeitsagentur.keycloak.push.support.DeviceSigningKey;
 import de.arbeitsagentur.keycloak.push.support.DeviceState;
 import de.arbeitsagentur.keycloak.push.support.HtmlPage;
-import de.arbeitsagentur.keycloak.push.support.SharedKeycloakContainerSupport;
+import de.arbeitsagentur.keycloak.push.support.KeycloakAdminBootstrap;
+import de.arbeitsagentur.keycloak.push.support.KeycloakTestContainerSupport;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -45,7 +46,6 @@ import java.util.Base64;
 import java.util.Date;
 import java.util.Map;
 import java.util.UUID;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -54,6 +54,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
@@ -65,11 +66,13 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 class PushMfaSecurityIT {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final String SHARED_KEYCLOAK_OWNER = PushMfaSecurityIT.class.getSimpleName();
     private static final String TEST_USERNAME = "sectest";
     private static final String TEST_PASSWORD = "sectest";
     private static final int MAX_RETRIES = 3;
-    private static final GenericContainer<?> KEYCLOAK = sharedKeycloak();
+
+    @Container
+    private static final GenericContainer<?> KEYCLOAK =
+            KeycloakTestContainerSupport.newKeycloakContainer("PushMfaSecurityIT.exec");
 
     private final HttpClient http =
             HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
@@ -78,15 +81,10 @@ class PushMfaSecurityIT {
 
     @BeforeAll
     void setup() throws Exception {
-        SharedKeycloakContainerSupport.acquire(SHARED_KEYCLOAK_OWNER);
-        baseUri = SharedKeycloakContainerSupport.baseUri();
+        KeycloakAdminBootstrap.allowHttpAdminLogin(KEYCLOAK);
+        baseUri = KeycloakTestContainerSupport.baseUri(KEYCLOAK);
         adminClient = new AdminClient(baseUri);
         adminClient.ensureUser(TEST_USERNAME, TEST_PASSWORD);
-    }
-
-    @AfterAll
-    void captureContainerCoverage() throws Exception {
-        SharedKeycloakContainerSupport.release(SHARED_KEYCLOAK_OWNER);
     }
 
     @BeforeEach
@@ -99,10 +97,6 @@ class PushMfaSecurityIT {
         } catch (Exception e) {
             // User might not have sessions
         }
-    }
-
-    private static GenericContainer<?> sharedKeycloak() {
-        return SharedKeycloakContainerSupport.container();
     }
 
     private DeviceClient enrollDeviceWithRetry(String username, String password) throws Exception {

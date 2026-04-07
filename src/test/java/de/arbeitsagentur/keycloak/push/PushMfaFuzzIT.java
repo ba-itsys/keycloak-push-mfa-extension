@@ -20,7 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import de.arbeitsagentur.keycloak.push.support.AdminClient;
 import de.arbeitsagentur.keycloak.push.support.ContainerLogWatcher;
-import de.arbeitsagentur.keycloak.push.support.SharedKeycloakContainerSupport;
+import de.arbeitsagentur.keycloak.push.support.KeycloakAdminBootstrap;
+import de.arbeitsagentur.keycloak.push.support.KeycloakTestContainerSupport;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -30,7 +31,6 @@ import java.util.Base64;
 import java.util.Random;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -42,6 +42,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
@@ -52,11 +53,13 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class PushMfaFuzzIT {
 
-    private static final String SHARED_KEYCLOAK_OWNER = PushMfaFuzzIT.class.getSimpleName();
     private static final String TEST_USERNAME = "fuzztest";
     private static final String TEST_PASSWORD = "fuzztest";
     private static final Random RANDOM = new Random(12345);
-    private static final GenericContainer<?> KEYCLOAK = sharedKeycloak();
+
+    @Container
+    private static final GenericContainer<?> KEYCLOAK =
+            KeycloakTestContainerSupport.newKeycloakContainer("PushMfaFuzzIT.exec");
 
     private final HttpClient http =
             HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
@@ -65,15 +68,10 @@ class PushMfaFuzzIT {
 
     @BeforeAll
     void setup() throws Exception {
-        SharedKeycloakContainerSupport.acquire(SHARED_KEYCLOAK_OWNER);
-        baseUri = SharedKeycloakContainerSupport.baseUri();
+        KeycloakAdminBootstrap.allowHttpAdminLogin(KEYCLOAK);
+        baseUri = KeycloakTestContainerSupport.baseUri(KEYCLOAK);
         adminClient = new AdminClient(baseUri);
         adminClient.ensureUser(TEST_USERNAME, TEST_PASSWORD);
-    }
-
-    @AfterAll
-    void captureContainerCoverage() throws Exception {
-        SharedKeycloakContainerSupport.release(SHARED_KEYCLOAK_OWNER);
     }
 
     @BeforeEach
@@ -86,10 +84,6 @@ class PushMfaFuzzIT {
         } catch (Exception e) {
             // User might not have sessions
         }
-    }
-
-    private static GenericContainer<?> sharedKeycloak() {
-        return SharedKeycloakContainerSupport.container();
     }
 
     private URI realmUri() {

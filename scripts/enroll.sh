@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: scripts/enroll.sh <enrollment-token>
+Usage: scripts/enroll.sh <enrollment-token|request-uri|deep-link>
 
 Environment overrides:
   REALM_BASE               Realm base URL (default: http://localhost:8080/realms/demo)
@@ -25,7 +25,7 @@ if [[ ${1:-} == "-h" || ${1:-} == "--help" || $# -ne 1 ]]; then
   exit $([[ $# -eq 1 ]] && [[ ${1:-} != "-h" && ${1:-} != "--help" ]] && echo 1 || echo 0)
 fi
 
-ENROLL_TOKEN=$1
+ENROLL_INPUT=$1
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMMON_SIGN_JWS="${COMMON_SIGN_JWS:-"$SCRIPT_DIR/sign_jws.py"}"
 source "$SCRIPT_DIR/common.sh"
@@ -122,6 +122,13 @@ cleanup() {
 trap cleanup EXIT
 
 pushd "$WORKDIR" >/dev/null
+
+echo ">> Resolving enrollment input"
+ENROLL_TOKEN=$(common::resolve_token_input "$ENROLL_INPUT")
+if [[ -z ${ENROLL_TOKEN:-} ]]; then
+  echo "error: enrollment input did not resolve to a token" >&2
+  exit 1
+fi
 
 echo ">> Decoding enrollment challenge"
 ENROLL_PAYLOAD=$(echo -n "$ENROLL_TOKEN" | cut -d'.' -f2 | common::b64urldecode)

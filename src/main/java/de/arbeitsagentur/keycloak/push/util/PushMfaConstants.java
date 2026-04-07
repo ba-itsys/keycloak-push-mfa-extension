@@ -34,8 +34,11 @@ public final class PushMfaConstants {
     public static final String CHALLENGE_DENY = "deny";
     public static final String ENROLL_CHALLENGE_NOTE = "push-mfa-enroll-challenge-id";
     public static final String ENROLL_SSE_TOKEN_NOTE = "push-mfa-enroll-sse-token";
+    public static final String ENROLL_REQUEST_URI_HANDLE_NOTE = "push-mfa-enroll-request-uri-handle";
     public static final String LOGIN_CHALLENGE_TTL_CONFIG = "loginChallengeTtlSeconds";
     public static final String ENROLLMENT_CHALLENGE_TTL_CONFIG = "enrollmentChallengeTtlSeconds";
+    public static final String ENROLLMENT_USE_REQUEST_URI_CONFIG = "enrollmentUseRequestUri";
+    public static final String ENROLLMENT_REQUEST_URI_TTL_CONFIG = "enrollmentRequestUriTtlSeconds";
     public static final String MAX_PENDING_AUTH_CHALLENGES_CONFIG = "maxPendingChallenges";
     public static final String USER_VERIFICATION_CONFIG = "userVerification";
     public static final String USER_VERIFICATION_PIN_LENGTH_CONFIG = "userVerificationPinLength";

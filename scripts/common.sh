@@ -42,6 +42,46 @@ common::write_private_key() {
   python3 -c "import base64, pathlib, sys; payload=sys.stdin.read().strip(); pathlib.Path(sys.argv[1]).write_bytes(base64.b64decode(payload))" "$path"
 }
 
+common::extract_query_param() {
+  local input=$1
+  local param=$2
+  python3 - "$input" "$param" <<'PY'
+import sys
+from urllib.parse import parse_qs, urlparse
+
+input_value = sys.argv[1]
+param = sys.argv[2]
+parsed = urlparse(input_value)
+values = parse_qs(parsed.query).get(param, [])
+if values:
+    sys.stdout.write(values[0])
+PY
+}
+
+common::resolve_token_input() {
+  local input=$1
+  local token
+  token=$(common::extract_query_param "$input" "token")
+  if [[ -n ${token:-} ]]; then
+    printf '%s\n' "$token"
+    return
+  fi
+
+  local request_uri
+  request_uri=$(common::extract_query_param "$input" "request_uri")
+  if [[ -n ${request_uri:-} ]]; then
+    common::resolve_token_input "$request_uri"
+    return
+  fi
+
+  if [[ $input =~ ^https?:// ]]; then
+    curl -fsS "$input"
+    return
+  fi
+
+  printf '%s\n' "$input"
+}
+
 common::sign_compact_jws() {
   local alg=$1
   local key_file=$2

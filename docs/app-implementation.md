@@ -4,7 +4,7 @@ This guide covers what mobile app developers need to know when implementing push
 
 ## Key Concepts
 
-- **Realm verification:** Enrollment starts when the app scans the QR code and reads `enrollmentToken`. Verify the JWT with the realm JWKS (`/realms/<realm>/protocol/openid-connect/certs`) before trusting its contents.
+- **Realm verification:** Enrollment starts when the app scans the QR code. Depending on configuration it will receive either a direct `token` value or a `request_uri`. If a `request_uri` is present, fetch that URI over HTTPS first and treat the response body as the `enrollmentToken`. In both cases, verify the JWT with the realm JWKS (`/realms/<realm>/protocol/openid-connect/certs`) before trusting its contents.
 - **User key material:** Generate a key pair per user (or per device if you let a user enroll more than one), select a unique `kid`, and keep the private key in secure storage. Persist and exchange the public component exclusively as a JWK (the same document posted in `cnf.jwk`). With a single device per user you can reuse a stable `deviceId`; only multi-device setups need distinct ids.
 - **Algorithm choice:** The demo scripts default to RSA/RS256 but also support EC keys and ECDSA proofs—set `DEVICE_KEY_TYPE=EC`, pick a curve via `DEVICE_EC_CURVE` (P-256/384/521), and override `DEVICE_SIGNING_ALG` if you need ES256/384/512. The selected algorithm lives in the stored JWK (no extra `algorithm` property is stored or sent) so Keycloak enforces it for all future DPoP proofs, login approvals, and rotation requests.
 

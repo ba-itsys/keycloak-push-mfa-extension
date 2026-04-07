@@ -31,6 +31,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 public final class AdminClient {
 
@@ -111,6 +112,28 @@ public final class AdminClient {
     public void configurePushMfaAutoAddRequiredAction(boolean autoAdd) throws Exception {
         updatePushMfaAuthenticatorConfig(
                 Map.of(PushMfaConstants.AUTO_ADD_REQUIRED_ACTION_CONFIG, String.valueOf(autoAdd)));
+    }
+
+    public void configurePushMfaEnrollmentRequestUri(boolean enabled, Integer ttlSeconds) throws Exception {
+        Map<String, String> updates = new HashMap<>();
+        updates.put(PushMfaConstants.ENROLLMENT_USE_REQUEST_URI_CONFIG, String.valueOf(enabled));
+        updates.put(
+                PushMfaConstants.ENROLLMENT_REQUEST_URI_TTL_CONFIG,
+                ttlSeconds == null ? null : String.valueOf(ttlSeconds));
+        updatePushMfaRequiredActionConfig(updates);
+    }
+
+    public void resetPushMfaEnrollmentConfigToDefaults() throws Exception {
+        Map<String, String> updates = new HashMap<>();
+        updates.put(
+                PushMfaConstants.ENROLLMENT_CHALLENGE_TTL_CONFIG,
+                String.valueOf(PushMfaConstants.DEFAULT_ENROLLMENT_CHALLENGE_TTL.toSeconds()));
+        updates.put(
+                PushMfaConstants.ENROLLMENT_APP_UNIVERSAL_LINK_CONFIG,
+                PushMfaConstants.DEFAULT_APP_UNIVERSAL_LINK + "enroll");
+        updates.put(PushMfaConstants.ENROLLMENT_USE_REQUEST_URI_CONFIG, String.valueOf(false));
+        updates.put(PushMfaConstants.ENROLLMENT_REQUEST_URI_TTL_CONFIG, null);
+        updatePushMfaRequiredActionConfig(updates);
     }
 
     public void configurePushMfaWaitChallenge(boolean enabled, int baseSeconds, int maxSeconds, int resetHours)
@@ -681,6 +704,58 @@ public final class AdminClient {
         Thread.sleep(100);
     }
 
+    private void updatePushMfaRequiredActionConfig(Map<String, String> updates) throws Exception {
+        ensureAccessToken();
+        String alias = PushMfaConstants.REQUIRED_ACTION_ID;
+        URI listUri = baseUri.resolve("/admin/realms/demo/authentication/required-actions");
+        HttpResponse<String> listResponse = sendGetWithRetry(listUri);
+        if (listResponse.statusCode() != 200) {
+            throw new IllegalStateException(
+                    "Failed to read required actions: " + listResponse.statusCode() + " body=" + listResponse.body());
+        }
+
+        JsonNode requiredActions = MAPPER.readTree(listResponse.body());
+        JsonNode requiredAction = null;
+        if (requiredActions.isArray()) {
+            for (JsonNode item : requiredActions) {
+                String itemAlias = item.path("alias").asText(null);
+                String providerId = item.path("providerId").asText(null);
+                if (alias.equals(itemAlias) || alias.equals(providerId)) {
+                    requiredAction = item;
+                    break;
+                }
+            }
+        }
+        if (requiredAction == null) {
+            throw new IllegalStateException("Required action not found: " + alias);
+        }
+
+        ObjectNode payload = requiredAction.deepCopy();
+        ObjectNode configNode = MAPPER.createObjectNode();
+        JsonNode existingConfig = requiredAction.path("config");
+        if (existingConfig.isObject()) {
+            existingConfig.fields().forEachRemaining(entry -> configNode.set(entry.getKey(), entry.getValue()));
+        }
+        for (Map.Entry<String, String> entry : updates.entrySet()) {
+            if (entry.getValue() == null) {
+                configNode.remove(entry.getKey());
+            } else {
+                configNode.put(entry.getKey(), entry.getValue());
+            }
+        }
+        payload.set("config", configNode);
+
+        URI updateUri = baseUri.resolve("/admin/realms/demo/authentication/required-actions/" + alias);
+        HttpResponse<String> updateResponse = sendPutWithRetry(updateUri, payload.toString());
+        if (updateResponse.statusCode() != 204) {
+            throw new IllegalStateException("Failed to update required action config: " + updateResponse.statusCode()
+                    + " body=" + updateResponse.body());
+        }
+
+        clearRealmCaches();
+        Thread.sleep(100);
+    }
+
     private void waitForPushMfaAuthenticatorConfig(Map<String, String> expectedUpdates) throws Exception {
         if (expectedUpdates == null || expectedUpdates.isEmpty()) {
             return;
@@ -716,7 +791,7 @@ public final class AdminClient {
             boolean matches = true;
             for (Map.Entry<String, String> entry : expectedUpdates.entrySet()) {
                 String actual = config.path(entry.getKey()).asText(null);
-                if (!java.util.Objects.equals(actual, entry.getValue())) {
+                if (!Objects.equals(actual, entry.getValue())) {
                     matches = false;
                     break;
                 }

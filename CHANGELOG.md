@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.9.1](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.9.0...v1.9.1) (2026-04-08)
+
+
+### Bug Fixes
+
+* **sse:** refactor to use a virt. thread per login instead one thread/node to avoid load problems ([48f4ad8](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/48f4ad85d73ac6da789d9fa1c2e1f0752f0ee711))
+
+
+### Dependencies
+
+* **deps-dev:** bump org.junit.jupiter:junit-jupiter ([1660dc1](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/1660dc10ab2d7c57e9205e2a2ace1db8807fdf97))
+* **deps-dev:** bump org.testcontainers:junit-jupiter ([6ec545a](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/6ec545a5555ec257159cfdf3edbe1db2beda77fc))
+
 ## [1.9.0](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.8.2...v1.9.0) (2026-04-07)
 
 

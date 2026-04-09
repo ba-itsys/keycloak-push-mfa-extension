@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.10.0](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.9.1...v1.10.0) (2026-04-09)
+
+
+### Features
+
+* add loadtesting setup ([01a01d4](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/01a01d422b37a2f88cf4e6f287279f8f670a84e5))
+
+
+### Bug Fixes
+
+* improve sse error handling ([6cf8c72](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/6cf8c728d5f1975027c929e4ebb39afb4cc67334))
+* remove unused pending challenges check ([77ecbd5](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/77ecbd5e4d861ee11fcb4e7817e3834cc12fa750))
+
 ## [1.9.1](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.9.0...v1.9.1) (2026-04-08)
 
 

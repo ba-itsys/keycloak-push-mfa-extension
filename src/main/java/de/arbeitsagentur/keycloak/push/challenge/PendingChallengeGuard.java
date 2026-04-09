@@ -34,35 +34,27 @@ public class PendingChallengeGuard {
             String realmId,
             String userId,
             String rootSessionId,
-            String authSessionChallengeId,
             Predicate<PushChallenge> activeSessionPredicate,
             Predicate<PushChallenge> credentialExistsPredicate) {
         List<PushChallenge> pending = new ArrayList<>(challengeStore.findPendingAuthenticationForUser(realmId, userId));
-        pending.removeIf(challenge -> shouldRemove(
-                challenge, rootSessionId, authSessionChallengeId, activeSessionPredicate, credentialExistsPredicate));
+        pending.removeIf(
+                challenge -> shouldRemove(challenge, rootSessionId, activeSessionPredicate, credentialExistsPredicate));
 
-        int pendingCount = pending.size();
-        if (authSessionChallengeId != null && pendingCount > 0) {
-            pendingCount--;
-        }
-
-        return new PendingCheckResult(pendingCount, pending);
+        return new PendingCheckResult(pending.size(), pending);
     }
 
     private boolean shouldRemove(
             PushChallenge challenge,
             String rootSessionId,
-            String authSessionChallengeId,
             Predicate<PushChallenge> activeSessionPredicate,
             Predicate<PushChallenge> credentialExistsPredicate) {
         boolean missingSession = !activeSessionPredicate.test(challenge);
         boolean missingCredential = !credentialExistsPredicate.test(challenge);
         boolean sameOrUnknownRoot = isSameOrUnknownRoot(challenge, rootSessionId);
-        boolean matchesAuthSession = authSessionChallengeId != null && authSessionChallengeId.equals(challenge.getId());
         if (missingSession) {
             return false;
         }
-        if (missingCredential || sameOrUnknownRoot || matchesAuthSession) {
+        if (missingCredential || sameOrUnknownRoot) {
             challengeStore.remove(challenge.getId());
             return true;
         }

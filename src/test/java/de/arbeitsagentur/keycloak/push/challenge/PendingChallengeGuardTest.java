@@ -41,7 +41,7 @@ class PendingChallengeGuardTest {
 
         PendingChallengeGuard guard = new PendingChallengeGuard(store);
         PendingChallengeGuard.PendingCheckResult result =
-                guard.cleanAndCount("realm", "user", "root-a", null, matches(active), alwaysTrue());
+                guard.cleanAndCount("realm", "user", "root-a", matches(active), alwaysTrue());
 
         assertEquals(2, result.pending().size());
         assertEquals(active.getId(), result.pending().get(0).getId());
@@ -59,7 +59,7 @@ class PendingChallengeGuardTest {
 
         PendingChallengeGuard guard = new PendingChallengeGuard(store);
         PendingChallengeGuard.PendingCheckResult result =
-                guard.cleanAndCount("realm", "user", "root-a", null, alwaysTrue(), alwaysTrue());
+                guard.cleanAndCount("realm", "user", "root-a", alwaysTrue(), alwaysTrue());
 
         assertTrue(result.pending().isEmpty());
         assertEquals(0, result.pendingCount());
@@ -68,18 +68,19 @@ class PendingChallengeGuardTest {
     }
 
     @Test
-    void discountsCurrentAuthSessionChallenge() {
+    void keepsChallengesFromOtherRoots() {
         PushChallengeStore store = mock(PushChallengeStore.class);
-        PushChallenge current = challenge("current", "root-b");
-        when(store.findPendingAuthenticationForUser("realm", "user")).thenReturn(List.of(current));
+        PushChallenge otherRoot = challenge("other-root", "root-b");
+        when(store.findPendingAuthenticationForUser("realm", "user")).thenReturn(List.of(otherRoot));
 
         PendingChallengeGuard guard = new PendingChallengeGuard(store);
         PendingChallengeGuard.PendingCheckResult result =
-                guard.cleanAndCount("realm", "user", "root-a", current.getId(), alwaysTrue(), alwaysTrue());
+                guard.cleanAndCount("realm", "user", "root-a", alwaysTrue(), alwaysTrue());
 
-        assertTrue(result.pending().isEmpty());
-        assertEquals(0, result.pendingCount());
-        verify(store).remove(current.getId());
+        assertEquals(1, result.pending().size());
+        assertEquals(otherRoot.getId(), result.pending().get(0).getId());
+        assertEquals(1, result.pendingCount());
+        verify(store, never()).remove(otherRoot.getId());
     }
 
     private PushChallenge challenge(String id, String rootSessionId) {

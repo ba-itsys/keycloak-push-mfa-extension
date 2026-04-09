@@ -194,7 +194,7 @@ class PushMfaAuthenticatorCoreTest {
 
         config.setConfig(Map.of(PushMfaConstants.MAX_PENDING_AUTH_CHALLENGES_CONFIG, "1"));
 
-        assertTrue(authenticator.checkPendingChallengeLimit(context, null));
+        assertTrue(authenticator.checkPendingChallengeLimit(context));
     }
 
     @Test

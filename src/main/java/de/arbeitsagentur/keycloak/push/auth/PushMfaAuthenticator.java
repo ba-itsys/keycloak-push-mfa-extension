@@ -187,7 +187,7 @@ public class PushMfaAuthenticator implements Authenticator {
         }
 
         try {
-            if (checkPendingChallengeLimit(context, null)) {
+            if (checkPendingChallengeLimit(context)) {
                 return;
             }
             if (checkWaitChallengeLimit(context)) {
@@ -404,7 +404,7 @@ public class PushMfaAuthenticator implements Authenticator {
      *
      * @return true if the limit is reached and the request should be blocked
      */
-    protected boolean checkPendingChallengeLimit(AuthenticationFlowContext context, String excludeId) {
+    protected boolean checkPendingChallengeLimit(AuthenticationFlowContext context) {
         PushChallengeStore store = createChallengeStore(context.getSession());
         int maxPending = AuthenticatorConfigHelper.parsePositiveInt(
                 context.getAuthenticatorConfig(),
@@ -424,7 +424,6 @@ public class PushMfaAuthenticator implements Authenticator {
                 context.getRealm().getId(),
                 context.getUser().getId(),
                 rootSessionId,
-                excludeId,
                 ch -> isAuthSessionActive(context, ch),
                 ch -> resolveCredentialForChallenge(context.getUser(), ch) != null);
 

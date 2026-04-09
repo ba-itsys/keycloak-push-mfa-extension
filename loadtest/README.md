@@ -1,72 +1,50 @@
 # Load Testing
 
-This subproject contains the browser-side load harness used to reproduce clustered push-MFA login behavior with real SSE streams. It drives the real Keycloak login pages, opens the browser `EventSource`, approves the push challenge from the device side, and completes the browser flow through the real continuation form.
+This directory contains the k6-based loadtest setup for the push-MFA browser flow.
+
+The loadtest uses:
+
+- protocol-level HTTP for admin setup, enrollment, and device-side approval
+- the k6 browser module for the login wait page, so the page's own `EventSource` logic is exercised
+- the official `grafana/k6:master-with-browser` image by default
 
 ## Scope
 
-This setup is meant to answer one question: does the real browser + SSE + device flow still hold up when requests are spread across multiple Keycloak nodes?
+The goal of this setup is to test the real clustered login flow, including browser-side SSE behavior, under load.
 
 What it covers:
 
-- Two Keycloak nodes
-- Shared Postgres
-- Shared Keycloak cache cluster via `KC_CACHE=ispn` and `KC_CACHE_STACK=jdbc-ping`
-- Real realm import from `config/demo-realm.json`
-- Real browser waiting pages and continuation forms
-- Real SSE subscriptions on `/realms/<realm>/push-mfa/login/challenges/<cid>/events`
-- Cross-node routing for browser, enrollment, and device requests
+- real login pages
+- real browser-side SSE handling
+- real device challenge approval flow
+- clustered Keycloak nodes with shared cache state
+- both front-door-only and forced cross-node request patterns
 
 What it does not cover:
 
-- TLS termination
-- A production-grade external load balancer
-- Mobile push delivery latency from FCM/APNs
-- More than two Keycloak nodes
+- mobile push delivery latency from FCM or APNs
+- a distributed load-generator farm
+- more than two Keycloak nodes in the local compose setup
 
-## Topology
+## Files
 
-The compose stack starts four containers:
+- [push-mfa-browser.js](/Users/dominik/projects/keycloak-push-mfa-poc/loadtest/push-mfa-browser.js)
+  k6 scenario script
+- [run-k6-browser.sh](/Users/dominik/projects/keycloak-push-mfa-poc/loadtest/run-k6-browser.sh)
+  wrapper around the official browser-enabled k6 image
+- [docker-compose.cluster.yml](/Users/dominik/projects/keycloak-push-mfa-poc/loadtest/docker-compose.cluster.yml)
+  local two-node Keycloak cluster
+- [haproxy.cfg](/Users/dominik/projects/keycloak-push-mfa-poc/loadtest/haproxy.cfg)
+  minimal front door for the local cluster
+
+## Local Cluster
+
+The local compose stack starts:
 
 - `postgres`
 - `keycloak-1`
 - `keycloak-2`
 - `haproxy`
-
-Traffic model:
-
-- Admin setup goes through HAProxy
-- Browser traffic is sent directly to both Keycloak nodes in the order configured by the harness
-- Enrollment-device traffic is also spread across both nodes
-- Login-device traffic is intentionally reversed across both nodes
-
-That URI mix is deliberate. It avoids accidental stickiness and makes cross-node SSE state handling visible.
-
-## Prerequisites
-
-- Docker
-- Java 21
-- Maven
-
-## Build
-
-Build and install the extension first. This produces the fixed provider artifact at `target/keycloak-push-mfa-extension.jar`, which the compose stack mounts into both Keycloak nodes, and installs the extension artifact into the local Maven repository so the loadtest module can depend on it normally.
-
-```bash
-mvn install -DskipTests
-```
-
-Then build the harness:
-
-```bash
-mvn -f loadtest/pom.xml package
-```
-
-The harness can target either:
-
-- the local compose setup in this directory
-- an external Keycloak cluster or ingress endpoint
-
-## Start The Cluster
 
 Default ports:
 
@@ -74,277 +52,228 @@ Default ports:
 - Keycloak node 1: `18081`
 - Keycloak node 2: `18082`
 
-Start the stack:
+Start it:
 
 ```bash
 docker compose -f loadtest/docker-compose.cluster.yml up -d
 ```
 
-Wait until the realm is reachable through HAProxy:
+Wait until the realm is reachable:
 
 ```bash
 until curl -fsS http://localhost:18080/realms/demo/.well-known/openid-configuration >/dev/null; do sleep 2; done
 ```
 
-If those ports are already in use, override them at startup time:
+For the default local setup, the k6 container reaches Keycloak over plain HTTP via `host.docker.internal`. That means the admin password-grant token request against `master` also comes in over HTTP. If your local stack still has `master.sslRequired=external`, relax it once before running the loadtest:
+
+```bash
+docker compose -f loadtest/docker-compose.cluster.yml exec -T keycloak-1 \
+  /opt/keycloak/bin/kcadm.sh config credentials \
+  --server http://localhost:8080 --realm master --user admin --password admin
+
+docker compose -f loadtest/docker-compose.cluster.yml exec -T keycloak-1 \
+  /opt/keycloak/bin/kcadm.sh update realms/master -s sslRequired=NONE
+```
+
+If those ports are busy, use alternates:
 
 ```bash
 HAPROXY_PORT=18180 KC1_PORT=18181 KC2_PORT=18182 \
 docker compose -f loadtest/docker-compose.cluster.yml up -d
 ```
 
-Then wait on the overridden HAProxy port:
+## Why Two Routing Modes Exist
+
+There are two useful ways to drive the cluster:
+
+- front-door-only:
+  all browser and device traffic goes through HAProxy or another ingress
+- forced cross-node:
+  browser and device requests are pointed at explicit nodes so cross-node behavior is guaranteed instead of probabilistic
+
+Round-robin HAProxy is valid and simpler. It is good for "does this work behind the balancer?".
+
+Explicit node URIs are more targeted. They are useful when you want to force:
+
+- browser login on one node
+- device approval on another node
+- reconnects and continuation on different nodes
+
+## Running The k6 Loadtest
+
+The wrapper uses Docker and the official browser-enabled k6 image, so you do not need a local k6 install.
+
+Default local run:
 
 ```bash
-until curl -fsS http://localhost:18180/realms/demo/.well-known/openid-configuration >/dev/null; do sleep 2; done
+./loadtest/run-k6-browser.sh
 ```
+
+Example higher-rate local run:
+
+```bash
+LOAD_RATE_PER_SECOND=30 \
+LOAD_DURATION_SECONDS=30 \
+LOAD_PRE_ALLOCATED_VUS=40 \
+LOAD_MAX_VUS=40 \
+LOAD_USER_COUNT=40 \
+./loadtest/run-k6-browser.sh
+```
+
+Example higher-rate local run against alternate ports:
+
+```bash
+LOAD_ADMIN_BASE_URI=http://host.docker.internal:18180 \
+LOAD_BROWSER_BASE_URIS=http://host.docker.internal:18181,http://host.docker.internal:18182 \
+LOAD_ENROLLMENT_DEVICE_BASE_URIS=http://host.docker.internal:18181,http://host.docker.internal:18182 \
+LOAD_DEVICE_BASE_URIS=http://host.docker.internal:18182,http://host.docker.internal:18181 \
+LOAD_RATE_PER_SECOND=30 \
+LOAD_DURATION_SECONDS=30 \
+LOAD_PRE_ALLOCATED_VUS=40 \
+LOAD_MAX_VUS=40 \
+LOAD_USER_COUNT=40 \
+./loadtest/run-k6-browser.sh
+```
+
+The wrapper defaults use `host.docker.internal` because the browser-enabled k6 process runs inside Docker.
 
 ## External Cluster Mode
 
-You can also point the harness at an existing cluster instead of the local compose stack.
+You can point the same script at an external Keycloak cluster.
 
-Required external prerequisites:
+Required inputs:
 
-- a realm with the push-MFA extension enabled
-- a browser client that supports the chosen redirect URI
-- the device client credentials used by the extension
-- admin credentials with enough rights to create users, reset credentials, and update the authenticator configuration
+- admin base URI
+- target realm
+- admin credentials
+- browser client id and redirect URI
+- device client id and secret
 
-Important properties for external targets:
-
-- `load.realm`
-  Target realm name. Default: `demo`
-- `load.adminRealm`
-  Admin login realm. Default: `master`
-- `load.adminUsername`
-  Default: `admin`
-- `load.adminPassword`
-  Default: `admin`
-- `load.adminClientId`
-  Default: `admin-cli`
-- `load.browserClientId`
-  Browser OIDC client used for the login flow. Default: `test-app`
-- `load.browserRedirectUri`
-  Redirect URI for the browser client. Default: `http://localhost:8080/test-app/callback`
-- `load.deviceClientId`
-  Device client used for DPoP-bound token acquisition. Default: `push-device-client`
-- `load.deviceClientSecret`
-  Default: `device-client-secret`
-
-Example front-door-only run against an external cluster:
+Example front-door-only run:
 
 ```bash
-mvn -f loadtest/pom.xml exec:java \
-  -Dload.adminBaseUri=https://keycloak.example.com \
-  -Dload.browserBaseUris=https://keycloak.example.com \
-  -Dload.enrollmentDeviceBaseUris=https://keycloak.example.com \
-  -Dload.deviceBaseUris=https://keycloak.example.com \
-  -Dload.realm=demo \
-  -Dload.adminRealm=master \
-  -Dload.adminUsername=admin \
-  -Dload.adminPassword=secret \
-  -Dload.adminClientId=admin-cli \
-  -Dload.browserClientId=test-app \
-  -Dload.browserRedirectUri=https://app.example.com/callback \
-  -Dload.deviceClientId=push-device-client \
-  -Dload.deviceClientSecret=device-client-secret
+LOAD_ADMIN_BASE_URI=https://keycloak.example.com \
+LOAD_BROWSER_BASE_URIS=https://keycloak.example.com \
+LOAD_ENROLLMENT_DEVICE_BASE_URIS=https://keycloak.example.com \
+LOAD_DEVICE_BASE_URIS=https://keycloak.example.com \
+LOAD_REALM=demo \
+LOAD_ADMIN_REALM=master \
+LOAD_ADMIN_USERNAME=admin \
+LOAD_ADMIN_PASSWORD=secret \
+LOAD_BROWSER_CLIENT_ID=test-app \
+LOAD_BROWSER_REDIRECT_URI=https://keycloak.example.com/test-app/callback \
+LOAD_DEVICE_CLIENT_ID=push-device-client \
+LOAD_DEVICE_CLIENT_SECRET=device-client-secret \
+./loadtest/run-k6-browser.sh
 ```
 
-Example forced cross-node run against an external cluster with two explicit node URLs:
+Example forced cross-node run:
 
 ```bash
-mvn -f loadtest/pom.xml exec:java \
-  -Dload.adminBaseUri=https://kc-lb.example.com \
-  -Dload.browserBaseUris=https://kc-1.example.com,https://kc-2.example.com \
-  -Dload.enrollmentDeviceBaseUris=https://kc-1.example.com,https://kc-2.example.com \
-  -Dload.deviceBaseUris=https://kc-2.example.com,https://kc-1.example.com \
-  -Dload.realm=demo \
-  -Dload.browserClientId=test-app \
-  -Dload.browserRedirectUri=https://app.example.com/callback \
-  -Dload.deviceClientId=push-device-client \
-  -Dload.deviceClientSecret=device-client-secret
+LOAD_ADMIN_BASE_URI=https://kc-lb.example.com \
+LOAD_BROWSER_BASE_URIS=https://kc-1.example.com,https://kc-2.example.com \
+LOAD_ENROLLMENT_DEVICE_BASE_URIS=https://kc-1.example.com,https://kc-2.example.com \
+LOAD_DEVICE_BASE_URIS=https://kc-2.example.com,https://kc-1.example.com \
+LOAD_REALM=demo \
+LOAD_BROWSER_CLIENT_ID=test-app \
+LOAD_BROWSER_REDIRECT_URI=https://kc-lb.example.com/test-app/callback \
+LOAD_DEVICE_CLIENT_ID=push-device-client \
+LOAD_DEVICE_CLIENT_SECRET=device-client-secret \
+./loadtest/run-k6-browser.sh
 ```
 
-## HAProxy Notes
-
-HAProxy is intentionally minimal. It exists to give the cluster one shared front door for admin setup and realistic forwarded headers.
-
-Important details:
-
-- `X-Forwarded-Proto` is fixed to `http`
-- `X-Forwarded-Host` uses only the host portion of the incoming header
-- `X-Forwarded-Port` uses the explicit external port from the incoming header
-
-That host/port split matters. If forwarded headers are wrong, Keycloak can generate invalid frontend URLs and OIDC discovery through HAProxy can fail.
-
-## Why The Harness Does Not Use HAProxy For Every Request
-
-The harness does not send browser and device traffic through HAProxy by default because the goal of this setup is to exercise cross-node state handling deliberately, not just "whatever the load balancer happened to do".
-
-Direct node URIs give the harness two useful properties:
-
-- It can force browser and device actions for the same login onto different nodes.
-- It can reproduce non-sticky routing consistently instead of depending on whichever backend HAProxy happens to pick next.
-
-If all traffic goes through HAProxy, that is still a valid test, but it answers a slightly different question:
-
-- "Does the system work behind this balancer?"
-
-rather than:
-
-- "Does the push-MFA flow still work when the browser, SSE reconnect, and device approval bounce across nodes?"
-
-If you want the front-door-only mode, point every base URI at HAProxy:
+If the external cluster is already configured the way you want, you can skip the admin-side authenticator adjustments:
 
 ```bash
-mvn -f loadtest/pom.xml exec:java \
-  -Dload.adminBaseUri=http://localhost:18080 \
-  -Dload.browserBaseUris=http://localhost:18080 \
-  -Dload.enrollmentDeviceBaseUris=http://localhost:18080 \
-  -Dload.deviceBaseUris=http://localhost:18080
+LOAD_CONFIGURE_PUSH_MFA=false ./loadtest/run-k6-browser.sh
 ```
 
-That mode is useful as an additional sanity check, but it is less targeted for uncovering cross-node SSE and auth-session issues.
+## Important Environment Variables
 
-## Run The Browser SSE Harness
-
-Default run:
-
-```bash
-mvn -f loadtest/pom.xml exec:java
-```
-
-Example higher-rate run on the default ports:
-
-```bash
-mvn -f loadtest/pom.xml exec:java \
-  -Dload.ratePerSecond=30 \
-  -Dload.durationSeconds=30 \
-  -Dload.userCount=30 \
-  -Dload.workerThreads=40
-```
-
-Example higher-rate run on the alternate `18180/18181/18182` ports:
-
-```bash
-mvn -f loadtest/pom.xml exec:java \
-  -Dload.adminBaseUri=http://localhost:18180 \
-  -Dload.browserBaseUris=http://localhost:18181,http://localhost:18182 \
-  -Dload.enrollmentDeviceBaseUris=http://localhost:18181,http://localhost:18182 \
-  -Dload.deviceBaseUris=http://localhost:18182,http://localhost:18181 \
-  -Dload.ratePerSecond=30 \
-  -Dload.durationSeconds=30 \
-  -Dload.userCount=30 \
-  -Dload.workerThreads=40
-```
-
-Useful properties:
-
-- `load.adminBaseUri`
-  Default: `http://localhost:18080`
-- `load.browserBaseUris`
-  Default: `http://localhost:18081,http://localhost:18082`
-- `load.enrollmentDeviceBaseUris`
-  Default: `http://localhost:18081,http://localhost:18082`
-- `load.deviceBaseUris`
-  Default: `http://localhost:18082,http://localhost:18081`
-- `load.userPrefix`
-  Default: `load-user-`
-- `load.password`
-  Default: `load-test`
-- `load.realm`
+- `LOAD_ADMIN_BASE_URI`
+  Base URI used for admin setup and default redirect generation
+- `LOAD_BROWSER_BASE_URIS`
+  Comma-separated browser target URIs
+- `LOAD_ENROLLMENT_DEVICE_BASE_URIS`
+  Comma-separated device URIs used during enrollment
+- `LOAD_DEVICE_BASE_URIS`
+  Comma-separated device URIs used during login approval
+- `LOAD_REALM`
   Default: `demo`
-- `load.adminRealm`
+- `LOAD_ADMIN_REALM`
   Default: `master`
-- `load.adminUsername`
+- `LOAD_ADMIN_USERNAME`
   Default: `admin`
-- `load.adminPassword`
+- `LOAD_ADMIN_PASSWORD`
   Default: `admin`
-- `load.adminClientId`
+- `LOAD_ADMIN_CLIENT_ID`
   Default: `admin-cli`
-- `load.browserClientId`
+- `LOAD_BROWSER_CLIENT_ID`
   Default: `test-app`
-- `load.browserRedirectUri`
-  Default: `http://localhost:8080/test-app/callback`
-- `load.deviceClientId`
+- `LOAD_BROWSER_REDIRECT_URI`
+  Default: browser target base URI + `/${LOAD_BROWSER_CLIENT_ID}/callback`
+- `LOAD_DEVICE_CLIENT_ID`
   Default: `push-device-client`
-- `load.deviceClientSecret`
+- `LOAD_DEVICE_CLIENT_SECRET`
   Default: `device-client-secret`
-- `load.ratePerSecond`
+- `LOAD_USER_PREFIX`
+  Default: `load-user-`
+- `LOAD_PASSWORD`
+  Default: `load-test`
+- `LOAD_USER_COUNT`
+  Default: `40`
+- `LOAD_RATE_PER_SECOND`
   Default: `10`
-- `load.durationSeconds`
+- `LOAD_DURATION_SECONDS`
   Default: `30`
-- `load.userCount`
-  Default: `30`
-- `load.workerThreads`
-  Default: `20`
+- `LOAD_PRE_ALLOCATED_VUS`
+  Default: `40`
+- `LOAD_MAX_VUS`
+  Default: `40`
+- `LOAD_CONFIGURE_PUSH_MFA`
+  Default: `true`
+- `LOAD_INSECURE_TLS`
+  Default: `false`
 
-## What The Harness Actually Does
+## What The Script Does
 
-For each test user, the harness:
+Setup phase:
 
-1. Creates or resets the user through the admin API.
-2. Enrolls one device by driving the real browser enrollment page and the real device enrollment endpoint.
-3. Resets the browser session so the actual load run starts clean.
+1. Logs in to the admin API.
+2. Optionally sets the push authenticator to:
+   `userVerification=none`, `autoAddRequiredAction=true`, `waitChallengeEnabled=false`
+3. If `LOAD_BROWSER_CLIENT_ID=test-app`, widens that client's redirect URIs to the target callback URLs.
+4. Creates or updates the load users.
+5. Clears push credentials and sessions for those users.
+6. Pre-enrolls one device per user before the measured load starts.
 
-For each login attempt, the harness:
+Per VU iteration:
 
-1. Opens the real browser login page.
-2. Submits username/password.
-3. Extracts the login challenge and SSE URL from the waiting page.
-4. Opens a real SSE client against that URL.
-5. Approves the challenge from the device side.
-6. Waits for `APPROVED` on the SSE stream.
-7. Submits the waiting form back to Keycloak to finish the flow.
-
-This means the load test exercises the real browser-side waiting path, not a shortcut API-only approximation.
-
-## Observability
-
-Useful commands while the stack is running:
-
-Show cluster logs:
-
-```bash
-docker compose -f loadtest/docker-compose.cluster.yml logs -f keycloak-1 keycloak-2 haproxy
-```
-
-Check the imported realm through HAProxy:
-
-```bash
-curl -fsS http://localhost:18080/realms/demo/.well-known/openid-configuration
-```
-
-Check for server warnings and errors from the recent run:
-
-```bash
-docker compose -f loadtest/docker-compose.cluster.yml logs --since 2m keycloak-1 keycloak-2 | rg "\\] ERROR |\\] WARN "
-```
+1. Opens a real Chromium page for login.
+2. Submits username and password.
+3. Waits on the real login wait page.
+4. Approves the challenge from the pre-enrolled device side with DPoP.
+5. Lets the page's own `EventSource` logic receive the SSE update and auto-submit.
+6. Waits for the browser to reach the configured callback URL with an authorization code.
 
 ## Interpreting Results
 
-The harness prints:
+k6 prints the standard summary:
 
-- attempts started, completed, succeeded, and failed
-- user-pool timeouts
-- observed throughput
-- latency percentiles
-- top failure categories
+- iterations
+- iteration rate
+- browser and HTTP timings
+- checks and failures
 
-Treat those numbers as environment-specific. Results depend on the machine, Docker runtime, JVM, Keycloak version, and whether you route traffic directly to nodes or through HAProxy.
+Treat the numbers as environment-specific. They depend on:
 
-If you want to keep a run for later comparison, redirect the output into `target/loadtest/`:
+- the machine running k6
+- Docker runtime overhead
+- browser mode overhead
+- Keycloak topology
+- whether traffic is front-door-only or forced across nodes
 
-```bash
-mvn -f loadtest/pom.xml exec:java \
-  -Dload.ratePerSecond=30 \
-  -Dload.durationSeconds=30 \
-  -Dload.userCount=30 \
-  -Dload.workerThreads=40 \
-  > target/loadtest/example-run.out 2>&1
-```
-
-## Stop The Cluster
+## Stop The Local Cluster
 
 ```bash
 docker compose -f loadtest/docker-compose.cluster.yml down -v

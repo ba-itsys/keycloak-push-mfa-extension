@@ -47,23 +47,14 @@ public final class DeviceClient {
     private final URI realmBase;
     private final URI tokenEndpoint;
     private final DeviceState state;
-    private final String deviceClientId;
-    private final String deviceClientSecret;
     private final HttpClient http =
             HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
     private String accessToken;
 
     public DeviceClient(URI baseUri, DeviceState state) {
-        this(baseUri, "demo", DEVICE_CLIENT_ID, DEVICE_CLIENT_SECRET, state);
-    }
-
-    public DeviceClient(
-            URI baseUri, String realmName, String deviceClientId, String deviceClientSecret, DeviceState state) {
-        this.realmBase = baseUri.resolve("/realms/" + urlEncode(Objects.requireNonNull(realmName)) + "/");
+        this.realmBase = baseUri.resolve("/realms/demo/");
         this.tokenEndpoint = realmBase.resolve("protocol/openid-connect/token");
         this.state = state;
-        this.deviceClientId = Objects.requireNonNull(deviceClientId);
-        this.deviceClientSecret = Objects.requireNonNull(deviceClientSecret);
     }
 
     public DeviceState state() {
@@ -256,7 +247,7 @@ public final class DeviceClient {
                     .header("DPoP", createDpopProof("POST", tokenEndpoint))
                     .header("Content-Type", "application/x-www-form-urlencoded")
                     .POST(HttpRequest.BodyPublishers.ofString("grant_type=client_credentials&client_id="
-                            + urlEncode(deviceClientId) + "&client_secret=" + urlEncode(deviceClientSecret)))
+                            + urlEncode(DEVICE_CLIENT_ID) + "&client_secret=" + urlEncode(DEVICE_CLIENT_SECRET)))
                     .build();
             HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
             lastResponse = response;

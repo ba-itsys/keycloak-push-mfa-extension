@@ -31,7 +31,6 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Objects;
 import java.util.UUID;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -42,16 +41,12 @@ public final class BrowserSession {
     private final URI realmBase;
     private final HttpClient http;
     private final CookieManager cookieManager;
-    private final String redirectUri;
+    private final String redirectUri = "http://localhost:8080/test-app/callback";
     private final String realmHost;
     private final int realmPort;
 
     public BrowserSession(URI baseUri) {
-        this(baseUri, "demo", "http://localhost:8080/test-app/callback");
-    }
-
-    public BrowserSession(URI baseUri, String realmName, String redirectUri) {
-        this.realmBase = baseUri.resolve("/realms/" + urlEncode(Objects.requireNonNull(realmName)) + "/");
+        this.realmBase = baseUri.resolve("/realms/demo/");
         this.cookieManager = new CookieManager();
         this.cookieManager.setCookiePolicy(CookiePolicy.ACCEPT_ALL);
         this.http = HttpClient.newBuilder()
@@ -59,13 +54,8 @@ public final class BrowserSession {
                 .cookieHandler(this.cookieManager)
                 .followRedirects(HttpClient.Redirect.NEVER)
                 .build();
-        this.redirectUri = Objects.requireNonNull(redirectUri);
         this.realmHost = baseUri.getHost();
         this.realmPort = normalizePort(baseUri);
-    }
-
-    public void resetSession() {
-        cookieManager.getCookieStore().removeAll();
     }
 
     public String extractUserVerification(HtmlPage page) {

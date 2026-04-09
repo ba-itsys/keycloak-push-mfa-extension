@@ -108,12 +108,12 @@ Each Push MFA credential has **two distinct IDs**:
 
    See [DPoP Authentication](#dpop-authentication) for the proof format and how access tokens are obtained.
 
-5. **Browser wait (SSE):** The Keycloak login UI opens an `EventSource` for the login challenge. The SSE stream stays open while the challenge remains `PENDING`. Each Keycloak node keeps a node-local registry of its connected browsers and one poller thread that checks the shared challenge store for those local registrations. Once the status switches away from `PENDING`, the waiting form automatically submits and the flow proceeds. The legacy `GET /push-mfa/login/pending` endpoint is still available for scripts and debugging.
+5. **Browser wait (SSE):** The Keycloak login UI opens an `EventSource` for the login challenge. The SSE stream stays open while the challenge remains `PENDING`. The serving node rereads the shared challenge state until it changes, sends heartbeat comments while pending, and closes after a bounded lifetime so the browser reconnects cleanly if needed. Once the status switches away from `PENDING`, the waiting form automatically submits and the flow proceeds. The legacy `GET /push-mfa/login/pending` endpoint is still available for scripts and debugging.
 
 ## Enrollment SSE Details
 
 - **Endpoint:** `GET /realms/<realm>/push-mfa/enroll/challenges/{challengeId}/events?secret=<watchSecret>` streams `text/event-stream`. The `watchSecret` is a per-challenge random value stored in `PushChallenge.watchSecret`; it acts as a capability secret for watching enrollment progress.
-- **Server behavior:** `PushMfaResource#streamEnrollmentEvents` validates `challengeId + watchSecret`, rejects invalid streams immediately, and keeps valid `PENDING` streams registered on the current node. A single node-local poller thread reads the shared challenge store for all locally registered watchers and emits status changes only to the matching SSE sink. Each event payload is JSON shaped like:
+- **Server behavior:** `PushMfaResource#streamEnrollmentEvents` validates `challengeId + watchSecret`, rejects invalid streams immediately, and then streams the current challenge state directly from the serving node. While the challenge stays pending, the stream periodically rereads the shared challenge store and emits status changes only when the state changes. Each event payload is JSON shaped like:
 
   ```json
   {
@@ -124,17 +124,17 @@ Each Push MFA credential has **two distinct IDs**:
   }
   ```
 
-  The poller opens a fresh Keycloak transaction for each poll cycle, so it does not reuse request-scoped session objects off-thread.
+  Each read uses a fresh Keycloak transaction against shared challenge storage, so the stream does not depend on request-scoped session state surviving across the whole connection lifetime.
 
 - **Client behavior:** The enrollment page (`push-register.ftl`) starts one `EventSource` pointed at the `eventsUrl`. When a non-`PENDING` status arrives the script closes the stream and submits the hidden `check` form, allowing Keycloak's RequiredAction to complete without manual refresh.
 
-- **Cross-node behavior:** The browser stays attached to whichever node accepted the SSE connection, and that node polls the shared challenge storage for its local registrations. While the stream is pending, the server sends periodic heartbeat comments and intentionally rotates long-lived connections so `EventSource` reconnects before common proxy or firewall idle limits bite. Sticky sessions and node-to-node notifications are not required. If the node goes away, normal `EventSource` reconnect behavior attaches the browser to another node, which then becomes responsible for that client.
+- **Cross-node behavior:** The browser stays attached to whichever node accepted the SSE connection. While the stream is pending, that node rereads the shared challenge storage, sends periodic heartbeat comments, and intentionally rotates long-lived connections so `EventSource` reconnects before common proxy or firewall idle limits bite. Sticky sessions and node-to-node notifications are not required. If the node goes away, normal `EventSource` reconnect behavior attaches the browser to another node, which then becomes responsible for that client.
 
 ## Login SSE Details
 
 - **Endpoint:** `GET /realms/<realm>/push-mfa/login/challenges/{cid}/events?secret=<watchSecret>` streams the status for a login challenge. The authenticator generates a fresh `watchSecret` for every login, stores it with the challenge, and exposes the fully qualified SSE URL to the `push-wait.ftl` template via `pushChallengeWatchUrl`.
 
-- **Server behavior:** `PushMfaResource#streamLoginChallengeEvents` mirrors the enrollment endpoint: validate, reject invalid requests immediately, register valid `PENDING` streams on the local node, and let the node-local poller emit subsequent status changes. Normal `PENDING` updates and heartbeat comments do not carry a `retry:` hint; the configured reconnect delay is reserved for temporary overload responses such as `TOO_MANY_CONNECTIONS`. Payloads look like:
+- **Server behavior:** `PushMfaResource#streamLoginChallengeEvents` mirrors the enrollment endpoint: validate, reject invalid requests immediately, stream the current challenge state, and continue rereading shared challenge state while the login stays pending. Normal `PENDING` updates and heartbeat comments do not carry a `retry:` hint; the configured reconnect delay is reserved for overload responses such as `TOO_MANY_CONNECTIONS` and for intentional server-side connection rotation. Payloads look like:
 
   ```json
   {

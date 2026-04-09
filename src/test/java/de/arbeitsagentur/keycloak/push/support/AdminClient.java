@@ -40,12 +40,32 @@ public final class AdminClient {
     private static final String PUSH_AUTHENTICATOR_ID = "push-mfa-authenticator";
 
     private final URI baseUri;
+    private final String realmName;
+    private final String adminRealmName;
+    private final String adminUsername;
+    private final String adminPassword;
+    private final String adminClientId;
     private final HttpClient http =
             HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
     private String accessToken;
 
     public AdminClient(URI baseUri) {
+        this(baseUri, "demo", "master", "admin", "admin", "admin-cli");
+    }
+
+    public AdminClient(
+            URI baseUri,
+            String realmName,
+            String adminRealmName,
+            String adminUsername,
+            String adminPassword,
+            String adminClientId) {
         this.baseUri = baseUri;
+        this.realmName = Objects.requireNonNull(realmName);
+        this.adminRealmName = Objects.requireNonNull(adminRealmName);
+        this.adminUsername = Objects.requireNonNull(adminUsername);
+        this.adminPassword = Objects.requireNonNull(adminPassword);
+        this.adminClientId = Objects.requireNonNull(adminClientId);
     }
 
     public String ensureUser(String username, String password) throws Exception {
@@ -175,7 +195,7 @@ public final class AdminClient {
      */
     public void clearKeysCaches() throws Exception {
         ensureAccessToken();
-        URI clearKeysCache = baseUri.resolve("/admin/realms/demo/clear-keys-cache");
+        URI clearKeysCache = adminRealmUri("clear-keys-cache");
         HttpRequest keysCacheRequest = HttpRequest.newBuilder(clearKeysCache)
                 .header("Authorization", "Bearer " + accessToken)
                 .POST(HttpRequest.BodyPublishers.noBody())
@@ -193,7 +213,7 @@ public final class AdminClient {
         if (userId == null || userId.isBlank()) {
             throw new IllegalStateException("User not found: " + username);
         }
-        URI userUri = baseUri.resolve("/admin/realms/demo/users/" + userId);
+        URI userUri = adminRealmUri("users/" + userId);
         HttpResponse<String> response = sendGetWithRetry(userUri);
         assertEquals(200, response.statusCode(), () -> "User fetch failed: " + response.body());
         return MAPPER.readTree(response.body()).path("enabled").asBoolean(true);
@@ -205,7 +225,7 @@ public final class AdminClient {
         if (userId == null || userId.isBlank()) {
             throw new IllegalStateException("User not found: " + username);
         }
-        URI userUri = baseUri.resolve("/admin/realms/demo/users/" + userId);
+        URI userUri = adminRealmUri("users/" + userId);
         HttpResponse<String> getResponse = sendGetWithRetry(userUri);
         assertEquals(200, getResponse.statusCode(), () -> "User fetch failed: " + getResponse.body());
         ObjectNode userObject = (ObjectNode) MAPPER.readTree(getResponse.body());
@@ -237,7 +257,7 @@ public final class AdminClient {
         }
 
         // Get current user representation
-        URI userUri = baseUri.resolve("/admin/realms/demo/users/" + userId);
+        URI userUri = adminRealmUri("users/" + userId);
         HttpResponse<String> getResponse = sendGetWithRetry(userUri);
 
         if (getResponse.statusCode() != 200) {
@@ -296,7 +316,7 @@ public final class AdminClient {
             return; // User doesn't exist, nothing to delete
         }
 
-        URI deleteUri = baseUri.resolve("/admin/realms/demo/users/" + userId);
+        URI deleteUri = adminRealmUri("users/" + userId);
         HttpResponse<String> response = sendDeleteWithRetry(deleteUri);
         if (response.statusCode() != 204 && response.statusCode() != 404) {
             throw new IllegalStateException("Failed to delete user: " + response.statusCode() + " " + response.body());
@@ -318,7 +338,7 @@ public final class AdminClient {
         }
 
         // Get current user representation
-        URI userUri = baseUri.resolve("/admin/realms/demo/users/" + userId);
+        URI userUri = adminRealmUri("users/" + userId);
         HttpResponse<String> getResponse = sendGetWithRetry(userUri);
 
         if (getResponse.statusCode() != 200) {
@@ -358,7 +378,7 @@ public final class AdminClient {
     }
 
     private String createUser(String username) throws Exception {
-        URI createUri = baseUri.resolve("/admin/realms/demo/users");
+        URI createUri = adminRealmUri("users");
         String payload = MAPPER.createObjectNode()
                 .put("username", username)
                 .put("enabled", true)
@@ -388,7 +408,7 @@ public final class AdminClient {
     }
 
     private void setUserPassword(String userId, String password) throws Exception {
-        URI resetUri = baseUri.resolve("/admin/realms/demo/users/" + userId + "/reset-password");
+        URI resetUri = adminRealmUri("users/" + userId + "/reset-password");
         String payload = MAPPER.createObjectNode()
                 .put("type", "password")
                 .put("value", password)
@@ -413,15 +433,14 @@ public final class AdminClient {
             if (keycloakCredentialId == null || keycloakCredentialId.isBlank()) {
                 continue;
             }
-            URI deleteUri =
-                    baseUri.resolve("/admin/realms/demo/users/" + userId + "/credentials/" + keycloakCredentialId);
+            URI deleteUri = adminRealmUri("users/" + userId + "/credentials/" + keycloakCredentialId);
             HttpResponse<String> deleteResponse = sendDeleteWithRetry(deleteUri);
             assertEquals(204, deleteResponse.statusCode(), () -> "Credential delete failed: " + deleteResponse.body());
         }
     }
 
     private void logoutUser(String userId) throws Exception {
-        URI logoutUri = baseUri.resolve("/admin/realms/demo/users/" + userId + "/logout");
+        URI logoutUri = adminRealmUri("users/" + userId + "/logout");
         HttpResponse<String> response = sendWithRetry(logoutUri);
         assertEquals(204, response.statusCode(), () -> "Logout failed: " + response.body());
     }
@@ -429,11 +448,11 @@ public final class AdminClient {
     private void clearRealmCaches() throws Exception {
         ensureAccessToken();
 
-        URI clearRealmCache = baseUri.resolve("/admin/realms/demo/clear-realm-cache");
+        URI clearRealmCache = adminRealmUri("clear-realm-cache");
         HttpResponse<String> realmResponse = sendWithRetry(clearRealmCache);
         assertEquals(204, realmResponse.statusCode(), () -> "Realm cache clear failed: " + realmResponse.body());
 
-        URI clearUserCache = baseUri.resolve("/admin/realms/demo/clear-user-cache");
+        URI clearUserCache = adminRealmUri("clear-user-cache");
         HttpResponse<String> userResponse = sendWithRetry(clearUserCache);
         assertEquals(204, userResponse.statusCode(), () -> "User cache clear failed: " + userResponse.body());
     }
@@ -541,7 +560,7 @@ public final class AdminClient {
 
     private JsonNode readCredentials(String userId) throws Exception {
         ensureAccessToken();
-        URI credentialsUri = baseUri.resolve("/admin/realms/demo/users/" + userId + "/credentials");
+        URI credentialsUri = adminRealmUri("users/" + userId + "/credentials");
         HttpResponse<String> response = sendGetWithRetry(credentialsUri);
         assertEquals(200, response.statusCode(), () -> "Credential fetch failed: " + response.body());
         JsonNode items = MAPPER.readTree(response.body());
@@ -552,7 +571,7 @@ public final class AdminClient {
     }
 
     private JsonNode findExecution(String flowAlias, String authenticator) throws Exception {
-        URI uri = baseUri.resolve("/admin/realms/demo/authentication/flows/" + flowAlias + "/executions");
+        URI uri = adminRealmUri("authentication/flows/" + flowAlias + "/executions");
         HttpResponse<String> response = sendGetWithRetry(uri);
 
         if (response.statusCode() != 200) {
@@ -575,7 +594,7 @@ public final class AdminClient {
 
     private String findUserId(String username) throws Exception {
         ensureAccessToken();
-        URI usersUri = baseUri.resolve("/admin/realms/demo/users?username=" + urlEncode(username));
+        URI usersUri = adminRealmUri("users?username=" + urlEncode(username));
         HttpResponse<String> response = sendGetWithRetry(usersUri);
 
         final HttpResponse<String> finalResponse = response;
@@ -595,8 +614,9 @@ public final class AdminClient {
         if (accessToken != null && !accessToken.isBlank()) {
             return;
         }
-        URI tokenUri = baseUri.resolve("/realms/master/protocol/openid-connect/token");
-        String body = "grant_type=password&client_id=admin-cli&username=admin&password=admin";
+        URI tokenUri = baseUri.resolve("/realms/" + urlEncode(adminRealmName) + "/protocol/openid-connect/token");
+        String body = "grant_type=password&client_id=" + urlEncode(adminClientId) + "&username="
+                + urlEncode(adminUsername) + "&password=" + urlEncode(adminPassword);
         HttpRequest request = HttpRequest.newBuilder(tokenUri)
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(HttpRequest.BodyPublishers.ofString(body))
@@ -624,6 +644,10 @@ public final class AdminClient {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
+    private URI adminRealmUri(String path) {
+        return baseUri.resolve("/admin/realms/" + urlEncode(realmName) + "/" + path);
+    }
+
     private void updatePushMfaAuthenticatorConfig(Map<String, String> updates) throws Exception {
         ensureAccessToken();
         JsonNode execution = findExecution(PUSH_FLOW_ALIAS, PUSH_AUTHENTICATOR_ID);
@@ -644,8 +668,7 @@ public final class AdminClient {
         }
 
         if (configId == null) {
-            URI createConfigUri =
-                    baseUri.resolve("/admin/realms/demo/authentication/executions/" + executionId + "/config");
+            URI createConfigUri = adminRealmUri("authentication/executions/" + executionId + "/config");
             ObjectNode configNode = MAPPER.createObjectNode();
             for (Map.Entry<String, String> entry : updates.entrySet()) {
                 if (entry.getValue() != null) {
@@ -667,7 +690,7 @@ public final class AdminClient {
                         "Failed to create authenticator config: " + response.statusCode() + " body=" + response.body());
             }
         } else {
-            URI configUri = baseUri.resolve("/admin/realms/demo/authentication/config/" + configId);
+            URI configUri = adminRealmUri("authentication/config/" + configId);
             HttpResponse<String> existingResponse = sendGetWithRetry(configUri);
             if (existingResponse.statusCode() != 200) {
                 throw new IllegalStateException("Failed to read authenticator config: " + existingResponse.statusCode()
@@ -707,7 +730,7 @@ public final class AdminClient {
     private void updatePushMfaRequiredActionConfig(Map<String, String> updates) throws Exception {
         ensureAccessToken();
         String alias = PushMfaConstants.REQUIRED_ACTION_ID;
-        URI listUri = baseUri.resolve("/admin/realms/demo/authentication/required-actions");
+        URI listUri = adminRealmUri("authentication/required-actions");
         HttpResponse<String> listResponse = sendGetWithRetry(listUri);
         if (listResponse.statusCode() != 200) {
             throw new IllegalStateException(
@@ -745,7 +768,7 @@ public final class AdminClient {
         }
         payload.set("config", configNode);
 
-        URI updateUri = baseUri.resolve("/admin/realms/demo/authentication/required-actions/" + alias);
+        URI updateUri = adminRealmUri("authentication/required-actions/" + alias);
         HttpResponse<String> updateResponse = sendPutWithRetry(updateUri, payload.toString());
         if (updateResponse.statusCode() != 204) {
             throw new IllegalStateException("Failed to update required action config: " + updateResponse.statusCode()
@@ -780,7 +803,7 @@ public final class AdminClient {
                 continue;
             }
 
-            URI configUri = baseUri.resolve("/admin/realms/demo/authentication/config/" + configId);
+            URI configUri = adminRealmUri("authentication/config/" + configId);
             HttpResponse<String> response = sendGetWithRetry(configUri);
             if (response.statusCode() != 200) {
                 Thread.sleep(100L * (attempt + 1));

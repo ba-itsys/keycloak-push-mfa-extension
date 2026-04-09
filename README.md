@@ -94,7 +94,7 @@ sequenceDiagram
     Browser->>Keycloak: Auto-Submit Form (Login Success)
 ```
 
-The SSE endpoints keep one browser stream per watch page, but each Keycloak node uses a single node-local poller thread to watch the shared challenge store for all of its currently connected SSE clients. Pending streams get periodic heartbeat comments and are rotated after a configurable maximum lifetime so browsers reconnect cleanly through proxies and firewalls. Cross-node delivery works because every node reads the same challenge state from shared storage; if a node dies, the browser's normal `EventSource` reconnect can land on another node and that node becomes responsible for the stream.
+The SSE endpoints keep one browser stream per watch page and read challenge state from shared storage. Pending streams get periodic heartbeat comments and are rotated after a configurable maximum lifetime so browsers reconnect cleanly through proxies and firewalls. Cross-node delivery works because every node reads the same challenge state from shared storage; if a node dies, the browser's normal `EventSource` reconnect can land on another node and that node becomes responsible for the stream.
 
 ## Documentation
 
@@ -110,3 +110,4 @@ The SSE endpoints keep one browser stream per watch page, but each Keycloak node
 | [Security](docs/security.md) | Security model and mobile app obligations |
 | [Mobile Mock](docs/mobile-mock.md) | Testing without a real mobile app |
 | [Troubleshooting](docs/troubleshooting.md) | Common issues and solutions |
+| [Load Testing](loadtest/README.md) | Two-node browser+SSE loadtest setup and reproduction commands |

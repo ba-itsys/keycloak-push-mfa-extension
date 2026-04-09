@@ -1,0 +1,94 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  keycloak-1:
+    image: quay.io/keycloak/keycloak:${KEYCLOAK_VERSION:-26.5.4}
+    command:
+      - start
+      - --http-enabled=true
+      - --hostname-strict=false
+      - --proxy-headers=xforwarded
+      - --features=dpop
+      - --import-realm
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL_HOST: postgres
+      KC_DB_URL_DATABASE: keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
+      KC_CACHE: ispn
+      KC_CACHE_STACK: jdbc-ping
+      KC_LOG_LEVEL: info,de.arbeitsagentur.keycloak.push:debug
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "bash -lc \"exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /realms/demo/.well-known/openid-configuration HTTP/1.1\\\\r\\\\nHost: localhost\\\\r\\\\n\\\\r\\\\n' >&3 && grep -q '200' <&3\""]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    ports:
+      - "${KC1_PORT:-18081}:8080"
+    volumes:
+      - ../target/keycloak-push-mfa-extension.jar:/opt/keycloak/providers/keycloak-push-mfa-extension.jar:ro
+      - ../config:/opt/keycloak/data/import:ro
+
+  keycloak-2:
+    image: quay.io/keycloak/keycloak:${KEYCLOAK_VERSION:-26.5.4}
+    command:
+      - start
+      - --http-enabled=true
+      - --hostname-strict=false
+      - --proxy-headers=xforwarded
+      - --features=dpop
+      - --import-realm
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL_HOST: postgres
+      KC_DB_URL_DATABASE: keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
+      KC_CACHE: ispn
+      KC_CACHE_STACK: jdbc-ping
+      KC_LOG_LEVEL: info,de.arbeitsagentur.keycloak.push:debug
+    depends_on:
+      keycloak-1:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "bash -lc \"exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /realms/demo/.well-known/openid-configuration HTTP/1.1\\\\r\\\\nHost: localhost\\\\r\\\\n\\\\r\\\\n' >&3 && grep -q '200' <&3\""]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    ports:
+      - "${KC2_PORT:-18082}:8080"
+    volumes:
+      - ../target/keycloak-push-mfa-extension.jar:/opt/keycloak/providers/keycloak-push-mfa-extension.jar:ro
+      - ../config:/opt/keycloak/data/import:ro
+
+  haproxy:
+    image: haproxy:3.1
+    depends_on:
+      keycloak-1:
+        condition: service_healthy
+      keycloak-2:
+        condition: service_healthy
+    ports:
+      - "${HAPROXY_PORT:-18080}:8080"
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro

@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.10.1](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.10.0...v1.10.1) (2026-04-10)
+
+
+### Bug Fixes
+
+* docs/impl mismatches ([88ec774](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/88ec77443e80afc7a5e59c86af5fb8b1dc83c7bb))
+
+
+### Dependencies
+
+* **deps-dev:** bump org.testcontainers:testcontainers ([5d22bff](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/5d22bff0a07ebea7200806a41407a13822d5bc17))
+
 ## [1.10.0](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.9.1...v1.10.0) (2026-04-09)
 
 

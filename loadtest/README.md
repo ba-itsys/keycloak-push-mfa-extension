@@ -120,6 +120,61 @@ LOAD_USER_COUNT=40 \
 ./loadtest/run-k6-browser.sh
 ```
 
+Example enrollment-only run at 30 enrollments/s:
+
+```bash
+LOAD_TEST_MODE=enrollment \
+LOAD_RATE_PER_SECOND=30 \
+LOAD_DURATION_SECONDS=30 \
+LOAD_PRE_ALLOCATED_VUS=40 \
+LOAD_MAX_VUS=40 \
+LOAD_USER_COUNT=940 \
+./loadtest/run-k6-browser.sh
+```
+
+Example mixed run with concurrent login and enrollment traffic:
+
+```bash
+LOAD_TEST_MODE=mixed \
+LOAD_MOBILE_MOCK_BASE_URI=http://host.docker.internal:3001 \
+LOAD_LOGIN_RATE_PER_SECOND=20 \
+LOAD_ENROLLMENT_RATE_PER_SECOND=5 \
+LOAD_DURATION_SECONDS=30 \
+LOAD_LOGIN_PRE_ALLOCATED_VUS=20 \
+LOAD_LOGIN_MAX_VUS=30 \
+LOAD_ENROLLMENT_PRE_ALLOCATED_VUS=10 \
+LOAD_ENROLLMENT_MAX_VUS=20 \
+LOAD_LOGIN_USER_COUNT=40 \
+LOAD_ENROLLMENT_USER_COUNT=170 \
+./loadtest/run-k6-browser.sh
+```
+
+If k6's built-in WebCrypto/browser combination becomes the bottleneck during login-heavy runs, start the mobile mock and let it perform the device-side signing instead:
+
+```bash
+cd mock/mobile
+npm install
+npm run build
+REALM_BASE=http://localhost:18080/realms/demo npm run start
+```
+
+Example pre-seeding a reusable enrollment pool once, then running against that pool without repeating setup:
+
+```bash
+LOAD_TEST_MODE=seed-enrollment \
+LOAD_ENROLLMENT_USER_COUNT=2000 \
+LOAD_ENROLLMENT_USER_OFFSET=1000 \
+./loadtest/run-k6-browser.sh
+
+LOAD_TEST_MODE=enrollment \
+LOAD_SKIP_ENROLLMENT_USER_PREP=true \
+LOAD_ENROLLMENT_USER_OFFSET=1000 \
+LOAD_USER_COUNT=200 \
+LOAD_RATE_PER_SECOND=30 \
+LOAD_DURATION_SECONDS=30 \
+./loadtest/run-k6-browser.sh
+```
+
 Example higher-rate local run against alternate ports:
 
 ```bash
@@ -222,14 +277,38 @@ LOAD_CONFIGURE_PUSH_MFA=false ./loadtest/run-k6-browser.sh
   Default: `load-test`
 - `LOAD_USER_COUNT`
   Default: `40`
+- `LOAD_TEST_MODE`
+  Default: `login` (`enrollment`, `mixed`, and `seed-enrollment` are also supported)
 - `LOAD_RATE_PER_SECOND`
   Default: `10`
+- `LOAD_LOGIN_RATE_PER_SECOND`
+  Default: `LOAD_RATE_PER_SECOND`
+- `LOAD_ENROLLMENT_RATE_PER_SECOND`
+  Default: `LOAD_RATE_PER_SECOND`
 - `LOAD_DURATION_SECONDS`
   Default: `30`
 - `LOAD_PRE_ALLOCATED_VUS`
   Default: `40`
 - `LOAD_MAX_VUS`
   Default: `40`
+- `LOAD_LOGIN_PRE_ALLOCATED_VUS`
+  Default: `LOAD_PRE_ALLOCATED_VUS`
+- `LOAD_LOGIN_MAX_VUS`
+  Default: `LOAD_MAX_VUS`
+- `LOAD_ENROLLMENT_PRE_ALLOCATED_VUS`
+  Default: `LOAD_PRE_ALLOCATED_VUS`
+- `LOAD_ENROLLMENT_MAX_VUS`
+  Default: `LOAD_MAX_VUS`
+- `LOAD_LOGIN_USER_COUNT`
+  Default: `LOAD_USER_COUNT`
+- `LOAD_ENROLLMENT_USER_COUNT`
+  Default: `LOAD_USER_COUNT`
+- `LOAD_LOGIN_USER_OFFSET`
+  Default: `0`
+- `LOAD_ENROLLMENT_USER_OFFSET`
+  Default: next range after the login pool in mixed mode, otherwise `0`
+- `LOAD_SKIP_ENROLLMENT_USER_PREP`
+  Default: `false` (skip per-run admin setup for a previously seeded fresh enrollment pool)
 - `LOAD_CONFIGURE_PUSH_MFA`
   Default: `true`
 - `LOAD_INSECURE_TLS`
@@ -243,18 +322,16 @@ Setup phase:
 2. Optionally sets the push authenticator to:
    `userVerification=none`, `autoAddRequiredAction=true`, `waitChallengeEnabled=false`
 3. If `LOAD_BROWSER_CLIENT_ID=test-app`, widens that client's redirect URIs to the target callback URLs.
-4. Creates or updates the load users.
-5. Clears push credentials and sessions for those users.
-6. Pre-enrolls one device per user before the measured load starts.
+4. Creates or updates the configured login and enrollment user pools.
+5. Clears push credentials and sessions for those users unless the enrollment pool is marked as pre-seeded.
+6. Pre-enrolls one device per login user before the measured load starts.
 
 Per VU iteration:
 
-1. Opens a real Chromium page for login.
-2. Submits username and password.
-3. Waits on the real login wait page.
-4. Approves the challenge from the pre-enrolled device side with DPoP.
-5. Lets the page's own `EventSource` logic receive the SSE update and auto-submit.
-6. Waits for the browser to reach the configured callback URL with an authorization code.
+1. Login mode: opens a real Chromium page, completes the push challenge, and waits for the callback redirect with an authorization code.
+2. Enrollment mode: performs the full browser login plus device enrollment flow over HTTP for a fresh user.
+3. Mixed mode: runs both flows concurrently with separate rates and user pools.
+4. Seed-enrollment mode: prepares a reusable enrollment pool and exits without measured traffic.
 
 ## Interpreting Results
 

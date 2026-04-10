@@ -21,54 +21,133 @@ const BROWSER_CLIENT_ID = env('LOAD_BROWSER_CLIENT_ID', 'test-app');
 const BROWSER_REDIRECT_URI = env('LOAD_BROWSER_REDIRECT_URI', '');
 const DEVICE_CLIENT_ID = env('LOAD_DEVICE_CLIENT_ID', 'push-device-client');
 const DEVICE_CLIENT_SECRET = env('LOAD_DEVICE_CLIENT_SECRET', 'device-client-secret');
+const MOBILE_MOCK_BASE_URI = env('LOAD_MOBILE_MOCK_BASE_URI', '');
 const USER_PREFIX = env('LOAD_USER_PREFIX', 'load-user-');
 const PASSWORD = env('LOAD_PASSWORD', 'load-test');
+const TEST_MODE = env('LOAD_TEST_MODE', 'login');
 const USER_COUNT = intEnv('LOAD_USER_COUNT', 40);
 const RATE_PER_SECOND = intEnv('LOAD_RATE_PER_SECOND', 10);
+const LOGIN_RATE_PER_SECOND = intEnv('LOAD_LOGIN_RATE_PER_SECOND', RATE_PER_SECOND);
+const ENROLLMENT_RATE_PER_SECOND = intEnv('LOAD_ENROLLMENT_RATE_PER_SECOND', RATE_PER_SECOND);
 const DURATION_SECONDS = intEnv('LOAD_DURATION_SECONDS', 30);
 const PRE_ALLOCATED_VUS = intEnv('LOAD_PRE_ALLOCATED_VUS', 40);
 const MAX_VUS = intEnv('LOAD_MAX_VUS', PRE_ALLOCATED_VUS);
+const LOGIN_PRE_ALLOCATED_VUS = intEnv('LOAD_LOGIN_PRE_ALLOCATED_VUS', PRE_ALLOCATED_VUS);
+const LOGIN_MAX_VUS = intEnv('LOAD_LOGIN_MAX_VUS', LOGIN_PRE_ALLOCATED_VUS);
+const ENROLLMENT_PRE_ALLOCATED_VUS = intEnv('LOAD_ENROLLMENT_PRE_ALLOCATED_VUS', PRE_ALLOCATED_VUS);
+const ENROLLMENT_MAX_VUS = intEnv('LOAD_ENROLLMENT_MAX_VUS', ENROLLMENT_PRE_ALLOCATED_VUS);
+const LOGIN_USER_COUNT = intEnv('LOAD_LOGIN_USER_COUNT', USER_COUNT);
+const ENROLLMENT_USER_COUNT = intEnv('LOAD_ENROLLMENT_USER_COUNT', USER_COUNT);
+const LOGIN_USER_OFFSET = intEnv('LOAD_LOGIN_USER_OFFSET', 0);
+const ENROLLMENT_USER_OFFSET = intEnv('LOAD_ENROLLMENT_USER_OFFSET', -1);
+const SETUP_TIMEOUT = env('LOAD_SETUP_TIMEOUT', '10m');
 const AUTH_TIMEOUT_MS = intEnv('LOAD_AUTH_TIMEOUT_MS', 10000);
 const LOGIN_COMPLETE_TIMEOUT_MS = intEnv('LOAD_LOGIN_COMPLETE_TIMEOUT_MS', 20000);
 const CONFIGURE_PUSH_MFA = boolEnv('LOAD_CONFIGURE_PUSH_MFA', true);
 const INSECURE_TLS = boolEnv('LOAD_INSECURE_TLS', false);
+const SKIP_ENROLLMENT_USER_PREP = boolEnv('LOAD_SKIP_ENROLLMENT_USER_PREP', false);
 
-let vuState = null;
+const IS_LOGIN_MODE = TEST_MODE === 'login';
+const IS_ENROLLMENT_MODE = TEST_MODE === 'enrollment';
+const IS_MIXED_MODE = TEST_MODE === 'mixed';
+const IS_SEED_ENROLLMENT_MODE = TEST_MODE === 'seed-enrollment';
+
+const vuStates = {};
+
+function createScenario(execName, ratePerSecond, preAllocatedVUs, maxVUs, needsBrowser) {
+    const scenario = {
+        executor: 'constant-arrival-rate',
+        exec: execName,
+        rate: ratePerSecond,
+        timeUnit: '1s',
+        duration: `${DURATION_SECONDS}s`,
+        preAllocatedVUs,
+        maxVUs,
+    };
+    if (needsBrowser) {
+        scenario.options = {
+            browser: {
+                type: 'chromium',
+            },
+        };
+    }
+    return scenario;
+}
 
 export const options = {
     insecureSkipTLSVerify: INSECURE_TLS,
-    scenarios: {
-        browser_sse: {
-            executor: 'constant-arrival-rate',
-            exec: 'loginFlow',
-            rate: RATE_PER_SECOND,
-            timeUnit: '1s',
-            duration: `${DURATION_SECONDS}s`,
-            preAllocatedVUs: PRE_ALLOCATED_VUS,
-            maxVUs: MAX_VUS,
-            options: {
-                browser: {
-                    type: 'chromium',
-                },
-            },
-        },
-    },
+    setupTimeout: SETUP_TIMEOUT,
+    scenarios: buildScenarios(),
 };
 
+function buildScenarios() {
+    if (IS_MIXED_MODE) {
+        return {
+            login: createScenario('loginFlow', LOGIN_RATE_PER_SECOND, LOGIN_PRE_ALLOCATED_VUS, LOGIN_MAX_VUS, true),
+            enrollment: createScenario(
+                'enrollmentFlow',
+                ENROLLMENT_RATE_PER_SECOND,
+                ENROLLMENT_PRE_ALLOCATED_VUS,
+                ENROLLMENT_MAX_VUS,
+                false,
+            ),
+        };
+    }
+    if (IS_SEED_ENROLLMENT_MODE) {
+        return {
+            primary: {
+                executor: 'shared-iterations',
+                exec: 'noopFlow',
+                vus: 1,
+                iterations: 1,
+                maxDuration: '1s',
+            },
+        };
+    }
+    return {
+        primary: createScenario(
+            IS_ENROLLMENT_MODE ? 'enrollmentFlow' : 'loginFlow',
+            RATE_PER_SECOND,
+            PRE_ALLOCATED_VUS,
+            MAX_VUS,
+            IS_LOGIN_MODE,
+        ),
+    };
+}
+
 export async function setup() {
+    const userCounts = requiredUserCounts();
+    const enrollmentUserOffset = resolveEnrollmentUserOffset(userCounts.login);
+
     console.log(`Admin base URI: ${ADMIN_BASE_URI}`);
     console.log(`Realm: ${REALM_NAME}`);
+    console.log(`Mode: ${TEST_MODE}`);
     console.log(`Browser base URIs: ${BROWSER_BASE_URIS.join(', ')}`);
     console.log(`Enrollment device base URIs: ${ENROLLMENT_DEVICE_BASE_URIS.join(', ')}`);
     console.log(`Device base URIs: ${DEVICE_BASE_URIS.join(', ')}`);
     console.log(`Browser client ID: ${BROWSER_CLIENT_ID}`);
     console.log(`Browser redirect URI: ${BROWSER_REDIRECT_URI}`);
     console.log(`Device client ID: ${DEVICE_CLIENT_ID}`);
-    console.log(`Users: ${USER_COUNT}`);
-    console.log(`Rate: ${RATE_PER_SECOND} logins/s`);
+    console.log(`Mobile mock base URI: ${MOBILE_MOCK_BASE_URI || '(disabled)'}`);
+    if (IS_MIXED_MODE) {
+        console.log(`Login rate: ${LOGIN_RATE_PER_SECOND} logins/s`);
+        console.log(`Enrollment rate: ${ENROLLMENT_RATE_PER_SECOND} enrollments/s`);
+        console.log(`Prepared login users: ${userCounts.login}`);
+        console.log(`Prepared enrollment users: ${userCounts.enrollment}`);
+        console.log(`Login VUs: pre=${LOGIN_PRE_ALLOCATED_VUS}, max=${LOGIN_MAX_VUS}`);
+        console.log(`Enrollment VUs: pre=${ENROLLMENT_PRE_ALLOCATED_VUS}, max=${ENROLLMENT_MAX_VUS}`);
+    } else if (IS_SEED_ENROLLMENT_MODE) {
+        console.log(`Prepared enrollment users: ${userCounts.enrollment}`);
+        console.log(`Enrollment user offset: ${enrollmentUserOffset}`);
+    } else {
+        console.log(`Prepared users: ${IS_ENROLLMENT_MODE ? userCounts.enrollment : userCounts.login}`);
+        console.log(`Target rate: ${RATE_PER_SECOND} ${IS_ENROLLMENT_MODE ? 'enrollments' : 'logins'}/s`);
+        console.log(`Pre-allocated VUs: ${PRE_ALLOCATED_VUS}`);
+        console.log(`Max VUs: ${MAX_VUS}`);
+    }
     console.log(`Duration: ${DURATION_SECONDS}s`);
-    console.log(`Pre-allocated VUs: ${PRE_ALLOCATED_VUS}`);
-    console.log(`Max VUs: ${MAX_VUS}`);
+    console.log(`Setup timeout: ${SETUP_TIMEOUT}`);
+    console.log(`Skip enrollment user prep: ${SKIP_ENROLLMENT_USER_PREP}`);
 
     const admin = new AdminApi();
     if (CONFIGURE_PUSH_MFA) {
@@ -87,36 +166,67 @@ export async function setup() {
         );
     }
 
+    const loginPool = await prepareUserPool(admin, {
+        count: userCounts.login,
+        usernameOffset: LOGIN_USER_OFFSET,
+        shouldEnroll: !IS_ENROLLMENT_MODE && !IS_SEED_ENROLLMENT_MODE,
+        skipPrep: false,
+    });
+    const enrollmentPool = await prepareUserPool(admin, {
+        count: userCounts.enrollment,
+        usernameOffset: enrollmentUserOffset,
+        shouldEnroll: false,
+        skipPrep: SKIP_ENROLLMENT_USER_PREP,
+    });
+
+    return {
+        loginUsers: loginPool.users,
+        loginDevices: loginPool.devices,
+        enrollmentUsers: enrollmentPool.users,
+    };
+}
+
+async function prepareUserPool(admin, { count, usernameOffset, shouldEnroll, skipPrep }) {
     const users = [];
     const devices = [];
-    for (let i = 1; i <= USER_COUNT; i += 1) {
-        const username = `${USER_PREFIX}${i}`;
-        admin.ensureUser(username, PASSWORD);
-        admin.resetUserState(username);
+    for (let i = 1; i <= count; i += 1) {
+        const username = `${USER_PREFIX}${usernameOffset + i}`;
         const user = { username, password: PASSWORD, index: i - 1 };
-        const browserBaseUri = pickUri(BROWSER_BASE_URIS, user.index);
-        const enrollmentDeviceBaseUri = pickUri(ENROLLMENT_DEVICE_BASE_URIS, user.index);
-        const device = await createDeviceState();
-        await enrollUser(user, browserBaseUri, enrollmentDeviceBaseUri, device);
+        if (!skipPrep) {
+            admin.ensureUser(username, PASSWORD);
+            admin.resetUserState(username);
+        }
         users.push(user);
-        devices.push(device);
+        if (shouldEnroll) {
+            const browserBaseUri = pickUri(BROWSER_BASE_URIS, user.index);
+            const enrollmentDeviceBaseUri = pickUri(ENROLLMENT_DEVICE_BASE_URIS, user.index);
+            const device = await createDeviceState();
+            await enrollUser(user, browserBaseUri, enrollmentDeviceBaseUri, device);
+            devices.push(device);
+        }
     }
     return { users, devices };
 }
 
+export function noopFlow() {
+    // setup() does the work for seed-enrollment mode.
+}
+
 export async function loginFlow(data) {
-    const user = data.users[(exec.vu.idInTest - 1) % data.users.length];
-    if (!vuState) {
+    const users = data.loginUsers;
+    const user = users[(exec.vu.idInTest - 1) % users.length];
+    const scenarioName = exec.scenario.name;
+    if (!vuStates[scenarioName]) {
         const browserBaseUri = pickUri(BROWSER_BASE_URIS, user.index);
-        vuState = {
+        vuStates[scenarioName] = {
             user,
             browserBaseUri,
-            enrollmentDeviceBaseUri: pickUri(ENROLLMENT_DEVICE_BASE_URIS, user.index),
             deviceBaseUri: pickUri(DEVICE_BASE_URIS, user.index),
             expectedRedirectUri: buildBrowserRedirectUri(browserBaseUri),
-            device: normalizeDevice(data.devices[user.index]),
+            device: normalizeDevice(data.loginDevices[user.index]),
         };
     }
+    const vuState = vuStates[scenarioName];
 
     const context = await browser.newContext({ ignoreHTTPSErrors: INSECURE_TLS });
     const page = await context.newPage();
@@ -140,10 +250,29 @@ export async function loginFlow(data) {
         if (!/[?&]code=/.test(currentUrl)) {
             throw new Error(`Login completed without authorization code: ${currentUrl}`);
         }
+    } catch (error) {
+        throw enrichError(error, {
+            scenario: scenarioName,
+            username: user.username,
+            device: describeDevice(vuState.device),
+        });
     } finally {
         await page.close();
         await context.close();
     }
+}
+
+export async function enrollmentFlow(data) {
+    const iterationIndex = exec.scenario.iterationInTest;
+    const user = data.enrollmentUsers[iterationIndex];
+    if (!user) {
+        throw new Error(`No prepared user for enrollment iteration ${iterationIndex}`);
+    }
+
+    const browserBaseUri = pickUri(BROWSER_BASE_URIS, user.index);
+    const enrollmentDeviceBaseUri = pickUri(ENROLLMENT_DEVICE_BASE_URIS, user.index);
+    const device = await createDeviceState();
+    await enrollUser(user, browserBaseUri, enrollmentDeviceBaseUri, device);
 }
 
 async function enrollUser(user, browserBaseUri, deviceBaseUri, device) {
@@ -182,6 +311,19 @@ async function enrollUser(user, browserBaseUri, deviceBaseUri, device) {
 }
 
 async function completeEnrollment(baseUri, device, enrollmentToken) {
+    if (MOBILE_MOCK_BASE_URI) {
+        const response = requestJson(
+            `${trimTrailingSlash(MOBILE_MOCK_BASE_URI)}/enroll`,
+            { token: enrollmentToken },
+            {},
+            false,
+        );
+        if (response.status !== 200) {
+            throw new Error(`Mock enrollment failed: ${response.status} ${response.body}`);
+        }
+        return;
+    }
+
     const claims = parseJwt(enrollmentToken);
     device.userId = claims.sub;
 
@@ -215,33 +357,53 @@ async function completeEnrollment(baseUri, device, enrollmentToken) {
 }
 
 async function respondToChallenge(baseUri, device, confirmToken, challengeId) {
-    const confirmClaims = parseJwt(confirmToken);
-    const cid = confirmClaims.cid || challengeId;
-    const loginToken = await signJwt(
-        {
-            cid,
-            credId: confirmClaims.credId,
-            deviceId: device.deviceId,
-            action: 'approve',
-            exp: nowEpochSeconds() + 120,
-        },
-        device,
-        { typ: 'JWT' },
-    );
+    try {
+        if (MOBILE_MOCK_BASE_URI) {
+            const response = requestJson(
+                `${trimTrailingSlash(MOBILE_MOCK_BASE_URI)}/confirm-login`,
+                { token: confirmToken, action: 'approve' },
+                {},
+                false,
+            );
+            if (response.status !== 200) {
+                throw new Error(`Mock confirm-login failed: ${response.status} ${response.body}`);
+            }
+            return;
+        }
 
-    const respondUri = resolveRealmUrl(baseUri, `push-mfa/login/challenges/${cid}/respond`);
-    const accessToken = await fetchDeviceAccessToken(baseUri, device);
-    const response = requestJson(
-        respondUri,
-        { token: loginToken },
-        {
-            Authorization: `DPoP ${accessToken}`,
-            DPoP: await createDpopProof('POST', respondUri, device),
-        },
-        false,
-    );
-    if (response.status !== 200) {
-        throw new Error(`Challenge response failed: ${response.status} ${response.body}`);
+        const confirmClaims = parseJwt(confirmToken);
+        const cid = confirmClaims.cid || challengeId;
+        const loginToken = await signJwt(
+            {
+                cid,
+                credId: confirmClaims.credId,
+                deviceId: device.deviceId,
+                action: 'approve',
+                exp: nowEpochSeconds() + 120,
+            },
+            device,
+            { typ: 'JWT' },
+        );
+
+        const respondUri = resolveRealmUrl(baseUri, `push-mfa/login/challenges/${cid}/respond`);
+        const accessToken = await fetchDeviceAccessToken(baseUri, device);
+        const response = requestJson(
+            respondUri,
+            { token: loginToken },
+            {
+                Authorization: `DPoP ${accessToken}`,
+                DPoP: await createDpopProof('POST', respondUri, device),
+            },
+            false,
+        );
+        if (response.status !== 200) {
+            throw new Error(`Challenge response failed: ${response.status} ${response.body}`);
+        }
+    } catch (error) {
+        throw enrichError(error, {
+            stage: 'respondToChallenge',
+            device: describeDevice(device),
+        });
     }
 }
 
@@ -254,19 +416,27 @@ async function fetchDeviceAccessToken(baseUri, device) {
     });
 
     let lastResponse = null;
-    for (let attempt = 0; attempt < 10; attempt += 1) {
-        lastResponse = request(tokenUri, 'POST', body, {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            DPoP: await createDpopProof('POST', tokenUri, device),
-        }, false);
-        if (lastResponse.status === 200) {
-            return lastResponse.json('access_token');
+    try {
+        for (let attempt = 0; attempt < 10; attempt += 1) {
+            lastResponse = request(tokenUri, 'POST', body, {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                DPoP: await createDpopProof('POST', tokenUri, device),
+            }, false);
+            if (lastResponse.status === 200) {
+                return lastResponse.json('access_token');
+            }
+            if (lastResponse.status === 400 && String(lastResponse.body).includes('"unauthorized_client"')) {
+                sleep(0.1);
+                continue;
+            }
+            break;
         }
-        if (lastResponse.status === 400 && String(lastResponse.body).includes('"unauthorized_client"')) {
-            sleep(0.1);
-            continue;
-        }
-        break;
+    } catch (error) {
+        throw enrichError(error, {
+            stage: 'fetchDeviceAccessToken',
+            device: describeDevice(device),
+            lastStatus: lastResponse && lastResponse.status,
+        });
     }
     throw new Error(`Device token request failed: ${lastResponse && lastResponse.status} ${lastResponse && lastResponse.body}`);
 }
@@ -601,11 +771,13 @@ async function createDeviceState() {
     );
     const publicJwk = await crypto.subtle.exportKey('jwk', keyPair.publicKey);
     const privateJwk = await crypto.subtle.exportKey('jwk', keyPair.privateKey);
+    const privatePkcs8 = await crypto.subtle.exportKey('pkcs8', keyPair.privateKey);
     return {
         keyId: `user-key-${randomId()}`,
         algorithm: 'RS256',
         publicJwk,
         privateJwk,
+        privatePkcs8: encoding.b64encode(privatePkcs8, 'std'),
         deviceId: `device-${randomId()}`,
         deviceCredentialId: `device-credential-${randomId()}`,
         deviceLabel: 'k6 Load Test Device',
@@ -631,15 +803,23 @@ async function createDpopProof(method, uri, device) {
 }
 
 async function signJwt(claims, device, extraHeader = {}) {
-    const privateKey = await ensurePrivateKey(device);
-    const header = {
-        alg: device.algorithm,
-        kid: device.keyId,
-        ...extraHeader,
-    };
-    const input = `${base64UrlEncode(JSON.stringify(header))}.${base64UrlEncode(JSON.stringify(claims))}`;
-    const signature = await crypto.subtle.sign({ name: 'RSASSA-PKCS1-v1_5' }, privateKey, textEncode(input));
-    return `${input}.${encoding.b64encode(signature, 'rawurl')}`;
+    try {
+        const privateKey = await ensurePrivateKey(device);
+        const header = {
+            alg: device.algorithm,
+            kid: device.keyId,
+            ...extraHeader,
+        };
+        const input = `${base64UrlEncode(JSON.stringify(header))}.${base64UrlEncode(JSON.stringify(claims))}`;
+        const signature = await crypto.subtle.sign({ name: 'RSASSA-PKCS1-v1_5' }, privateKey, textEncode(input));
+        return `${input}.${encoding.b64encode(signature, 'rawurl')}`;
+    } catch (error) {
+        throw enrichError(error, {
+            stage: 'signJwt',
+            headerAlg: device && device.algorithm,
+            device: describeDevice(device),
+        });
+    }
 }
 
 function parseJwt(token) {
@@ -791,6 +971,42 @@ function nowEpochSeconds() {
     return Math.floor(Date.now() / 1000);
 }
 
+function requiredUserCounts() {
+    return {
+        login: requiredLoginUserCount(),
+        enrollment: requiredEnrollmentUserCount(),
+    };
+}
+
+function requiredLoginUserCount() {
+    if (IS_ENROLLMENT_MODE || IS_SEED_ENROLLMENT_MODE) {
+        return 0;
+    }
+    const configured = IS_MIXED_MODE ? LOGIN_USER_COUNT : USER_COUNT;
+    const preAllocated = IS_MIXED_MODE ? LOGIN_PRE_ALLOCATED_VUS : PRE_ALLOCATED_VUS;
+    return Math.max(configured, preAllocated);
+}
+
+function requiredEnrollmentUserCount() {
+    if (IS_LOGIN_MODE) {
+        return 0;
+    }
+    if (IS_SEED_ENROLLMENT_MODE) {
+        return ENROLLMENT_USER_COUNT;
+    }
+    const configured = IS_MIXED_MODE || IS_SEED_ENROLLMENT_MODE ? ENROLLMENT_USER_COUNT : USER_COUNT;
+    const rate = IS_MIXED_MODE || IS_SEED_ENROLLMENT_MODE ? ENROLLMENT_RATE_PER_SECOND : RATE_PER_SECOND;
+    const maxVUs = IS_MIXED_MODE || IS_SEED_ENROLLMENT_MODE ? ENROLLMENT_MAX_VUS : MAX_VUS;
+    return Math.max(configured, rate * DURATION_SECONDS + maxVUs);
+}
+
+function resolveEnrollmentUserOffset(loginUserCount) {
+    if (ENROLLMENT_USER_OFFSET >= 0) {
+        return ENROLLMENT_USER_OFFSET;
+    }
+    return LOGIN_USER_OFFSET + loginUserCount;
+}
+
 function randomId() {
     return crypto.randomUUID();
 }
@@ -811,16 +1027,36 @@ async function ensurePrivateKey(device) {
     if (device.privateKey) {
         return device.privateKey;
     }
-    device.privateKey = await crypto.subtle.importKey(
-        'jwk',
-        device.privateJwk,
-        {
-            name: 'RSASSA-PKCS1-v1_5',
-            hash: 'SHA-256',
-        },
-        false,
-        ['sign'],
-    );
+    try {
+        if (device.privatePkcs8) {
+            device.privateKey = await crypto.subtle.importKey(
+                'pkcs8',
+                encoding.b64decode(device.privatePkcs8, 'std'),
+                {
+                    name: 'RSASSA-PKCS1-v1_5',
+                    hash: 'SHA-256',
+                },
+                false,
+                ['sign'],
+            );
+            return device.privateKey;
+        }
+        device.privateKey = await crypto.subtle.importKey(
+            'jwk',
+            device.privateJwk,
+            {
+                name: 'RSASSA-PKCS1-v1_5',
+                hash: 'SHA-256',
+            },
+            false,
+            ['sign'],
+        );
+    } catch (error) {
+        throw enrichError(error, {
+            stage: 'ensurePrivateKey',
+            device: describeDevice(device),
+        });
+    }
     return device.privateKey;
 }
 
@@ -829,7 +1065,29 @@ function normalizeDevice(device) {
         throw new Error('Missing device state from setup');
     }
     return {
-        algorithm: 'RS256',
         ...device,
+        algorithm: device.algorithm || 'RS256',
     };
+}
+
+function describeDevice(device) {
+    if (!device) {
+        return { present: false };
+    }
+    return {
+        present: true,
+        algorithm: device.algorithm,
+        keyId: device.keyId,
+        userId: device.userId,
+        hasPrivatePkcs8: !!device.privatePkcs8,
+        hasPrivateJwk: !!device.privateJwk,
+        privateJwkKeys: device.privateJwk ? Object.keys(device.privateJwk).sort() : [],
+        hasPublicJwk: !!device.publicJwk,
+        publicJwkKeys: device.publicJwk ? Object.keys(device.publicJwk).sort() : [],
+    };
+}
+
+function enrichError(error, context) {
+    const detail = JSON.stringify(context);
+    return new Error(`${error && error.message ? error.message : error} :: ${detail}`);
 }

@@ -36,7 +36,7 @@ Each Push MFA credential has **two distinct IDs**:
    }
    ```
 
-2. **Device enrollment response:** The app verifies the token using the realm JWKS, generates a user key pair and `kid`, and posts a JWT back to Keycloak that echoes the nonce and enrollment id, embeds the JWK under `cnf.jwk`, and introduces a credential id (passkey-style). Supply a `deviceId` only when you allow the same user to enroll multiple devices; otherwise use a stable value (for example `primary-device`) so the credential still has a predictable id. The JWT header uses the same `kid` that appears under `cnf.jwk`:
+2. **Device enrollment response:** The app verifies the token using the realm JWKS, generates a user key pair and `kid`, and posts a JWT back to Keycloak that echoes the nonce and enrollment id, embeds the JWK under `cnf.jwk`, and introduces a credential id in a passkey-inspired style. This gives the device a pseudonymous handle for its local credential mapping, but it is not a WebAuthn credential. Supply a `deviceId` only when you allow the same user to enroll multiple devices; otherwise use a stable value (for example `primary-device`) so the credential still has a predictable id. The JWT header uses the same `kid` that appears under `cnf.jwk`:
 
    Header:
 

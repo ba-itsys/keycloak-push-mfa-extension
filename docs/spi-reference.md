@@ -4,7 +4,7 @@ This document covers the Service Provider Interfaces (SPIs) available for extend
 
 ## Push Notification SPI
 
-The server emits confirm tokens through the `PushNotificationSender` SPI. Each device credential stores a `pushProviderId` (opaque token/identifier for your push backend) and a `pushProviderType` (the Keycloak SPI provider id). At runtime `PushNotificationService` resolves the SPI implementation by calling `session.getProvider(PushNotificationSender.class, pushProviderType)` and passes in the `pushProviderId`. The bundled `log` provider simply prints the payload, but you can plug in a real APNs/FCM sender by implementing:
+The server emits confirm tokens through the `PushNotificationSender` SPI. Each device credential stores a `pushProviderId` (opaque token/identifier for your push backend) and a `pushProviderType` (the Keycloak SPI provider id). At runtime `PushNotificationService` resolves the SPI implementation by calling `session.getProvider(PushNotificationSender.class, pushProviderType)` and passes in the `pushProviderId`. The bundled `log` provider prints the payload and the bundled `none` provider intentionally does nothing, but you can plug in a real APNs/FCM sender by implementing:
 
 ```java
 public final class MyPushSender implements PushNotificationSender {
@@ -42,7 +42,7 @@ Register the factory via the standard service loader file for the SPI you are ex
 META-INF/services/de.arbeitsagentur.keycloak.push.spi.PushNotificationSenderFactory
 ```
 
-Finally, you must store your factory id (for example, `pushProviderType=fcm`) with each credential during enrollment. The runtime resolves the sender solely from that `pushProviderType`, falling back to the built-in `log` sender if it is blank. Demo scripts keep sending `pushProviderType=log`, so they continue using the logging behavior unless you change their configuration.
+Finally, you must store your factory id (for example, `pushProviderType=fcm`) with each credential during enrollment. The runtime resolves the sender solely from that `pushProviderType`, falling back to the built-in `log` sender if it is blank. Demo scripts keep sending `pushProviderType=log`, so they continue using the logging behavior unless you change their configuration. If an app needs to suppress delivery temporarily because OS push notifications are disabled, it can update the credential to `pushProviderType=none` through `/realms/demo/push-mfa/device/push-provider` and later switch back to the real provider with the same endpoint.
 
 With these primitives an actual mobile app UI or automation can be layered on top without depending on helper shell scripts.
 

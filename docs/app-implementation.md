@@ -17,7 +17,7 @@ Your app should persist the following:
 - The `kid` (key identifier)
 - `deviceType` (e.g., "ios", "android")
 - `pushProviderId` (FCM/APNs token)
-- `pushProviderType` (e.g., "fcm", "apns", "log")
+- `pushProviderType` (e.g., "fcm", "apns", "log", "none")
 - Preferred `deviceLabel`
 - Any metadata needed to post to Keycloak again
 - Track a `deviceId` only when you support multiple devices per user
@@ -58,7 +58,7 @@ Enrollment and login requests return structured error responses (`400`, `403`, o
 
 ## Key Rotation / Push Provider Changes
 
-Use the `/device/push-provider` and `/device/rotate-key` endpoints (see [API Reference](api-reference.md)) to update the stored metadata while authenticating with the current user key. Rotation should:
+Use the `/device/push-provider` and `/device/rotate-key` endpoints (see [API Reference](api-reference.md)) to update the stored metadata while authenticating with the current user key. If the OS disables push notifications or revokes the current push token, switch the credential to `pushProviderType=none` so Keycloak intentionally skips delivery until the app has a working provider again. Rotation should:
 
 1. Generate a fresh key pair
 2. Send the new public JWK (with the desired `alg`)

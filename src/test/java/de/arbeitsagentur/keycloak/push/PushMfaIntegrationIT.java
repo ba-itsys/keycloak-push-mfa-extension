@@ -790,6 +790,20 @@ class PushMfaIntegrationIT {
     }
 
     @Test
+    void deviceUpdatesPushProviderToNone() throws Exception {
+        DeviceClient deviceClient = enrollDevice();
+        String disabledProviderId = "disabled";
+
+        String status = deviceClient.updatePushProvider(disabledProviderId, "none");
+        assertEquals("updated", status);
+
+        JsonNode credentialData =
+                adminClient.fetchPushCredential(deviceClient.state().userId());
+        assertEquals(disabledProviderId, credentialData.path("pushProviderId").asText());
+        assertEquals("none", credentialData.path("pushProviderType").asText());
+    }
+
+    @Test
     void deviceUpdatesPushProviderRetainsTypeWhenOmitted() throws Exception {
         DeviceClient deviceClient = enrollDevice();
         String newProviderId = "integration-provider-" + UUID.randomUUID();

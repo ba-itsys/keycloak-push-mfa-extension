@@ -2,7 +2,7 @@
 
 [![Maven Central](https://img.shields.io/maven-central/v/de.arbeitsagentur.opdt/keycloak-push-mfa-extension)](https://central.sonatype.com/artifact/de.arbeitsagentur.opdt/keycloak-push-mfa-extension)
 
-A Keycloak extension that adds push-based multi-factor authentication, similar to passkey primitives.
+A Keycloak extension that adds push-based multi-factor authentication with passkey-inspired key continuity and pseudonymous credential handles.
 
 ## Quick Start
 
@@ -15,7 +15,7 @@ Add the dependency to your project:
     <groupId>de.arbeitsagentur.opdt</groupId>
     <artifactId>keycloak-push-mfa-extension</artifactId>
     <!-- Check the badge above or Maven Central for the latest version -->
-    <version>1.5.0</version>
+    <version>1.11.0</version>
 </dependency>
 ```
 
@@ -37,7 +37,7 @@ docker compose up
 
 ## Introduction
 
-This project extends Keycloak with a push-style second factor that mimics passkey primitives. After initial enrollment, the mobile app never receives the real user identifier from Keycloak; instead, it works with a credential id that only the app can map back to the real user. Everything is implemented with standard Keycloak SPIs plus a small JAX-RS resource exposed under `/realms/<realm>/push-mfa`.
+This project extends Keycloak with a push-style second factor that borrows some passkey-like ideas without implementing WebAuthn or passkeys themselves. After initial enrollment, the mobile app never receives the real user identifier from Keycloak; instead, it works with a credential id that only the app can map back to the real user, and later approvals remain bound to the enrolled device key. Everything is implemented with standard Keycloak SPIs plus a small JAX-RS resource exposed under `/realms/<realm>/push-mfa`.
 
 ## High Level Flow
 

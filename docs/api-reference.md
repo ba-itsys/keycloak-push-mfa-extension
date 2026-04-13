@@ -24,7 +24,7 @@ Content-Type: application/json
 }
 ```
 
-Keycloak verifies the signature using `cnf.jwk`, persists the credential (JWK, deviceType, `pushProviderId`, `pushProviderType`, credentialId, deviceId, deviceLabel), and resolves the enrollment challenge. The `pushProviderId` value is whatever identifier your push backend requires (for example an FCM registration token or an APNs device token), while `pushProviderType` selects the Keycloak `PushNotificationSender` provider that should deliver the confirm token. The bundled logging implementation exposes the type `log`, which simply prints the payload. Your scripts use `pushProviderType=log` by default, but real deployments can plug in any provider via the [Push Notification SPI](spi-reference.md#push-notification-spi). The `deviceLabel` is read from the JWT payload (falls back to `PushMfaConstants.USER_CREDENTIAL_DISPLAY_NAME` when absent).
+Keycloak verifies the signature using `cnf.jwk`, persists the credential (JWK, deviceType, `pushProviderId`, `pushProviderType`, credentialId, deviceId, deviceLabel), and resolves the enrollment challenge. The `pushProviderId` value is whatever identifier your push backend requires (for example an FCM registration token or an APNs device token), while `pushProviderType` selects the Keycloak `PushNotificationSender` provider that should deliver the confirm token. The bundled implementations expose `log` (prints the payload) and `none` (intentionally does nothing). Your scripts use `pushProviderType=log` by default, but real deployments can plug in any provider via the [Push Notification SPI](spi-reference.md#push-notification-spi). The `deviceLabel` is read from the JWT payload (falls back to `PushMfaConstants.USER_CREDENTIAL_DISPLAY_NAME` when absent).
 
 If two completion requests race for the same enrollment challenge, the loser may receive `409 Conflict` with `Challenge is currently being resolved` or `400 Bad Request` with `Challenge already resolved or expired`, depending on whether the competing request is still in-flight or has already finished resolving the challenge.
 
@@ -138,11 +138,13 @@ Content-Type: application/json
 
 {
   "pushProviderId": "new-provider-token",
-  "pushProviderType": "log"
+  "pushProviderType": "none"
 }
 ```
 
-Keycloak authenticates the request with the current user key and replaces the stored push provider identifier and/or type tied to that credential. The response body is `{ "status": "updated" }` (or `"unchanged"` if the values were already in sync). Use this endpoint whenever your downstream push provider rotates registration tokens (e.g., new FCM registration token, APNs device token refresh, proprietary push subscription id, etc.), or when you want to switch to a different `PushNotificationSender` implementation. Omitting `pushProviderType` keeps the existing type.
+Keycloak authenticates the request with the current user key and replaces the stored push provider identifier and/or type tied to that credential. The response body is `{ "status": "updated" }` (or `"unchanged"` if the values were already in sync). Use this endpoint whenever your downstream push provider rotates registration tokens (e.g., new FCM registration token, APNs device token refresh, proprietary push subscription id, etc.), or when you want to switch to a different `PushNotificationSender` implementation. Set `pushProviderType` to `none` when the app has push notifications disabled and you want Keycloak to skip delivery without producing missing-provider errors; later, call the same endpoint again with the restored provider metadata. Omitting `pushProviderType` keeps the existing type.
+
+When `pushProviderType` is `none`, the server still stores `pushProviderId` as opaque device metadata even though the no-op sender ignores it. Use any stable placeholder your app understands, such as `disabled`.
 
 > Demo helper: `scripts/update-push-provider.sh <credential-id> <provider-id> [provider-type]`
 
@@ -176,7 +178,7 @@ The repository includes thin shell wrappers that simulate a device:
 
 - `scripts/enroll.sh <enrollment-token|request-uri|deep-link>` resolves the enrollment input to the enrollment JWT, decodes it, generates a key pair (RSA or EC), and completes enrollment.
 - `scripts/confirm-login.sh <confirm-token>` decodes the Firebase-style payload, lists pending challenges (for demo visibility), and approves/denies the challenge (set `LOGIN_USER_VERIFICATION` or use the prompt when `userVerification` is enabled).
-- `scripts/update-push-provider.sh <credential-id> <provider-id> [provider-type]` updates the stored push provider metadata (defaults to the `log` provider used in this demo).
+- `scripts/update-push-provider.sh <credential-id> <provider-id> [provider-type]` updates the stored push provider metadata (defaults to the `log` provider used in this demo, but also accepts `none` to disable delivery intentionally).
 - `scripts/rotate-user-key.sh <credential-id>` rotates the user key material and immediately persists the new JWK.
 
 All scripts source `scripts/common.sh`, which centralizes base64 helpers, compact-JWS signing, DPoP proof creation, and token acquisition. The helper expects `scripts/sign_jws.py` to exist (or `COMMON_SIGN_JWS` to point to a compatible signer), so replacing the demo logic with a real implementation only requires swapping in a different signer.

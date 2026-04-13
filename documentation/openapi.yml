@@ -207,7 +207,8 @@ paths:
       description: >
         Updates the push-provider token and type stored for the authenticated
         device credential. Should be called whenever the OS issues a new
-        push-notification token.
+        push-notification token or when the app intentionally switches to the
+        built-in `none` sender while notifications are disabled.
       requestBody:
         required: true
         content:
@@ -224,7 +225,7 @@ paths:
                 pushProviderType:
                   type: string
                   maxLength: 256
-                  description: Push-provider type identifier (e.g., `apns`, `fcm`, `log`)
+                  description: Push-provider type identifier (e.g., `apns`, `fcm`, `log`, `none`)
       security:
         - DPoP: []
       responses:

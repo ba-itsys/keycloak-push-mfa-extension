@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.12.0](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.11.0...v1.12.0) (2026-04-14)
+
+
+### Features
+
+* allow optional dpop-auth for enrollment ([f84e7db](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/f84e7dbee50ee007054af79324160c33d73bbbbd))
+
+
+### Bug Fixes
+
+* default empty pushProviderType to none ([b9c7c2b](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/b9c7c2b05ffd247ac6c4e6e5ef8cf35e77a3dbcc))
+
 ## [1.11.0](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.10.1...v1.11.0) (2026-04-14)
 
 

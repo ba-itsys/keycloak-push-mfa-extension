@@ -302,6 +302,22 @@ class PushMfaSecurityIT {
         }
 
         @Test
+        @DisplayName("Enrollment with provider type but missing provider id is rejected")
+        void enrollmentWithProviderTypeButMissingProviderIdRejected() throws Exception {
+            adminClient.resetUserState(TEST_USERNAME);
+            DeviceClient device = new DeviceClient(baseUri, DeviceState.create(DeviceKeyType.RSA));
+            BrowserSession session = new BrowserSession(baseUri);
+            HtmlPage loginPage = session.startAuthorization("test-app");
+            HtmlPage enrollPage = session.submitLogin(loginPage, TEST_USERNAME, TEST_PASSWORD);
+            String enrollmentToken = session.extractEnrollmentToken(enrollPage);
+            String deviceEnrollmentToken = device.createEnrollmentResponseTokenJwt(enrollmentToken, null, "log");
+
+            HttpResponse<String> response = device.sendEnrollmentRequest(deviceEnrollmentToken, null, null);
+
+            assertEquals(400, response.statusCode());
+        }
+
+        @Test
         @DisplayName("DPoP with wrong HTTP method rejected")
         void dpopWithWrongMethodRejected() throws Exception {
             DeviceClient device = enrollDeviceWithRetry(TEST_USERNAME, TEST_PASSWORD);

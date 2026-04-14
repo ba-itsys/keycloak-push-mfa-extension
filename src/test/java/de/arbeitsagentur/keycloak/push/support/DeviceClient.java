@@ -117,24 +117,38 @@ public final class DeviceClient {
         return createEnrollmentResponseToken(enrollmentToken).serialize();
     }
 
+    public String createEnrollmentResponseTokenJwt(
+            String enrollmentToken, String pushProviderId, String pushProviderType) throws Exception {
+        return createEnrollmentResponseToken(enrollmentToken, pushProviderId, pushProviderType)
+                .serialize();
+    }
+
     private SignedJWT createEnrollmentResponseToken(String enrollmentToken) throws Exception {
+        return createEnrollmentResponseToken(enrollmentToken, state.pushProviderId(), state.pushProviderType());
+    }
+
+    private SignedJWT createEnrollmentResponseToken(
+            String enrollmentToken, String pushProviderId, String pushProviderType) throws Exception {
         SignedJWT enrollment = SignedJWT.parse(enrollmentToken);
         JWTClaimsSet claims = enrollment.getJWTClaimsSet();
         state.setUserId(claims.getSubject());
-        JWTClaimsSet deviceClaims = new JWTClaimsSet.Builder()
+        JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder()
                 .claim("enrollmentId", claims.getStringClaim("enrollmentId"))
                 .claim("nonce", claims.getStringClaim("nonce"))
                 .claim("sub", state.userId())
                 .claim("deviceType", "ios")
-                .claim("pushProviderId", state.pushProviderId())
-                .claim("pushProviderType", state.pushProviderType())
                 .claim("credentialId", state.deviceCredentialId())
                 .claim("deviceId", state.deviceId())
                 .claim("deviceLabel", state.deviceLabel())
                 .expirationTime(Date.from(Instant.now().plusSeconds(300)))
-                .claim("cnf", Map.of("jwk", state.signingKey().publicJwk().toJSONObject()))
-                .build();
-        return sign(deviceClaims);
+                .claim("cnf", Map.of("jwk", state.signingKey().publicJwk().toJSONObject()));
+        if (pushProviderId != null) {
+            builder.claim("pushProviderId", pushProviderId);
+        }
+        if (pushProviderType != null) {
+            builder.claim("pushProviderType", pushProviderType);
+        }
+        return sign(builder.build());
     }
 
     public HttpResponse<String> sendEnrollmentRequest(

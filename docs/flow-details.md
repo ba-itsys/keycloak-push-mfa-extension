@@ -77,6 +77,8 @@ Each Push MFA credential has **two distinct IDs**:
    }
    ```
 
+   `pushProviderType` may be omitted to default enrollment to `none`; when it is `none`, `pushProviderId` is optional.
+
 3. **Confirm token delivery:** Every login creates a fresh push challenge. Keycloak signs a `confirmToken` using the realm key and displays/logs it. This token is what would be sent via your push provider (Firebase/FCM in the demo implementation): it contains only the credential id (`credId`), the challenge id (`cid`), and the numeric message `typ`/`ver` identifiers so the provider learns nothing about the real user or whether the login ultimately succeeds. After receiving a push, the device should call `/realms/demo/push-mfa/login/pending` to fetch the username + client metadata to display in its approval prompt (and optional user-verification metadata if enabled).
 
    ```json

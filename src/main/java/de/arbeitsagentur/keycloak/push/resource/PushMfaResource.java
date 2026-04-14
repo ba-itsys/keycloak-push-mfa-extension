@@ -185,10 +185,16 @@ public class PushMfaResource {
         PushMfaKeyUtil.ensureKeyMatchesAlgorithm(deviceKey, algorithm.name());
 
         String deviceType = requireField(payload, "deviceType", CONFIG.input().maxDeviceTypeLength());
-        String pushProviderId =
-                requireField(payload, "pushProviderId", CONFIG.input().maxPushProviderIdLength());
-        String pushProviderType =
-                requireField(payload, "pushProviderType", CONFIG.input().maxPushProviderTypeLength());
+        String pushProviderType = PushMfaInputValidator.optionalBoundedText(
+                jsonText(payload, "pushProviderType"), CONFIG.input().maxPushProviderTypeLength(), "pushProviderType");
+        if (StringUtil.isBlank(pushProviderType)) {
+            pushProviderType = "none";
+        }
+        String pushProviderId = PushMfaInputValidator.optionalBoundedText(
+                jsonText(payload, "pushProviderId"), CONFIG.input().maxPushProviderIdLength(), "pushProviderId");
+        if (!"none".equals(pushProviderType) && StringUtil.isBlank(pushProviderId)) {
+            throw new BadRequestException("pushProviderId required unless pushProviderType=none");
+        }
         String credentialId =
                 requireField(payload, "credentialId", CONFIG.input().maxDeviceCredentialIdLength());
         String deviceId = requireField(payload, "deviceId", CONFIG.input().maxDeviceIdLength());

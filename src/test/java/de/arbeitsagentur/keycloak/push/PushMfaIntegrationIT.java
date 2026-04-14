@@ -202,6 +202,30 @@ class PushMfaIntegrationIT {
     }
 
     @Test
+    void enrollmentDefaultsMissingPushProviderToNone() throws Exception {
+        adminClient.resetUserState(TEST_USERNAME);
+        DeviceState state = DeviceState.create(DeviceKeyType.RSA);
+        DeviceClient deviceClient = new DeviceClient(baseUri, state);
+        BrowserSession session = new BrowserSession(baseUri);
+
+        HtmlPage loginPage = session.startAuthorization("test-app");
+        HtmlPage enrollPage = session.submitLogin(loginPage, TEST_USERNAME, TEST_PASSWORD);
+        String enrollmentToken = session.extractEnrollmentToken(enrollPage);
+        String deviceEnrollmentToken = deviceClient.createEnrollmentResponseTokenJwt(enrollmentToken, null, null);
+
+        HttpResponse<String> response = deviceClient.sendEnrollmentRequest(deviceEnrollmentToken, null, null);
+        assertEquals(200, response.statusCode(), () -> "Enrollment failed: " + response.body());
+        session.submitEnrollmentCheck(enrollPage);
+
+        JsonNode credentialData =
+                adminClient.fetchPushCredential(deviceClient.state().userId());
+        assertEquals("none", credentialData.path("pushProviderType").asText());
+        assertTrue(credentialData.path("pushProviderId").isMissingNode()
+                || credentialData.path("pushProviderId").isNull()
+                || credentialData.path("pushProviderId").asText().isEmpty());
+    }
+
+    @Test
     void enrollmentMakesCredentialVisibleToAdminApiSoonAfterCompletion() throws Exception {
         for (int i = 0; i < 3; i++) {
             adminClient.resetUserState(TEST_USERNAME);

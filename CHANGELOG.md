@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.0](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.10.1...v1.11.0) (2026-04-14)
+
+
+### Features
+
+* add push-provider none implementation ([38f4a0a](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/38f4a0a2ac827a694f7e9485a9dd0b4de5b2b1f0))
+
 ## [1.10.1](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.10.0...v1.10.1) (2026-04-10)
 
 

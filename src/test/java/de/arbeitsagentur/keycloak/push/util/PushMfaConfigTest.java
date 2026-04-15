@@ -72,10 +72,10 @@ class PushMfaConfigTest {
     }
 
     @Test
-    void enrollmentDpopEnforcementDefaultsToFalse() {
+    void enrollmentDpopEnforcementDefaultsToTrue() {
         withSystemProperties(Map.of(), () -> {
             PushMfaConfig config = PushMfaConfig.load();
-            assertEquals(false, config.dpop().requireForEnrollment());
+            assertEquals(true, config.dpop().requireForEnrollment());
         });
     }
 

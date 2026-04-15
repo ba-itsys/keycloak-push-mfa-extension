@@ -159,6 +159,21 @@ public class DpopAuthenticator {
         }
     }
 
+    public String authenticateAccessTokenOnly(HttpHeaders headers, UriInfo uriInfo, String httpMethod) {
+        AuthContext ctx = new AuthContext(httpMethod, uriInfo.getPath());
+
+        try {
+            String accessTokenString = requireAccessToken(headers);
+            AccessToken accessToken = authenticateAccessToken(accessTokenString);
+            ctx.userId = accessToken.getSubject();
+            ctx.clientId = extractClientId(accessToken);
+            return ctx.clientId;
+        } catch (BadRequestException | ForbiddenException | NotAuthorizedException | NotFoundException ex) {
+            fireAuthFailedEvent(ctx, ex.getMessage());
+            throw ex;
+        }
+    }
+
     /** Mutable context for tracking auth progress (used for event reporting). */
     private static class AuthContext {
         final String httpMethod;

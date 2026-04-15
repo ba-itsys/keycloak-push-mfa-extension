@@ -199,11 +199,14 @@ public class PushMfaResource {
                 requireField(payload, "credentialId", CONFIG.input().maxDeviceCredentialIdLength());
         String deviceId = requireField(payload, "deviceId", CONFIG.input().maxDeviceIdLength());
 
-        // Enrollment already trusts the posted `cnf.jwk`, so optional DPoP does not add
-        // security here. It exists only so clients can fail fast on broken DPoP generation,
-        // typically due to severe local clock skew, before the first login attempt.
-        if (CONFIG.dpop().requireForEnrollment() || hasEnrollmentDpopHeaders(headers)) {
+        // Enrollment DPoP is required by default. Operators can still disable it for legacy
+        // compatibility, in which case proof-bearing requests get full DPoP validation,
+        // Authorization-only requests get access-token-only validation, and requests without
+        // either header continue to follow the legacy unauthenticated enrollment path.
+        if (CONFIG.dpop().requireForEnrollment() || hasEnrollmentDpopProof(headers)) {
             dpopAuth.authenticateAgainstPublicKey(headers, uriInfo, "POST", jwkJson, userId, deviceId);
+        } else if (hasEnrollmentAuthorization(headers)) {
+            dpopAuth.authenticateAccessTokenOnly(headers, uriInfo, "POST");
         }
 
         if (!PushSignatureVerifier.verify(deviceResponse, deviceKey)) {
@@ -271,13 +274,18 @@ public class PushMfaResource {
         return Response.ok(Map.of("status", "enrolled")).build();
     }
 
-    private static boolean hasEnrollmentDpopHeaders(HttpHeaders headers) {
+    private static boolean hasEnrollmentAuthorization(HttpHeaders headers) {
         if (headers == null) {
             return false;
         }
-        String authorization = headers.getHeaderString(HttpHeaders.AUTHORIZATION);
-        String dpop = headers.getHeaderString("DPoP");
-        return !StringUtil.isBlank(authorization) || !StringUtil.isBlank(dpop);
+        return !StringUtil.isBlank(headers.getHeaderString(HttpHeaders.AUTHORIZATION));
+    }
+
+    private static boolean hasEnrollmentDpopProof(HttpHeaders headers) {
+        if (headers == null) {
+            return false;
+        }
+        return !StringUtil.isBlank(headers.getHeaderString("DPoP"));
     }
 
     @GET

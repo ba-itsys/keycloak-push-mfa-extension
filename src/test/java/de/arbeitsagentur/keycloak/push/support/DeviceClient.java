@@ -62,32 +62,7 @@ public final class DeviceClient {
     }
 
     public void completeEnrollment(String enrollmentToken) throws Exception {
-        SignedJWT enrollment = SignedJWT.parse(enrollmentToken);
-        JWTClaimsSet claims = enrollment.getJWTClaimsSet();
-        state.setUserId(claims.getSubject());
-        JWTClaimsSet deviceClaims = new JWTClaimsSet.Builder()
-                .claim("enrollmentId", claims.getStringClaim("enrollmentId"))
-                .claim("nonce", claims.getStringClaim("nonce"))
-                .claim("sub", state.userId())
-                .claim("deviceType", "ios")
-                .claim("pushProviderId", state.pushProviderId())
-                .claim("pushProviderType", state.pushProviderType())
-                .claim("credentialId", state.deviceCredentialId())
-                .claim("deviceId", state.deviceId())
-                .claim("deviceLabel", state.deviceLabel())
-                .expirationTime(Date.from(Instant.now().plusSeconds(300)))
-                .claim("cnf", Map.of("jwk", state.signingKey().publicJwk().toJSONObject()))
-                .build();
-        SignedJWT deviceToken = sign(deviceClaims);
-
-        HttpRequest request = HttpRequest.newBuilder(realmBase.resolve("push-mfa/enroll/complete"))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(MAPPER.createObjectNode()
-                        .put("token", deviceToken.serialize())
-                        .toString()))
-                .build();
-        HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
-        assertEquals(200, response.statusCode(), () -> "Enrollment failed: " + response.body());
+        completeEnrollmentWithDpop(enrollmentToken);
     }
 
     public void completeEnrollmentWithDpop(String enrollmentToken) throws Exception {

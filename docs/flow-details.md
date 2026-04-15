@@ -156,7 +156,7 @@ Each Push MFA credential has **two distinct IDs**:
 - **Complete enrollment challenge:** The server ensures the challenge exists, belongs to the user, and is still `PENDING`.
 - **Complete enrollment claims:** The server checks `exp` and nonce before accepting the device response.
 - **Complete enrollment signature:** The server requires a supported algorithm in `cnf.jwk`, enforces header/`cnf` algorithm compatibility, and verifies the JWT signature with the posted JWK before persisting the credential id and optional `deviceId`.
-- **Complete enrollment DPoP:** Optional by default as a fail-fast check for broken device DPoP generation, usually caused by severe local clock skew. Set `keycloak.push-mfa.dpop.requireForEnrollment=true` to enforce it.
+- **Complete enrollment DPoP:** Required by default. You can set `keycloak.push-mfa.dpop.requireForEnrollment=false` for backward compatibility.
 - **Complete enrollment concurrency:** Same-challenge duplicate completions are serialized; a concurrent loser receives `409 Conflict` instead of being retried server-side.
 - **Confirm token format:** Each login creates a fresh challenge and confirm token signed by the realm key containing only the credential id and `cid` (plus `typ`/`ver` and `exp`).
 - **Confirm token lookup:** The token intentionally omits `client_id` and `client_name`, so the mobile app must call `/push-mfa/login/pending` after receiving a push to fetch the username and client metadata before asking for approval.
@@ -166,7 +166,7 @@ Each Push MFA credential has **two distinct IDs**:
 
 ## DPoP Authentication
 
-All push REST endpoints (except enrollment) rely on [OAuth 2.0 Demonstration of Proof-of-Possession (DPoP)](https://datatracker.ietf.org/doc/html/rfc9449) to prove that requests come from the enrolled device:
+All authenticated push REST endpoints rely on [OAuth 2.0 Demonstration of Proof-of-Possession (DPoP)](https://datatracker.ietf.org/doc/html/rfc9449) to prove that requests come from the enrolled device. Enrollment completion is included in that set by default; only the `request_uri` fetch remains capability-URL based. You can disable enrollment DPoP enforcement for backward compatibility:
 
 1. **User key material** is generated during enrollment and stored as a credential on the user. Keep the private key on the device; Keycloak stores the public JWK (and an optional `deviceId` if you let a user enroll more than one device).
 2. **Access tokens** are obtained using the device client credentials (`push-device-client`) and an attached DPoP proof. The access token's `cnf.jkt` claim is bound to the user key's thumbprint.

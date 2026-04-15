@@ -46,11 +46,11 @@ Send it via the `DPoP` header so Keycloak can scope the response to that physica
 
 ## Access Tokens
 
-Obtain a short-lived access token via the realm's token endpoint using the device client credentials. The token request itself must include a DPoP proof, and each subsequent REST call must send `Authorization: DPoP <access-token>` alongside a fresh `DPoP` header signed with the same key.
+Obtain a short-lived access token via the realm's token endpoint using the device client credentials. The token request itself must include a DPoP proof, and each subsequent authenticated REST call must send `Authorization: DPoP <access-token>` alongside a fresh `DPoP` header signed with the same key. Enrollment completion uses the same default. You can disable that with `keycloak.push-mfa.dpop.requireForEnrollment=false` for backward compatibility.
 
 ## Request Authentication
 
-Every authenticated device REST call after enrollment must include a DPoP proof signed with the current user key. The only exception in this flow is the optional `request_uri` fetch used by by-reference enrollment, which is a capability URL and does not use DPoP. The proof binds the request method and URL to the hardware-backed key, making replay or reverse-engineering of a shared client secret ineffective.
+Every authenticated device REST call must include a DPoP proof signed with the current user key. The only exception in this flow is the optional `request_uri` fetch used by by-reference enrollment, which is a capability URL and does not use DPoP. The proof binds the request method and URL to the hardware-backed key, making replay or reverse-engineering of a shared client secret ineffective.
 
 ## Error Handling
 

@@ -68,6 +68,8 @@ These protect the device-facing endpoints against abuse. Configure via Java syst
 JAVA_OPTS_APPEND="-Dkeycloak.push-mfa.input.maxJwtLength=8192 -Dkeycloak.push-mfa.sse.maxConnections=32 -Dkeycloak.push-mfa.sse.heartbeatIntervalSeconds=15 -Dkeycloak.push-mfa.sse.maxConnectionLifetimeSeconds=55 -Dkeycloak.push-mfa.sse.reconnectDelayMillis=3000"
 ```
 
+**Environment variable mapping:** the loader accepts the Java property names directly via `-D...` and also accepts uppercase env vars derived from those names.
+
 ### DPoP Replay Protection
 
 | Property | Default | Range | Description |
@@ -75,7 +77,7 @@ JAVA_OPTS_APPEND="-Dkeycloak.push-mfa.input.maxJwtLength=8192 -Dkeycloak.push-mf
 | `keycloak.push-mfa.dpop.jtiTtlSeconds` | `300` | 30–3600 | How long used `jti` values are remembered |
 | `keycloak.push-mfa.dpop.jtiMaxLength` | `128` | 16–512 | Maximum `jti` string length |
 | `keycloak.push-mfa.dpop.iatToleranceSeconds` | `120` | 30–600 | Allowed clock skew for DPoP proof `iat` timestamp |
-| `keycloak.push-mfa.dpop.requireForEnrollment` | `false` | `true`/`false` | Require DPoP during enrollment instead of using it only as an optional fail-fast check |
+| `keycloak.push-mfa.dpop.requireForEnrollment` | `true` | `true`/`false` | Require DPoP during enrollment by default. Set it to `false` only for backward compatibility |
 
 ### Input Size Limits
 

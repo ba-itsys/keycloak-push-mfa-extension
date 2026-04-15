@@ -202,6 +202,24 @@ class PushMfaIntegrationIT {
     }
 
     @Test
+    void enrollmentAcceptsAccessTokenWithoutDpopProof() throws Exception {
+        adminClient.resetUserState(TEST_USERNAME);
+        DeviceState state = DeviceState.create(DeviceKeyType.RSA);
+        DeviceClient deviceClient = new DeviceClient(baseUri, state);
+        BrowserSession session = new BrowserSession(baseUri);
+
+        HtmlPage loginPage = session.startAuthorization("test-app");
+        HtmlPage enrollPage = session.submitLogin(loginPage, TEST_USERNAME, TEST_PASSWORD);
+        String token = session.extractEnrollmentToken(enrollPage);
+        String deviceEnrollmentToken = deviceClient.createEnrollmentResponseTokenJwt(token);
+
+        HttpResponse<String> response =
+                deviceClient.sendEnrollmentRequest(deviceEnrollmentToken, "DPoP " + deviceClient.accessToken(), null);
+        assertEquals(200, response.statusCode(), () -> "Enrollment failed: " + response.body());
+        session.submitEnrollmentCheck(enrollPage);
+    }
+
+    @Test
     void enrollmentDefaultsMissingPushProviderToNone() throws Exception {
         adminClient.resetUserState(TEST_USERNAME);
         DeviceState state = DeviceState.create(DeviceKeyType.RSA);
@@ -211,9 +229,7 @@ class PushMfaIntegrationIT {
         HtmlPage loginPage = session.startAuthorization("test-app");
         HtmlPage enrollPage = session.submitLogin(loginPage, TEST_USERNAME, TEST_PASSWORD);
         String enrollmentToken = session.extractEnrollmentToken(enrollPage);
-        String deviceEnrollmentToken = deviceClient.createEnrollmentResponseTokenJwt(enrollmentToken, null, null);
-
-        HttpResponse<String> response = deviceClient.sendEnrollmentRequest(deviceEnrollmentToken, null, null);
+        HttpResponse<String> response = deviceClient.completeEnrollmentRawWithDpop(enrollmentToken);
         assertEquals(200, response.statusCode(), () -> "Enrollment failed: " + response.body());
         session.submitEnrollmentCheck(enrollPage);
 

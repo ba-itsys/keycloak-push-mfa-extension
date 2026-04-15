@@ -55,7 +55,7 @@ public record PushMfaConfig(Dpop dpop, Input input, Sse sse) {
                         boundedInt(dpop, keycloakDpop, "dpop", "jtiTtlSeconds", 300, 30, 3600),
                         boundedInt(dpop, keycloakDpop, "dpop", "jtiMaxLength", 128, 16, 512),
                         boundedInt(dpop, keycloakDpop, "dpop", "iatToleranceSeconds", 120, 30, 600),
-                        bool(dpop, keycloakDpop, "dpop", "requireForEnrollment", false)),
+                        bool(dpop, keycloakDpop, "dpop", "requireForEnrollment", true)),
                 new Input(
                         boundedInt(input, keycloakInput, "input", "maxJwtLength", 16384, 2048, 131072),
                         boundedInt(input, keycloakInput, "input", "maxUserIdLength", 128, 32, 512),

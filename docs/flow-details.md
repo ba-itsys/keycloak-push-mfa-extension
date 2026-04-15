@@ -156,7 +156,7 @@ Each Push MFA credential has **two distinct IDs**:
 - **Complete enrollment challenge:** The server ensures the challenge exists, belongs to the user, and is still `PENDING`.
 - **Complete enrollment claims:** The server checks `exp` and nonce before accepting the device response.
 - **Complete enrollment signature:** The server requires a supported algorithm in `cnf.jwk`, enforces header/`cnf` algorithm compatibility, and verifies the JWT signature with the posted JWK before persisting the credential id and optional `deviceId`.
-- **Complete enrollment DPoP:** Required by default. You can set `keycloak.push-mfa.dpop.requireForEnrollment=false` for backward compatibility.
+- **Complete enrollment DPoP:** Required by default. You can set `spi-push-mfa--default--dpop-require-for-enrollment=false` for backward compatibility.
 - **Complete enrollment concurrency:** Same-challenge duplicate completions are serialized; a concurrent loser receives `409 Conflict` instead of being retried server-side.
 - **Confirm token format:** Each login creates a fresh challenge and confirm token signed by the realm key containing only the credential id and `cid` (plus `typ`/`ver` and `exp`).
 - **Confirm token lookup:** The token intentionally omits `client_id` and `client_name`, so the mobile app must call `/push-mfa/login/pending` after receiving a push to fetch the username and client metadata before asking for approval.

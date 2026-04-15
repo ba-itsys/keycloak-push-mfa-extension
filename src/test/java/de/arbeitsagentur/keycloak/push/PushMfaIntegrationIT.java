@@ -202,7 +202,7 @@ class PushMfaIntegrationIT {
     }
 
     @Test
-    void enrollmentAcceptsAccessTokenWithoutDpopProof() throws Exception {
+    void enrollmentRejectsAccessTokenWithoutDpopProofByDefault() throws Exception {
         adminClient.resetUserState(TEST_USERNAME);
         DeviceState state = DeviceState.create(DeviceKeyType.RSA);
         DeviceClient deviceClient = new DeviceClient(baseUri, state);
@@ -215,8 +215,7 @@ class PushMfaIntegrationIT {
 
         HttpResponse<String> response =
                 deviceClient.sendEnrollmentRequest(deviceEnrollmentToken, "DPoP " + deviceClient.accessToken(), null);
-        assertEquals(200, response.statusCode(), () -> "Enrollment failed: " + response.body());
-        session.submitEnrollmentCheck(enrollPage);
+        assertEquals(401, response.statusCode(), () -> "Unexpected response: " + response.body());
     }
 
     @Test
@@ -229,7 +228,13 @@ class PushMfaIntegrationIT {
         HtmlPage loginPage = session.startAuthorization("test-app");
         HtmlPage enrollPage = session.submitLogin(loginPage, TEST_USERNAME, TEST_PASSWORD);
         String enrollmentToken = session.extractEnrollmentToken(enrollPage);
-        HttpResponse<String> response = deviceClient.completeEnrollmentRawWithDpop(enrollmentToken);
+        String deviceEnrollmentToken = deviceClient.createEnrollmentResponseTokenJwt(enrollmentToken, null, null);
+        URI enrollUri = baseUri.resolve("/realms/demo/push-mfa/enroll/complete");
+        HttpResponse<String> response = deviceClient.sendEnrollmentRequest(
+                deviceEnrollmentToken,
+                "DPoP " + deviceClient.accessToken(),
+                deviceClient.createDpopProof(
+                        "POST", enrollUri, UUID.randomUUID().toString()));
         assertEquals(200, response.statusCode(), () -> "Enrollment failed: " + response.body());
         session.submitEnrollmentCheck(enrollPage);
 

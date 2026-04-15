@@ -149,7 +149,7 @@ EXEC_ID=$(kcadm.sh get authentication/flows/browser-push-forms/executions -r dem
 
 # Update configuration
 kcadm.sh create authentication/executions/$EXEC_ID/config -r demo \
-  -s alias=push-mfa-config \
+  -s alias=push-mfa \
   -s config.loginChallengeTtlSeconds=180 \
   -s config.userVerification=number-match
 ```

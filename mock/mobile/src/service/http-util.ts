@@ -3,10 +3,21 @@ import { ENROLL_COMPLETE_URL, TOKEN_ENDPOINT } from './urls.js';
 export const DEVICE_CLIENT_ID = 'push-device-client';
 export const DEVICE_CLIENT_SECRET = 'device-client-secret';
 
-export async function postEnrollComplete(enrollReplyToken: string) {
+export async function postEnrollComplete(
+  enrollReplyToken: string,
+  accessToken?: string,
+  dPop?: string,
+) {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (accessToken && accessToken.trim().length > 0) {
+    headers.Authorization = `DPoP ${accessToken}`;
+  }
+  if (dPop && dPop.trim().length > 0) {
+    headers.DPoP = dPop;
+  }
   return await post(
     ENROLL_COMPLETE_URL,
-    { 'Content-Type': 'application/json' },
+    headers,
     JSON.stringify({ token: enrollReplyToken }),
   );
 }

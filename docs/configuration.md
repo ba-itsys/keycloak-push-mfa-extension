@@ -8,7 +8,7 @@ This section provides a comprehensive reference for all configuration options. F
 |-------------------|--------------|
 | **Authenticator options** | Admin Console: **Authentication → Flows → [your flow] → ⚙️ Config** |
 | **Required Action options** | Admin Console: **Authentication → Required Actions → Configure** |
-| **Server-side limits** | Java system properties or environment variables (requires restart) |
+| **Server-side limits** | Keycloak config for the `push-mfa` SPI provider (requires restart) |
 
 ## Authenticator Options (`push-mfa-authenticator`)
 
@@ -61,46 +61,50 @@ Configure these in the Required Actions settings.
 
 ## Server-Side Hardening Options
 
-These protect the device-facing endpoints against abuse. Configure via Java system properties (recommended) or environment variables. **Requires Keycloak restart.**
+These protect the device-facing endpoints against abuse. Configure them through Keycloak's standard SPI configuration for the `push-mfa` provider. **Requires Keycloak restart.**
 
-**Example (Docker/container):**
+**Example (`keycloak.conf` or CLI option name):**
 ```bash
-JAVA_OPTS_APPEND="-Dkeycloak.push-mfa.input.maxJwtLength=8192 -Dkeycloak.push-mfa.sse.maxConnections=32 -Dkeycloak.push-mfa.sse.heartbeatIntervalSeconds=15 -Dkeycloak.push-mfa.sse.maxConnectionLifetimeSeconds=55 -Dkeycloak.push-mfa.sse.reconnectDelayMillis=3000"
+spi-push-mfa--default--input-max-jwt-length=8192
+spi-push-mfa--default--sse-max-connections=32
+spi-push-mfa--default--sse-heartbeat-interval-seconds=15
+spi-push-mfa--default--sse-max-connection-lifetime-seconds=55
+spi-push-mfa--default--sse-reconnect-delay-millis=3000
 ```
 
-**Environment variable mapping:** the loader accepts the Java property names directly via `-D...` and also accepts uppercase env vars derived from those names.
+Use the same option names with the usual Keycloak configuration mechanisms such as `keycloak.conf`, CLI flags, or environment variables.
 
 ### DPoP Replay Protection
 
 | Property | Default | Range | Description |
 |----------|---------|-------|-------------|
-| `keycloak.push-mfa.dpop.jtiTtlSeconds` | `300` | 30–3600 | How long used `jti` values are remembered |
-| `keycloak.push-mfa.dpop.jtiMaxLength` | `128` | 16–512 | Maximum `jti` string length |
-| `keycloak.push-mfa.dpop.iatToleranceSeconds` | `120` | 30–600 | Allowed clock skew for DPoP proof `iat` timestamp |
-| `keycloak.push-mfa.dpop.requireForEnrollment` | `true` | `true`/`false` | Require DPoP during enrollment by default. Set it to `false` only for backward compatibility |
+| `spi-push-mfa--default--dpop-jti-ttl-seconds` | `300` | 30–3600 | How long used `jti` values are remembered |
+| `spi-push-mfa--default--dpop-jti-max-length` | `128` | 16–512 | Maximum `jti` string length |
+| `spi-push-mfa--default--dpop-iat-tolerance-seconds` | `120` | 30–600 | Allowed clock skew for DPoP proof `iat` timestamp |
+| `spi-push-mfa--default--dpop-require-for-enrollment` | `true` | `true`/`false` | DPoP is required for enrollment by default. Set this to `false` only for backward compatibility |
 
 ### Input Size Limits
 
 | Property | Default | Range | Description |
 |----------|---------|-------|-------------|
-| `keycloak.push-mfa.input.maxJwtLength` | `16384` | 2048–131072 | Max JWT length (access tokens, proofs, etc.) |
-| `keycloak.push-mfa.input.maxJwkJsonLength` | `8192` | 512–65536 | Max JWK JSON length |
-| `keycloak.push-mfa.input.maxUserIdLength` | `128` | 32–512 | Max user ID length |
-| `keycloak.push-mfa.input.maxDeviceIdLength` | `128` | 32–512 | Max device ID length |
-| `keycloak.push-mfa.input.maxDeviceTypeLength` | `64` | 16–256 | Max device type length |
-| `keycloak.push-mfa.input.maxDeviceLabelLength` | `128` | 32–1024 | Max device label length |
-| `keycloak.push-mfa.input.maxCredentialIdLength` | `128` | 32–512 | Max credential ID length |
-| `keycloak.push-mfa.input.maxPushProviderIdLength` | `2048` | 64–8192 | Max push provider ID (FCM token, etc.) |
-| `keycloak.push-mfa.input.maxPushProviderTypeLength` | `64` | 16–256 | Max push provider type name |
+| `spi-push-mfa--default--input-max-jwt-length` | `16384` | 2048–131072 | Max JWT length (access tokens, proofs, etc.) |
+| `spi-push-mfa--default--input-max-jwk-json-length` | `8192` | 512–65536 | Max JWK JSON length |
+| `spi-push-mfa--default--input-max-user-id-length` | `128` | 32–512 | Max user ID length |
+| `spi-push-mfa--default--input-max-device-id-length` | `128` | 32–512 | Max device ID length |
+| `spi-push-mfa--default--input-max-device-type-length` | `64` | 16–256 | Max device type length |
+| `spi-push-mfa--default--input-max-device-label-length` | `128` | 32–1024 | Max device label length |
+| `spi-push-mfa--default--input-max-credential-id-length` | `128` | 32–512 | Max credential ID length |
+| `spi-push-mfa--default--input-max-push-provider-id-length` | `2048` | 64–8192 | Max push provider ID (FCM token, etc.) |
+| `spi-push-mfa--default--input-max-push-provider-type-length` | `64` | 16–256 | Max push provider type name |
 
 ### SSE Connection Limits
 
 | Property | Default | Range | Description |
 |----------|---------|-------|-------------|
-| `keycloak.push-mfa.sse.maxConnections` | `256` | 1–1024 | Max number of concurrently registered SSE clients per Keycloak node |
-| `keycloak.push-mfa.sse.maxSecretLength` | `128` | 16–1024 | Max SSE secret query parameter length |
-| `keycloak.push-mfa.sse.heartbeatIntervalSeconds` | `15` | 5–300 | Interval for SSE keepalive comments while a challenge is still `PENDING` |
-| `keycloak.push-mfa.sse.maxConnectionLifetimeSeconds` | `55` | 15–1800 | Maximum time to keep one SSE connection open before closing it and letting `EventSource` reconnect |
-| `keycloak.push-mfa.sse.reconnectDelayMillis` | `3000` | 250–30000 | `retry:` hint used for overload responses such as `TOO_MANY_CONNECTIONS`; normal `PENDING` streams do not use it |
+| `spi-push-mfa--default--sse-max-connections` | `256` | 1–1024 | Max number of concurrently registered SSE clients per Keycloak node |
+| `spi-push-mfa--default--sse-max-secret-length` | `128` | 16–1024 | Max SSE secret query parameter length |
+| `spi-push-mfa--default--sse-heartbeat-interval-seconds` | `15` | 5–300 | Interval for SSE keepalive comments while a challenge is still `PENDING` |
+| `spi-push-mfa--default--sse-max-connection-lifetime-seconds` | `55` | 15–1800 | Maximum time to keep one SSE connection open before closing it and letting `EventSource` reconnect |
+| `spi-push-mfa--default--sse-reconnect-delay-millis` | `3000` | 250–30000 | `retry:` hint used for overload responses such as `TOO_MANY_CONNECTIONS`; normal `PENDING` streams do not use it |
 
 > **Implementation note:** Each open SSE connection streams directly from the Keycloak node that accepted it and rereads challenge state from shared storage while the challenge is still pending. The server sends periodic heartbeat comments and rotates long-lived connections after the configured maximum lifetime so browsers reconnect cleanly through proxies and firewalls. Cross-node delivery still works because reconnects can land on any node that can read the same backing store.

@@ -18,84 +18,60 @@ package de.arbeitsagentur.keycloak.push.util;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import jakarta.ws.rs.BadRequestException;
-import java.util.HashMap;
-import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.keycloak.Config;
 
 class PushMfaConfigTest {
 
     @Test
-    void loadHonorsSystemProperties() {
-        Map<String, String> properties = Map.of(
-                "keycloak.push-mfa.input.maxJwtLength", "2048",
-                "keycloak.push-mfa.dpop.jtiMaxLength", "40",
-                "keycloak.push-mfa.dpop.requireForEnrollment", "true",
-                "keycloak.push-mfa.sse.maxConnections", "1",
-                "keycloak.push-mfa.sse.heartbeatIntervalSeconds", "20",
-                "keycloak.push-mfa.sse.maxConnectionLifetimeSeconds", "120",
-                "keycloak.push-mfa.sse.reconnectDelayMillis", "1500");
+    void fromScopeHonorsConfiguredValues() {
+        Config.Scope scope = mock(Config.Scope.class);
+        when(scope.getInt("input-max-jwt-length", null)).thenReturn(2048);
+        when(scope.getInt("dpop-jti-max-length", null)).thenReturn(40);
+        when(scope.getBoolean("dpop-require-for-enrollment", null)).thenReturn(Boolean.FALSE);
+        when(scope.getInt("sse-max-connections", null)).thenReturn(1);
+        when(scope.getInt("sse-heartbeat-interval-seconds", null)).thenReturn(20);
+        when(scope.getInt("sse-max-connection-lifetime-seconds", null)).thenReturn(120);
+        when(scope.getInt("sse-reconnect-delay-millis", null)).thenReturn(1500);
 
-        withSystemProperties(properties, () -> {
-            PushMfaConfig config = PushMfaConfig.load();
-            assertEquals(2048, config.input().maxJwtLength());
-            assertEquals(40, config.dpop().jtiMaxLength());
-            assertEquals(true, config.dpop().requireForEnrollment());
-            assertEquals(1, config.sse().maxConnections());
-            assertEquals(20, config.sse().heartbeatIntervalSeconds());
-            assertEquals(120, config.sse().maxConnectionLifetimeSeconds());
-            assertEquals(1500, config.sse().reconnectDelayMillis());
-        });
+        PushMfaConfig config = PushMfaConfig.fromScope(scope);
+
+        assertEquals(2048, config.input().maxJwtLength());
+        assertEquals(40, config.dpop().jtiMaxLength());
+        assertEquals(false, config.dpop().requireForEnrollment());
+        assertEquals(1, config.sse().maxConnections());
+        assertEquals(20, config.sse().heartbeatIntervalSeconds());
+        assertEquals(120, config.sse().maxConnectionLifetimeSeconds());
+        assertEquals(1500, config.sse().reconnectDelayMillis());
     }
 
     @Test
     void configuredLimitsAreEnforcedByValidators() {
-        Map<String, String> properties = Map.of(
-                "keycloak.push-mfa.input.maxJwtLength", "2048",
-                "keycloak.push-mfa.dpop.jtiMaxLength", "40");
+        Config.Scope scope = mock(Config.Scope.class);
+        when(scope.getInt("input-max-jwt-length", null)).thenReturn(2048);
+        when(scope.getInt("dpop-jti-max-length", null)).thenReturn(40);
 
-        withSystemProperties(properties, () -> {
-            PushMfaConfig config = PushMfaConfig.load();
-            String oversizedToken = "a".repeat(config.input().maxJwtLength() + 1);
-            assertThrows(
-                    BadRequestException.class,
-                    () -> PushMfaInputValidator.requireMaxLength(
-                            oversizedToken, config.input().maxJwtLength(), "token"));
+        PushMfaConfig config = PushMfaConfig.fromScope(scope);
+        String oversizedToken = "a".repeat(config.input().maxJwtLength() + 1);
+        assertThrows(
+                BadRequestException.class,
+                () -> PushMfaInputValidator.requireMaxLength(
+                        oversizedToken, config.input().maxJwtLength(), "token"));
 
-            String oversizedJti = "a".repeat(config.dpop().jtiMaxLength() + 1);
-            assertThrows(
-                    BadRequestException.class,
-                    () -> PushMfaInputValidator.requireMaxLength(
-                            oversizedJti, config.dpop().jtiMaxLength(), "jti"));
-        });
+        String oversizedJti = "a".repeat(config.dpop().jtiMaxLength() + 1);
+        assertThrows(
+                BadRequestException.class,
+                () -> PushMfaInputValidator.requireMaxLength(
+                        oversizedJti, config.dpop().jtiMaxLength(), "jti"));
     }
 
     @Test
     void enrollmentDpopEnforcementDefaultsToTrue() {
-        withSystemProperties(Map.of(), () -> {
-            PushMfaConfig config = PushMfaConfig.load();
-            assertEquals(true, config.dpop().requireForEnrollment());
-        });
-    }
-
-    private static void withSystemProperties(Map<String, String> properties, Runnable action) {
-        Map<String, String> previous = new HashMap<>();
-        for (Map.Entry<String, String> entry : properties.entrySet()) {
-            String key = entry.getKey();
-            previous.put(key, System.getProperty(key));
-            System.setProperty(key, entry.getValue());
-        }
-        try {
-            action.run();
-        } finally {
-            for (Map.Entry<String, String> entry : previous.entrySet()) {
-                if (entry.getValue() == null) {
-                    System.clearProperty(entry.getKey());
-                } else {
-                    System.setProperty(entry.getKey(), entry.getValue());
-                }
-            }
-        }
+        PushMfaConfig config = PushMfaConfig.fromScope(null);
+        assertEquals(true, config.dpop().requireForEnrollment());
     }
 }

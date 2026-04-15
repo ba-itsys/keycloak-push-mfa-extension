@@ -149,7 +149,22 @@ app.post('/enroll', async (req, res) => {
     }
 
     const enrollmentJwt = await createEnrollmentJwt(enrollmentValues, ctx);
-    const keycloakResponse = await postEnrollComplete(enrollmentJwt);
+    const credentialId = getCredentialId(enrollmentValues.userId, ctx);
+    const accessTokenDpop = await createDpopProof(credentialId, 'POST', TOKEN_ENDPOINT);
+    const accessTokenResponse = await postAccessToken(accessTokenDpop);
+    if (!accessTokenResponse.ok) {
+      return res
+        .status(accessTokenResponse.status)
+        .json({ error: `${await accessTokenResponse.text()}` });
+    }
+    const accessTokenJson = (await accessTokenResponse.json()) as { access_token?: string };
+    const accessToken = accessTokenJson.access_token;
+    if (!accessToken) {
+      return res.status(500).json({ error: 'token endpoint response missing access_token' });
+    }
+
+    const enrollDpop = await createDpopProof(credentialId, 'POST', ENROLL_COMPLETE_URL);
+    const keycloakResponse = await postEnrollComplete(enrollmentJwt, accessToken, enrollDpop);
 
     if (!keycloakResponse.ok) {
       return res
@@ -160,7 +175,7 @@ app.post('/enroll', async (req, res) => {
     res.json({
       enrollment: {
         enrollmentId: enrollmentValues.enrollmentId,
-        userId: getCredentialId(enrollmentValues.userId, ctx),
+        userId: credentialId,
       },
       responseStatus: keycloakResponse.status,
     });

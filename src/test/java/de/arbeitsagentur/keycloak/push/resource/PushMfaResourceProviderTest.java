@@ -21,7 +21,9 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import de.arbeitsagentur.keycloak.push.spi.PushMfaConfigProvider;
 import de.arbeitsagentur.keycloak.push.support.InMemorySingleUseObjectProvider;
+import de.arbeitsagentur.keycloak.push.util.PushMfaConfig;
 import org.junit.jupiter.api.Test;
 import org.keycloak.models.KeycloakSession;
 
@@ -39,7 +41,10 @@ class PushMfaResourceProviderTest {
     @Test
     void providerReturnsResourceInstance() {
         KeycloakSession session = mock(KeycloakSession.class);
+        PushMfaConfigProvider configProvider = mock(PushMfaConfigProvider.class);
         when(session.singleUseObjects()).thenReturn(new InMemorySingleUseObjectProvider());
+        when(session.getProvider(PushMfaConfigProvider.class)).thenReturn(configProvider);
+        when(configProvider.getConfig()).thenReturn(PushMfaConfig.fromScope(null));
         PushMfaRealmResourceProvider provider = new PushMfaRealmResourceProvider(session);
 
         assertInstanceOf(PushMfaResource.class, provider.getResource());

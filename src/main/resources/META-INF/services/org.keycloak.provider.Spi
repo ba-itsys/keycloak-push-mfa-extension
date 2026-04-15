@@ -1,4 +1,5 @@
 de.arbeitsagentur.keycloak.push.spi.PushNotificationSpi
+de.arbeitsagentur.keycloak.push.spi.PushMfaConfigSpi
 de.arbeitsagentur.keycloak.push.spi.PushMfaEventSpi
 de.arbeitsagentur.keycloak.push.spi.WaitChallengeStateSpi
 de.arbeitsagentur.keycloak.push.spi.PushMfaLockoutSpi

@@ -25,9 +25,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallenge;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStatus;
+import de.arbeitsagentur.keycloak.push.spi.PushMfaConfigProvider;
 import de.arbeitsagentur.keycloak.push.spi.PushMfaEventListener;
 import de.arbeitsagentur.keycloak.push.spi.event.ChallengeResponseInvalidEvent;
 import de.arbeitsagentur.keycloak.push.support.InMemorySingleUseObjectProvider;
+import de.arbeitsagentur.keycloak.push.util.PushMfaConfig;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import jakarta.ws.rs.ForbiddenException;
 import java.time.Instant;
@@ -79,7 +81,10 @@ class PushMfaResourceUserVerificationTest {
 
     private KeycloakSession buildMockSession() {
         KeycloakSession session = Mockito.mock(KeycloakSession.class);
+        PushMfaConfigProvider configProvider = Mockito.mock(PushMfaConfigProvider.class);
         Mockito.when(session.singleUseObjects()).thenReturn(new InMemorySingleUseObjectProvider());
+        Mockito.when(session.getProvider(PushMfaConfigProvider.class)).thenReturn(configProvider);
+        Mockito.when(configProvider.getConfig()).thenReturn(PushMfaConfig.fromScope(null));
         return session;
     }
 

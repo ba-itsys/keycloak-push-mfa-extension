@@ -46,7 +46,7 @@ Send it via the `DPoP` header so Keycloak can scope the response to that physica
 
 ## Access Tokens
 
-Obtain a short-lived access token via the realm's token endpoint using the device client credentials. The token request itself must include a DPoP proof, and each subsequent authenticated REST call must send `Authorization: DPoP <access-token>` alongside a fresh `DPoP` header signed with the same key. Enrollment completion uses the same default. You can disable that with `keycloak.push-mfa.dpop.requireForEnrollment=false` for backward compatibility.
+Obtain a short-lived access token via the realm's token endpoint using the device client credentials. The token request itself must include a DPoP proof, and each subsequent authenticated REST call must send `Authorization: DPoP <access-token>` alongside a fresh `DPoP` header signed with the same key. Enrollment completion uses the same default. You can disable that with `spi-push-mfa--default--dpop-require-for-enrollment=false` for backward compatibility.
 
 ## Request Authentication
 

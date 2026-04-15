@@ -40,54 +40,33 @@ public record PushMfaConfig(Dpop dpop, Input input, Sse sse) {
             int maxConnectionLifetimeSeconds,
             int reconnectDelayMillis) {}
 
-    public static PushMfaConfig load() {
-        Config.Scope root = Config.scope("push-mfa");
-        Config.Scope keycloakRoot = Config.scope("keycloak").scope("push-mfa");
-        Config.Scope dpop = root.scope("dpop");
-        Config.Scope keycloakDpop = keycloakRoot.scope("dpop");
-        Config.Scope input = root.scope("input");
-        Config.Scope keycloakInput = keycloakRoot.scope("input");
-        Config.Scope sse = root.scope("sse");
-        Config.Scope keycloakSse = keycloakRoot.scope("sse");
-
+    public static PushMfaConfig fromScope(Config.Scope config) {
         return new PushMfaConfig(
                 new Dpop(
-                        boundedInt(dpop, keycloakDpop, "dpop", "jtiTtlSeconds", 300, 30, 3600),
-                        boundedInt(dpop, keycloakDpop, "dpop", "jtiMaxLength", 128, 16, 512),
-                        boundedInt(dpop, keycloakDpop, "dpop", "iatToleranceSeconds", 120, 30, 600),
-                        bool(dpop, keycloakDpop, "dpop", "requireForEnrollment", true)),
+                        boundedInt(config, "dpop-jti-ttl-seconds", 300, 30, 3600),
+                        boundedInt(config, "dpop-jti-max-length", 128, 16, 512),
+                        boundedInt(config, "dpop-iat-tolerance-seconds", 120, 30, 600),
+                        bool(config, "dpop-require-for-enrollment", true)),
                 new Input(
-                        boundedInt(input, keycloakInput, "input", "maxJwtLength", 16384, 2048, 131072),
-                        boundedInt(input, keycloakInput, "input", "maxUserIdLength", 128, 32, 512),
-                        boundedInt(input, keycloakInput, "input", "maxDeviceIdLength", 128, 32, 512),
-                        boundedInt(input, keycloakInput, "input", "maxDeviceTypeLength", 64, 16, 256),
-                        boundedInt(input, keycloakInput, "input", "maxDeviceLabelLength", 128, 32, 1024),
-                        boundedInt(input, keycloakInput, "input", "maxCredentialIdLength", 128, 32, 512),
-                        boundedInt(input, keycloakInput, "input", "maxPushProviderIdLength", 2048, 64, 8192),
-                        boundedInt(input, keycloakInput, "input", "maxPushProviderTypeLength", 64, 16, 256),
-                        boundedInt(input, keycloakInput, "input", "maxJwkJsonLength", 8192, 512, 65536)),
+                        boundedInt(config, "input-max-jwt-length", 16384, 2048, 131072),
+                        boundedInt(config, "input-max-user-id-length", 128, 32, 512),
+                        boundedInt(config, "input-max-device-id-length", 128, 32, 512),
+                        boundedInt(config, "input-max-device-type-length", 64, 16, 256),
+                        boundedInt(config, "input-max-device-label-length", 128, 32, 1024),
+                        boundedInt(config, "input-max-credential-id-length", 128, 32, 512),
+                        boundedInt(config, "input-max-push-provider-id-length", 2048, 64, 8192),
+                        boundedInt(config, "input-max-push-provider-type-length", 64, 16, 256),
+                        boundedInt(config, "input-max-jwk-json-length", 8192, 512, 65536)),
                 new Sse(
-                        boundedInt(sse, keycloakSse, "sse", "maxConnections", 256, 1, 1024),
-                        boundedInt(sse, keycloakSse, "sse", "maxSecretLength", 128, 16, 1024),
-                        boundedInt(sse, keycloakSse, "sse", "heartbeatIntervalSeconds", 15, 5, 300),
-                        boundedInt(sse, keycloakSse, "sse", "maxConnectionLifetimeSeconds", 55, 15, 1800),
-                        boundedInt(sse, keycloakSse, "sse", "reconnectDelayMillis", 3000, 250, 30000)));
+                        boundedInt(config, "sse-max-connections", 256, 1, 1024),
+                        boundedInt(config, "sse-max-secret-length", 128, 16, 1024),
+                        boundedInt(config, "sse-heartbeat-interval-seconds", 15, 5, 300),
+                        boundedInt(config, "sse-max-connection-lifetime-seconds", 55, 15, 1800),
+                        boundedInt(config, "sse-reconnect-delay-millis", 3000, 250, 30000)));
     }
 
-    private static int boundedInt(
-            Config.Scope config, Config.Scope fallback, String group, String key, int defaultValue, int min, int max) {
-        String kebabKey = toKebabCase(key);
-        Integer configured = readInt(config, key, kebabKey);
-        if (configured == null) {
-            configured = readInt(fallback, key, kebabKey);
-        }
-        if (configured == null) {
-            configured = readSystemInt(
-                    "keycloak.push-mfa." + group + "." + key,
-                    "keycloak.push-mfa." + group + "." + kebabKey,
-                    "push-mfa." + group + "." + key,
-                    "push-mfa." + group + "." + kebabKey);
-        }
+    private static int boundedInt(Config.Scope config, String key, int defaultValue, int min, int max) {
+        Integer configured = config == null ? null : config.getInt(key, null);
         int raw = configured != null ? configured : defaultValue;
         if (raw < min) {
             return min;
@@ -98,111 +77,8 @@ public record PushMfaConfig(Dpop dpop, Input input, Sse sse) {
         return raw;
     }
 
-    private static boolean bool(
-            Config.Scope config, Config.Scope fallback, String group, String key, boolean defaultValue) {
-        String kebabKey = toKebabCase(key);
-        Boolean configured = readBoolean(config, key, kebabKey);
-        if (configured == null) {
-            configured = readBoolean(fallback, key, kebabKey);
-        }
-        if (configured == null) {
-            configured = readSystemBoolean(
-                    "keycloak.push-mfa." + group + "." + key,
-                    "keycloak.push-mfa." + group + "." + kebabKey,
-                    "push-mfa." + group + "." + key,
-                    "push-mfa." + group + "." + kebabKey);
-        }
+    private static boolean bool(Config.Scope config, String key, boolean defaultValue) {
+        Boolean configured = config == null ? null : config.getBoolean(key, null);
         return configured != null ? configured : defaultValue;
-    }
-
-    private static Integer readInt(Config.Scope scope, String key, String kebabKey) {
-        if (scope == null) {
-            return null;
-        }
-        Integer configured = scope.getInt(key, null);
-        if (configured != null) {
-            return configured;
-        }
-        if (!key.equals(kebabKey)) {
-            return scope.getInt(kebabKey, null);
-        }
-        return null;
-    }
-
-    private static Boolean readBoolean(Config.Scope scope, String key, String kebabKey) {
-        if (scope == null) {
-            return null;
-        }
-        Boolean configured = scope.getBoolean(key, null);
-        if (configured != null) {
-            return configured;
-        }
-        if (!key.equals(kebabKey)) {
-            return scope.getBoolean(kebabKey, null);
-        }
-        return null;
-    }
-
-    private static Integer readSystemInt(String... propertyNames) {
-        for (String propertyName : propertyNames) {
-            if (propertyName == null || propertyName.isBlank()) {
-                continue;
-            }
-            String raw = System.getProperty(propertyName);
-            if (raw == null || raw.isBlank()) {
-                raw = System.getenv(toEnvVarName(propertyName));
-            }
-            if (raw == null || raw.isBlank()) {
-                continue;
-            }
-            try {
-                return Integer.parseInt(raw.trim());
-            } catch (NumberFormatException ignored) {
-                // ignore invalid config values
-            }
-        }
-        return null;
-    }
-
-    private static Boolean readSystemBoolean(String... propertyNames) {
-        for (String propertyName : propertyNames) {
-            if (propertyName == null || propertyName.isBlank()) {
-                continue;
-            }
-            String raw = System.getProperty(propertyName);
-            if (raw == null || raw.isBlank()) {
-                raw = System.getenv(toEnvVarName(propertyName));
-            }
-            if ("true".equalsIgnoreCase(raw)) {
-                return true;
-            }
-            if ("false".equalsIgnoreCase(raw)) {
-                return false;
-            }
-        }
-        return null;
-    }
-
-    private static String toEnvVarName(String propertyName) {
-        return propertyName.toUpperCase().replace('.', '_').replace('-', '_');
-    }
-
-    private static String toKebabCase(String value) {
-        if (value == null || value.isBlank()) {
-            return value;
-        }
-        StringBuilder builder = new StringBuilder();
-        for (int i = 0; i < value.length(); i++) {
-            char ch = value.charAt(i);
-            if (Character.isUpperCase(ch)) {
-                if (!builder.isEmpty()) {
-                    builder.append('-');
-                }
-                builder.append(Character.toLowerCase(ch));
-            } else {
-                builder.append(ch);
-            }
-        }
-        return builder.toString();
     }
 }

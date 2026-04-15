@@ -23,6 +23,7 @@ import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStatus;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStore;
 import de.arbeitsagentur.keycloak.push.credential.PushCredentialData;
 import de.arbeitsagentur.keycloak.push.credential.PushCredentialService;
+import de.arbeitsagentur.keycloak.push.spi.PushMfaConfigProvider;
 import de.arbeitsagentur.keycloak.push.spi.PushMfaLockoutHandler;
 import de.arbeitsagentur.keycloak.push.spi.event.ChallengeAcceptedEvent;
 import de.arbeitsagentur.keycloak.push.spi.event.ChallengeDeniedEvent;
@@ -85,21 +86,26 @@ public class PushMfaResource {
 
     private static final String ENROLLMENT_REQUEST_NOT_FOUND_MESSAGE = "Enrollment request not found";
     private static final Logger LOG = Logger.getLogger(PushMfaResource.class);
-    private static final PushMfaConfig CONFIG = PushMfaConfig.load();
     private static final int CHALLENGE_LOOKUP_ATTEMPTS = 5;
     private static final long CHALLENGE_LOOKUP_RETRY_MILLIS = 50L;
     private static final long SSE_POLL_INTERVAL_MILLIS = 500L;
     private static volatile PushMfaSseRegistry sseRegistry;
 
     private final KeycloakSession session;
+    private final PushMfaConfig config;
     private final PushChallengeStore challengeStore;
     private final DpopAuthenticator dpopAuth;
     private final SseEventEmitter sseEmitter;
 
     public PushMfaResource(KeycloakSession session) {
         this.session = session;
+        PushMfaConfigProvider configProvider = session.getProvider(PushMfaConfigProvider.class);
+        if (configProvider == null) {
+            throw new IllegalStateException("PushMfaConfigProvider unavailable");
+        }
+        this.config = configProvider.getConfig();
         this.challengeStore = new PushChallengeStore(session);
-        this.dpopAuth = new DpopAuthenticator(session, CONFIG.dpop(), CONFIG.input());
+        this.dpopAuth = new DpopAuthenticator(session, config.dpop(), config.input());
         this.sseEmitter = new SseEventEmitter();
     }
 
@@ -112,7 +118,7 @@ public class PushMfaResource {
             @PathParam("challengeId") String challengeId, @QueryParam("secret") String secret) {
         String cid = PushMfaInputValidator.requireUuid(challengeId, "challengeId");
         String sec =
-                PushMfaInputValidator.optionalBoundedText(secret, CONFIG.sse().maxSecretLength(), "secret");
+                PushMfaInputValidator.optionalBoundedText(secret, config.sse().maxSecretLength(), "secret");
         LOG.debugf("Received enrollment SSE stream request for challenge %s", cid);
         return buildEnrollmentChallengeStreamResponse(cid, sec);
     }
@@ -139,7 +145,7 @@ public class PushMfaResource {
             throw new BadRequestException("Request body required");
         }
         String deviceToken = PushMfaInputValidator.require(request.token(), "token");
-        PushMfaInputValidator.requireMaxLength(deviceToken, CONFIG.input().maxJwtLength(), "token");
+        PushMfaInputValidator.requireMaxLength(deviceToken, config.input().maxJwtLength(), "token");
         TokenLogHelper.logJwt("enroll-device-token", deviceToken);
 
         JWSInput deviceResponse = parseJwt(deviceToken, "enrollment token");
@@ -148,7 +154,7 @@ public class PushMfaResource {
         PushMfaKeyUtil.requireSupportedAlgorithm(algorithm, "enrollment token");
 
         String userId = PushMfaInputValidator.requireBoundedText(
-                jsonText(payload, "sub"), CONFIG.input().maxUserIdLength(), "sub");
+                jsonText(payload, "sub"), config.input().maxUserIdLength(), "sub");
         UserModel user = getUser(userId);
 
         String enrollmentId = PushMfaInputValidator.requireUuid(jsonText(payload, "enrollmentId"), "enrollmentId");
@@ -180,30 +186,30 @@ public class PushMfaResource {
         }
         PushMfaInputValidator.ensurePublicJwk(jwkNode, "cnf.jwk");
         String jwkJson = jwkNode.toString();
-        PushMfaInputValidator.requireMaxLength(jwkJson, CONFIG.input().maxJwkJsonLength(), "cnf.jwk");
+        PushMfaInputValidator.requireMaxLength(jwkJson, config.input().maxJwkJsonLength(), "cnf.jwk");
         KeyWrapper deviceKey = PushMfaKeyUtil.keyWrapperFromNode(jwkNode);
         PushMfaKeyUtil.ensureKeyMatchesAlgorithm(deviceKey, algorithm.name());
 
-        String deviceType = requireField(payload, "deviceType", CONFIG.input().maxDeviceTypeLength());
+        String deviceType = requireField(payload, "deviceType", config.input().maxDeviceTypeLength());
         String pushProviderType = PushMfaInputValidator.optionalBoundedText(
-                jsonText(payload, "pushProviderType"), CONFIG.input().maxPushProviderTypeLength(), "pushProviderType");
+                jsonText(payload, "pushProviderType"), config.input().maxPushProviderTypeLength(), "pushProviderType");
         if (StringUtil.isBlank(pushProviderType)) {
             pushProviderType = "none";
         }
         String pushProviderId = PushMfaInputValidator.optionalBoundedText(
-                jsonText(payload, "pushProviderId"), CONFIG.input().maxPushProviderIdLength(), "pushProviderId");
+                jsonText(payload, "pushProviderId"), config.input().maxPushProviderIdLength(), "pushProviderId");
         if (!"none".equals(pushProviderType) && StringUtil.isBlank(pushProviderId)) {
             throw new BadRequestException("pushProviderId required unless pushProviderType=none");
         }
         String credentialId =
-                requireField(payload, "credentialId", CONFIG.input().maxDeviceCredentialIdLength());
-        String deviceId = requireField(payload, "deviceId", CONFIG.input().maxDeviceIdLength());
+                requireField(payload, "credentialId", config.input().maxDeviceCredentialIdLength());
+        String deviceId = requireField(payload, "deviceId", config.input().maxDeviceIdLength());
 
-        // Enrollment DPoP is required by default. Operators can still disable it for legacy
-        // compatibility, in which case proof-bearing requests get full DPoP validation,
-        // Authorization-only requests get access-token-only validation, and requests without
-        // either header continue to follow the legacy unauthenticated enrollment path.
-        if (CONFIG.dpop().requireForEnrollment() || hasEnrollmentDpopProof(headers)) {
+        // Enrollment DPoP is required by default. If it is disabled for backward compatibility,
+        // proof-bearing requests still get full DPoP validation, Authorization-only requests get
+        // access-token-only validation, and requests without either header keep the legacy
+        // unauthenticated behavior.
+        if (config.dpop().requireForEnrollment() || hasEnrollmentDpopProof(headers)) {
             dpopAuth.authenticateAgainstPublicKey(headers, uriInfo, "POST", jwkJson, userId, deviceId);
         } else if (hasEnrollmentAuthorization(headers)) {
             dpopAuth.authenticateAccessTokenOnly(headers, uriInfo, "POST");
@@ -236,7 +242,7 @@ public class PushMfaResource {
         String normalizedLabel =
                 StringUtil.isBlank(labelClaim) ? PushMfaConstants.USER_CREDENTIAL_DISPLAY_NAME : labelClaim;
         String label = PushMfaInputValidator.requireBoundedText(
-                normalizedLabel, CONFIG.input().maxDeviceLabelLength(), "deviceLabel");
+                normalizedLabel, config.input().maxDeviceLabelLength(), "deviceLabel");
 
         Instant completedAt = Instant.now();
         runInTransaction(txSession -> {
@@ -293,7 +299,7 @@ public class PushMfaResource {
     public Response listPendingChallenges(
             @QueryParam("userId") String userId, @Context HttpHeaders headers, @Context UriInfo uriInfo) {
         String normalizedUserId =
-                PushMfaInputValidator.requireBoundedText(userId, CONFIG.input().maxUserIdLength(), "userId");
+                PushMfaInputValidator.requireBoundedText(userId, config.input().maxUserIdLength(), "userId");
         DpopAuthenticator.DeviceAssertion device = dpopAuth.authenticate(headers, uriInfo, "GET");
 
         boolean userIdMatches = Objects.equals(device.user().getId(), normalizedUserId);
@@ -356,7 +362,7 @@ public class PushMfaResource {
         }
 
         String deviceToken = PushMfaInputValidator.require(request.token(), "token");
-        PushMfaInputValidator.requireMaxLength(deviceToken, CONFIG.input().maxJwtLength(), "token");
+        PushMfaInputValidator.requireMaxLength(deviceToken, config.input().maxJwtLength(), "token");
         TokenLogHelper.logJwt("login-device-token", deviceToken);
 
         JWSInput loginResponse = parseJwt(deviceToken, "authentication token");
@@ -396,7 +402,7 @@ public class PushMfaResource {
         verifyTokenExpiration(payload.get("exp"), "authentication token");
 
         String tokenCredentialId = PushMfaInputValidator.requireBoundedText(
-                jsonText(payload, "credId"), CONFIG.input().maxDeviceCredentialIdLength(), "credId");
+                jsonText(payload, "credId"), config.input().maxDeviceCredentialIdLength(), "credId");
         if (!Objects.equals(tokenCredentialId, data.getDeviceCredentialId())) {
             throw new ForbiddenException("Authentication token credential mismatch");
         }
@@ -497,7 +503,7 @@ public class PushMfaResource {
             @PathParam("cid") String challengeId, @QueryParam("secret") String secret) {
         String cid = PushMfaInputValidator.requireUuid(challengeId, "cid");
         String sec =
-                PushMfaInputValidator.optionalBoundedText(secret, CONFIG.sse().maxSecretLength(), "secret");
+                PushMfaInputValidator.optionalBoundedText(secret, config.sse().maxSecretLength(), "secret");
         LOG.debugf("Received login SSE stream request for challenge %s", cid);
         return buildLoginChallengeStreamResponse(cid, sec);
     }
@@ -520,7 +526,7 @@ public class PushMfaResource {
 
     private Response buildChallengeStreamResponse(
             String challengeId, String secret, SseEventEmitter.EventType type, ChallengeStreamReader challengeReader) {
-        PushMfaSseRegistry registry = getSseRegistry(session);
+        PushMfaSseRegistry registry = getSseRegistry();
         if (StringUtil.isBlank(secret)) {
             LOG.warnf("%s SSE rejected for %s due to missing secret", type, challengeId);
             return singleStatusStreamResponse("INVALID", type);
@@ -539,7 +545,7 @@ public class PushMfaResource {
         if (!registry.tryAcquireConnection()) {
             LOG.warnf("Rejecting %s SSE for %s due to maxConnections=%d", type, challengeId, registry.maxConnections());
             return retryStatusStreamResponse(
-                    "TOO_MANY_CONNECTIONS", challenge, type, CONFIG.sse().reconnectDelayMillis());
+                    "TOO_MANY_CONNECTIONS", challenge, type, config.sse().reconnectDelayMillis());
         }
 
         StreamingOutput stream = output -> {
@@ -639,13 +645,13 @@ public class PushMfaResource {
                 lastStatus != null ? lastStatus.name() : challenge.getStatus().name();
         try {
             sseEmitter.writeRetryStatusEvent(
-                    output, status, challenge, type, CONFIG.sse().reconnectDelayMillis());
+                    output, status, challenge, type, config.sse().reconnectDelayMillis());
         } catch (IOException ioException) {
             LOG.debugf(ioException, "SSE stream for %s closed while sending reconnect state", challengeId);
         }
     }
 
-    private static PushMfaSseRegistry getSseRegistry(KeycloakSession session) {
+    private PushMfaSseRegistry getSseRegistry() {
         PushMfaSseRegistry registry = sseRegistry;
         if (registry != null) {
             return registry;
@@ -655,9 +661,9 @@ public class PushMfaResource {
             registry = sseRegistry;
             if (registry == null) {
                 registry = new PushMfaSseRegistry(
-                        CONFIG.sse().maxConnections(),
-                        CONFIG.sse().heartbeatIntervalSeconds() * 1000L,
-                        CONFIG.sse().maxConnectionLifetimeSeconds() * 1000L,
+                        config.sse().maxConnections(),
+                        config.sse().heartbeatIntervalSeconds() * 1000L,
+                        config.sse().maxConnectionLifetimeSeconds() * 1000L,
                         session.getKeycloakSessionFactory());
                 sseRegistry = registry;
             }
@@ -765,9 +771,9 @@ public class PushMfaResource {
         }
         DpopAuthenticator.DeviceAssertion device = dpopAuth.authenticate(headers, uriInfo, "PUT");
         String pushProviderId = PushMfaInputValidator.requireBoundedText(
-                request.pushProviderId(), CONFIG.input().maxPushProviderIdLength(), "pushProviderId");
+                request.pushProviderId(), config.input().maxPushProviderIdLength(), "pushProviderId");
         String pushProviderType = PushMfaInputValidator.optionalBoundedText(
-                request.pushProviderType(), CONFIG.input().maxPushProviderTypeLength(), "pushProviderType");
+                request.pushProviderType(), config.input().maxPushProviderTypeLength(), "pushProviderType");
 
         PushCredentialData current = device.credentialData();
         if (StringUtil.isBlank(pushProviderType)) {
@@ -821,7 +827,7 @@ public class PushMfaResource {
             }
             PushMfaInputValidator.ensurePublicJwk(jwkNode, "publicKeyJwk");
             String jwkJson = jwkNode.toString();
-            PushMfaInputValidator.requireMaxLength(jwkJson, CONFIG.input().maxJwkJsonLength(), "publicKeyJwk");
+            PushMfaInputValidator.requireMaxLength(jwkJson, config.input().maxJwkJsonLength(), "publicKeyJwk");
 
             KeyWrapper newKey = PushMfaKeyUtil.keyWrapperFromNode(jwkNode);
             String normalizedAlgorithm = PushMfaKeyUtil.requireAlgorithmFromJwk(jwkNode, "rotate-key request");

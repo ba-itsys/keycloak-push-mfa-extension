@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.0.0](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.12.0...v2.0.0) (2026-04-15)
+
+
+### ⚠ BREAKING CHANGES
+
+* use keycloak spi for config instead of our own mechanism
+
+### Bug Fixes
+
+* dpop enforcement for enrollment by default, accept non dpop access tokens as well if turned off ([e01a5b3](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/e01a5b3a761a3009a9a38e608a97ce9c7f476d7d))
+* use keycloak spi for config instead of our own mechanism ([0c90860](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/0c90860deb64c51079d1649c24bf156b7bb0f984))
+
 ## [1.12.0](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.11.0...v1.12.0) (2026-04-14)
 
 

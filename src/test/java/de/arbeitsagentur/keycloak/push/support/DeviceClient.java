@@ -32,7 +32,9 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.Date;
 import java.util.Map;
 import java.util.Objects;
@@ -298,7 +300,7 @@ public final class DeviceClient {
         HttpResponse<String> lastResponse = null;
         while (System.currentTimeMillis() < deadline) {
             HttpRequest request = HttpRequest.newBuilder(tokenEndpoint)
-                    .header("DPoP", createDpopProof("POST", tokenEndpoint))
+                    .header("DPoP", createTokenEndpointDpopProof("POST", tokenEndpoint))
                     .header("Content-Type", "application/x-www-form-urlencoded")
                     .POST(HttpRequest.BodyPublishers.ofString("grant_type=client_credentials&client_id="
                             + urlEncode(DEVICE_CLIENT_ID) + "&client_secret=" + urlEncode(DEVICE_CLIENT_SECRET)))
@@ -330,14 +332,21 @@ public final class DeviceClient {
     }
 
     public String createDpopProof(String method, URI uri, Instant issuedAt, String jti) throws Exception {
-        JWTClaimsSet claims = new JWTClaimsSet.Builder()
+        return createDpopProof(method, uri, issuedAt, jti, accessToken);
+    }
+
+    private String createDpopProof(String method, URI uri, Instant issuedAt, String jti, String accessTokenOverride)
+            throws Exception {
+        JWTClaimsSet.Builder claims = new JWTClaimsSet.Builder()
                 .claim("htm", method)
                 .claim("htu", uri.toString())
                 .claim("sub", state.userId())
                 .claim("deviceId", state.deviceId())
                 .claim("iat", issuedAt.getEpochSecond())
-                .claim("jti", jti)
-                .build();
+                .claim("jti", jti);
+        if (accessTokenOverride != null && !accessTokenOverride.isBlank()) {
+            claims.claim("ath", computeAccessTokenHash(accessTokenOverride));
+        }
         DeviceSigningKey signingKey = state.signingKey();
         SignedJWT proof = new SignedJWT(
                 new JWSHeader.Builder(signingKey.algorithm())
@@ -345,9 +354,19 @@ public final class DeviceClient {
                         .jwk(signingKey.publicJwk())
                         .keyID(signingKey.keyId())
                         .build(),
-                claims);
+                claims.build());
         proof.sign(signingKey.signer());
         return proof.serialize();
+    }
+
+    private String createTokenEndpointDpopProof(String method, URI uri) throws Exception {
+        return createDpopProof(method, uri, Instant.now(), UUID.randomUUID().toString(), null);
+    }
+
+    private static String computeAccessTokenHash(String accessTokenString) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        byte[] hash = digest.digest(accessTokenString.getBytes(StandardCharsets.US_ASCII));
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
     }
 
     public String accessToken() throws Exception {

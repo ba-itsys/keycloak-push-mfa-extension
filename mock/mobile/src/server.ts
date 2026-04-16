@@ -19,6 +19,7 @@ import {
   createEnrollmentJwt,
   createChallengeToken,
   createDpopProof,
+  createDpopProofWithAth,
   unpackEnrollmentToken,
   unpackLoginConfirmToken,
   extractUserIdFromCredentialId,
@@ -83,7 +84,7 @@ app.post('/confirm-login', async (req, res) => {
     pendingUrl.searchParams.set('userId', userId);
     // RFC 9449: htu must exclude query and fragment parts
     const pendingHtu = LOGIN_PENDING_URL;
-    const pendingDpop = await createDpopProof(credentialId, 'GET', pendingHtu);
+    const pendingDpop = await createDpopProofWithAth(credentialId, 'GET', pendingHtu, accessToken);
     const pendingResponse = await getPendingChallenges(pendingUrl.toString(), pendingDpop, accessToken);
     if (!pendingResponse.ok) {
       return res.status(pendingResponse.status).json({ error: `${await pendingResponse.text()}` });
@@ -105,7 +106,7 @@ app.post('/confirm-login', async (req, res) => {
     }
 
     const url = CHALLENGE_URL.replace(CHALLENGE_ID, challengeId);
-    const dpopChallengeToken = await createDpopProof(credentialId, 'POST', url);
+    const dpopChallengeToken = await createDpopProofWithAth(credentialId, 'POST', url, accessToken);
     const challengeToken = await createChallengeToken(
       credentialId,
       challengeId,
@@ -163,7 +164,12 @@ app.post('/enroll', async (req, res) => {
       return res.status(500).json({ error: 'token endpoint response missing access_token' });
     }
 
-    const enrollDpop = await createDpopProof(credentialId, 'POST', ENROLL_COMPLETE_URL);
+    const enrollDpop = await createDpopProofWithAth(
+      credentialId,
+      'POST',
+      ENROLL_COMPLETE_URL,
+      accessToken,
+    );
     const keycloakResponse = await postEnrollComplete(enrollmentJwt, accessToken, enrollDpop);
 
     if (!keycloakResponse.ok) {

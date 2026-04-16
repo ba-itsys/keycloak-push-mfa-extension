@@ -33,6 +33,7 @@ class PushMfaConfigTest {
         when(scope.getInt("input-max-jwt-length", null)).thenReturn(2048);
         when(scope.getInt("dpop-jti-max-length", null)).thenReturn(40);
         when(scope.getBoolean("dpop-require-for-enrollment", null)).thenReturn(Boolean.FALSE);
+        when(scope.getBoolean("dpop-require-ath", null)).thenReturn(Boolean.TRUE);
         when(scope.getInt("sse-max-connections", null)).thenReturn(1);
         when(scope.getInt("sse-heartbeat-interval-seconds", null)).thenReturn(20);
         when(scope.getInt("sse-max-connection-lifetime-seconds", null)).thenReturn(120);
@@ -43,6 +44,7 @@ class PushMfaConfigTest {
         assertEquals(2048, config.input().maxJwtLength());
         assertEquals(40, config.dpop().jtiMaxLength());
         assertEquals(false, config.dpop().requireForEnrollment());
+        assertEquals(true, config.dpop().requireAth());
         assertEquals(1, config.sse().maxConnections());
         assertEquals(20, config.sse().heartbeatIntervalSeconds());
         assertEquals(120, config.sse().maxConnectionLifetimeSeconds());
@@ -73,5 +75,6 @@ class PushMfaConfigTest {
     void enrollmentDpopEnforcementDefaultsToTrue() {
         PushMfaConfig config = PushMfaConfig.fromScope(null);
         assertEquals(true, config.dpop().requireForEnrollment());
+        assertEquals(true, config.dpop().requireAth());
     }
 }

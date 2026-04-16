@@ -125,6 +125,15 @@ export function extractUserIdFromCredentialId(credentialId: string): string | nu
 }
 
 export async function createDpopProof(credentialId: string, method: string, htu: string) {
+  return await createDpopProofWithAth(credentialId, method, htu);
+}
+
+export async function createDpopProofWithAth(
+  credentialId: string,
+  method: string,
+  htu: string,
+  accessToken?: string,
+) {
   const userId = extractUserIdFromCredentialId(credentialId) ?? credentialId;
 
   const dpopTokenPayload: DpopPayload = {
@@ -134,7 +143,7 @@ export async function createDpopProof(credentialId: string, method: string, htu:
     deviceId: DEVICE_STATIC_ID,
   };
 
-  return await createDpopJwt(dpopTokenPayload);
+  return await createDpopJwt(dpopTokenPayload, accessToken);
 }
 
 export async function createChallengeToken(
@@ -159,14 +168,22 @@ export function getCredentialId(userId: string, context: string) {
   return `${context}${DEVICE_ALIAS}${userId}`;
 }
 
-async function createDpopJwt(dpopPayload: DpopPayload) {
+async function createDpopJwt(dpopPayload: DpopPayload, accessToken?: string) {
   const { privateKey, jwkPub } = await keyPairForDevice(ALG_RS256);
+  const payload: JWTPayload = accessToken
+    ? { ...dpopPayload, ath: await computeAth(accessToken) }
+    : dpopPayload;
   return await signDpopJwt(
-    dpopPayload,
+    payload,
     { alg: ALG_RS256, typ: DPOP_HEADER_TYPE, jwk: jwkPub },
     uuidv4(),
     privateKey,
   );
+}
+
+async function computeAth(accessToken: string) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(accessToken));
+  return Buffer.from(digest).toString('base64url');
 }
 
 async function keyPairForDevice(

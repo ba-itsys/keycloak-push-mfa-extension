@@ -37,6 +37,7 @@ Before calling `/push-mfa/login/pending`, build a DPoP proof that includes:
 
 - HTTP method (`htm`)
 - Request URL without query and fragment (`htu`, per [RFC 9449](https://www.rfc-editor.org/rfc/rfc9449#section-4.2))
+- Access token hash (`ath`) for the `Authorization: DPoP <access-token>` value you send with the request
 - `sub` (Keycloak user ID)
 - `deviceId`
 - `iat` (issued at timestamp)
@@ -46,7 +47,7 @@ Send it via the `DPoP` header so Keycloak can scope the response to that physica
 
 ## Access Tokens
 
-Obtain a short-lived access token via the realm's token endpoint using the device client credentials. The token request itself must include a DPoP proof, and each subsequent authenticated REST call must send `Authorization: DPoP <access-token>` alongside a fresh `DPoP` header signed with the same key. Enrollment completion uses the same default. You can disable that with `spi-push-mfa--default--dpop-require-for-enrollment=false` for backward compatibility.
+Obtain a short-lived access token via the realm's token endpoint using the device client credentials. The token request itself must include a DPoP proof, but that proof does not carry `ath` because there is no access token yet. Each subsequent authenticated REST call must send `Authorization: DPoP <access-token>` alongside a fresh `DPoP` header signed with the same key and carrying `ath` for that exact token. Enrollment completion uses the same default. You can disable enrollment DPoP with `spi-push-mfa--default--dpop-require-for-enrollment=false` for backward compatibility.
 
 ## Request Authentication
 

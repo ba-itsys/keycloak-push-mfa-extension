@@ -392,7 +392,7 @@ async function respondToChallenge(baseUri, device, confirmToken, challengeId) {
             { token: loginToken },
             {
                 Authorization: `DPoP ${accessToken}`,
-                DPoP: await createDpopProof('POST', respondUri, device),
+                DPoP: await createDpopProof('POST', respondUri, device, accessToken),
             },
             false,
         );
@@ -787,19 +787,24 @@ async function createDeviceState() {
     };
 }
 
-async function createDpopProof(method, uri, device) {
-    return signJwt(
-        {
-            htm: method,
-            htu: uri,
-            sub: device.userId,
-            deviceId: device.deviceId,
-            iat: nowEpochSeconds(),
-            jti: randomId(),
-        },
-        device,
-        { typ: 'dpop+jwt', jwk: device.publicJwk },
-    );
+async function createDpopProof(method, uri, device, accessToken = null) {
+    const claims = {
+        htm: method,
+        htu: uri,
+        sub: device.userId,
+        deviceId: device.deviceId,
+        iat: nowEpochSeconds(),
+        jti: randomId(),
+    };
+    if (accessToken) {
+        claims.ath = await computeAth(accessToken);
+    }
+    return signJwt(claims, device, { typ: 'dpop+jwt', jwk: device.publicJwk });
+}
+
+async function computeAth(accessToken) {
+    const digest = await crypto.subtle.digest('SHA-256', textEncode(accessToken));
+    return encoding.b64encode(new Uint8Array(digest), 'rawurl');
 }
 
 async function signJwt(claims, device, extraHeader = {}) {

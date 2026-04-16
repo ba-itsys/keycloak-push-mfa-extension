@@ -47,7 +47,7 @@ Authorization: DPoP <access-token>
 DPoP: <proof JWT>
 ```
 
-The `DPoP` header carries a short-lived JWT signed with the user key (see [DPoP Proof Structure](flow-details.md#dpop-proof-structure)). Its payload must include `htm`, `htu` (request URL without query and fragment per [RFC 9449](https://www.rfc-editor.org/rfc/rfc9449#section-4.2)), `iat`, `jti`, plus the custom `sub` (Keycloak user id) and `deviceId`. Keycloak verifies the signature using the stored credential and only returns pending challenges tied to that device id.
+The `DPoP` header carries a short-lived JWT signed with the user key (see [DPoP Proof Structure](flow-details.md#dpop-proof-structure)). Its payload must include `htm`, `htu` (request URL without query and fragment per [RFC 9449](https://www.rfc-editor.org/rfc/rfc9449#section-4.2)), `ath` (SHA-256 hash of the presented access token), `iat`, `jti`, plus the custom `sub` (Keycloak user id) and `deviceId`. Keycloak verifies the signature using the stored credential and only returns pending challenges tied to that device id.
 
 **Response:**
 ```json

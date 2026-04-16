@@ -80,7 +80,7 @@ if [[ -z $ACCESS_TOKEN || $ACCESS_TOKEN == "null" ]]; then
 fi
 
 UPDATE_URL="$REALM_BASE/push-mfa/device/push-provider"
-UPDATE_DPOP=$(common::create_dpop_proof "PUT" "$UPDATE_URL" "$KEY_FILE" "$PUBLIC_JWK" "$KEY_ID" "$USER_ID" "$DEVICE_ID" "$SIGNING_ALG")
+UPDATE_DPOP=$(common::create_dpop_proof "PUT" "$UPDATE_URL" "$KEY_FILE" "$PUBLIC_JWK" "$KEY_ID" "$USER_ID" "$DEVICE_ID" "$SIGNING_ALG" "$ACCESS_TOKEN")
 echo ">> Updating push provider ($NEW_PUSH_PROVIDER_TYPE) for $CREDENTIAL_ID"
 curl -s -X PUT \
   -H "Authorization: DPoP $ACCESS_TOKEN" \

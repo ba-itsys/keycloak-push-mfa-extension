@@ -35,7 +35,10 @@ import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.UriInfo;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.List;
 import java.util.Objects;
 import org.keycloak.OAuth2Constants;
@@ -80,7 +83,8 @@ public class DpopAuthenticator {
 
     public record PublicKeyAssertion(String userId, String deviceId, String clientId) {}
 
-    private record ParsedDpopProof(JWSInput proof, Algorithm algorithm, String userId, String deviceId, String jti) {}
+    private record ParsedDpopProof(
+            JWSInput proof, Algorithm algorithm, String userId, String deviceId, String jti, String ath) {}
 
     public DeviceAssertion authenticate(HttpHeaders headers, UriInfo uriInfo, String httpMethod) {
         AuthContext ctx = new AuthContext(httpMethod, uriInfo.getPath());
@@ -116,7 +120,7 @@ public class DpopAuthenticator {
 
             ctx.deviceCredentialId = credentialData.getDeviceCredentialId();
 
-            verifyProofWithPublicKey(accessToken, parsedProof, credentialData.getPublicKeyJwk());
+            verifyProofWithPublicKey(accessTokenString, accessToken, parsedProof, credentialData.getPublicKeyJwk());
 
             return new DeviceAssertion(user, credential, credentialData, ctx.clientId);
         } catch (BadRequestException | ForbiddenException | NotAuthorizedException | NotFoundException ex) {
@@ -150,7 +154,7 @@ public class DpopAuthenticator {
                 throw new ForbiddenException("DPoP proof deviceId mismatch");
             }
 
-            verifyProofWithPublicKey(accessToken, parsedProof, publicKeyJwk);
+            verifyProofWithPublicKey(accessTokenString, accessToken, parsedProof, publicKeyJwk);
 
             return new PublicKeyAssertion(parsedProof.userId(), parsedProof.deviceId(), ctx.clientId);
         } catch (BadRequestException | ForbiddenException | NotAuthorizedException | NotFoundException ex) {
@@ -312,15 +316,17 @@ public class DpopAuthenticator {
 
         String jti = PushMfaInputValidator.require(jsonText(payload, "jti"), "jti");
         PushMfaInputValidator.requireMaxLength(jti, dpopLimits.jtiMaxLength(), "jti");
+        String ath = PushMfaInputValidator.optionalBoundedText(jsonText(payload, "ath"), 128, "ath");
 
         String userId = PushMfaInputValidator.requireBoundedText(
                 jsonText(payload, "sub"), inputLimits.maxUserIdLength(), "sub");
         String deviceId = PushMfaInputValidator.requireBoundedText(
                 jsonText(payload, "deviceId"), inputLimits.maxDeviceIdLength(), "deviceId");
-        return new ParsedDpopProof(dpop, algorithm, userId, deviceId, jti);
+        return new ParsedDpopProof(dpop, algorithm, userId, deviceId, jti, ath);
     }
 
-    private void verifyProofWithPublicKey(AccessToken accessToken, ParsedDpopProof parsedProof, String publicKeyJwk) {
+    private void verifyProofWithPublicKey(
+            String accessTokenString, AccessToken accessToken, ParsedDpopProof parsedProof, String publicKeyJwk) {
         KeyWrapper keyWrapper = PushMfaKeyUtil.keyWrapperFromString(publicKeyJwk);
         PushMfaKeyUtil.ensureKeyMatchesAlgorithm(
                 keyWrapper, parsedProof.algorithm().name());
@@ -340,8 +346,30 @@ public class DpopAuthenticator {
             throw new ForbiddenException("Access token DPoP binding mismatch");
         }
 
+        if (dpopLimits.requireAth() || parsedProof.ath() != null) {
+            // `ath` is mainly enabled for RFC 9449 conformance. In this resource server, the
+            // meaningful authorization decision still comes from possession of the enrolled key,
+            // while the access token mostly contributes expiry/revocation/client attribution.
+            // Still, once a client sends `ath`, validate it so an incorrect proof does not get
+            // silently accepted when strict enforcement is disabled.
+            String ath = PushMfaInputValidator.require(parsedProof.ath(), "ath");
+            if (!Objects.equals(computeAccessTokenHash(accessTokenString), ath)) {
+                throw new ForbiddenException("DPoP proof ath mismatch");
+            }
+        }
+
         if (!markDpopJtiUsed(realm().getId(), expectedJkt, parsedProof.jti())) {
             throw new ForbiddenException("DPoP proof replay detected");
+        }
+    }
+
+    private static String computeAccessTokenHash(String accessTokenString) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(accessTokenString.getBytes(StandardCharsets.US_ASCII));
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
+        } catch (Exception ex) {
+            throw new IllegalStateException("Unable to compute access token hash", ex);
         }
     }
 

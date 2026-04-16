@@ -20,7 +20,12 @@ import org.keycloak.Config;
 
 public record PushMfaConfig(Dpop dpop, Input input, Sse sse) {
 
-    public record Dpop(int jtiTtlSeconds, int jtiMaxLength, int iatToleranceSeconds, boolean requireForEnrollment) {}
+    public record Dpop(
+            int jtiTtlSeconds,
+            int jtiMaxLength,
+            int iatToleranceSeconds,
+            boolean requireForEnrollment,
+            boolean requireAth) {}
 
     public record Input(
             int maxJwtLength,
@@ -46,7 +51,8 @@ public record PushMfaConfig(Dpop dpop, Input input, Sse sse) {
                         boundedInt(config, "dpop-jti-ttl-seconds", 300, 30, 3600),
                         boundedInt(config, "dpop-jti-max-length", 128, 16, 512),
                         boundedInt(config, "dpop-iat-tolerance-seconds", 120, 30, 600),
-                        bool(config, "dpop-require-for-enrollment", true)),
+                        bool(config, "dpop-require-for-enrollment", true),
+                        bool(config, "dpop-require-ath", true)),
                 new Input(
                         boundedInt(config, "input-max-jwt-length", 16384, 2048, 131072),
                         boundedInt(config, "input-max-user-id-length", 128, 32, 512),

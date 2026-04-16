@@ -82,6 +82,7 @@ Use the same option names with the usual Keycloak configuration mechanisms such 
 | `spi-push-mfa--default--dpop-jti-max-length` | `128` | 16–512 | Maximum `jti` string length |
 | `spi-push-mfa--default--dpop-iat-tolerance-seconds` | `120` | 30–600 | Allowed clock skew for DPoP proof `iat` timestamp |
 | `spi-push-mfa--default--dpop-require-for-enrollment` | `true` | `true`/`false` | DPoP is required for enrollment by default. Set this to `false` only for backward compatibility |
+| `spi-push-mfa--default--dpop-require-ath` | `true` | `true`/`false` | Require the DPoP `ath` claim on device API requests. This mainly improves RFC 9449 conformance; in this design, authorization still primarily comes from possession of the enrolled key plus the DPoP-bound token |
 
 ### Input Size Limits
 

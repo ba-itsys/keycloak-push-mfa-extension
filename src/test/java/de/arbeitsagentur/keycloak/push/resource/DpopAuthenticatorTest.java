@@ -48,7 +48,10 @@ import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.UriInfo;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashSet;
@@ -165,7 +168,7 @@ class DpopAuthenticatorTest {
         when(uriInfo.getRequestUri()).thenReturn(URI.create(REQUEST_URI));
 
         // Create testable authenticator with default config
-        PushMfaConfig.Dpop dpopConfig = new PushMfaConfig.Dpop(300, 128, 120, false);
+        PushMfaConfig.Dpop dpopConfig = new PushMfaConfig.Dpop(300, 128, 120, false, false);
         PushMfaConfig.Input inputConfig = new PushMfaConfig.Input(16384, 128, 128, 64, 128, 128, 2048, 64, 8192);
 
         // Create access token with DPoP binding for test
@@ -721,7 +724,7 @@ class DpopAuthenticatorTest {
     @Test
     void accessTokenMissingDpopBinding() throws Exception {
         // Create authenticator with access token missing cnf claim
-        PushMfaConfig.Dpop dpopConfig = new PushMfaConfig.Dpop(300, 128, 120, false);
+        PushMfaConfig.Dpop dpopConfig = new PushMfaConfig.Dpop(300, 128, 120, false, false);
         PushMfaConfig.Input inputConfig = new PushMfaConfig.Input(16384, 128, 128, 64, 128, 128, 2048, 64, 8192);
 
         AccessToken accessTokenWithoutBinding = new AccessToken();
@@ -742,6 +745,76 @@ class DpopAuthenticatorTest {
         ForbiddenException ex = assertThrows(
                 ForbiddenException.class, () -> authWithoutBinding.authenticate(headers, uriInfo, HTTP_METHOD));
         assertEquals("Access token missing DPoP binding", ex.getMessage());
+    }
+
+    @Test
+    void accessTokenHashRequired_missingAthClaim() throws Exception {
+        PushMfaConfig.Dpop dpopConfig = new PushMfaConfig.Dpop(300, 128, 120, false, true);
+        PushMfaConfig.Input inputConfig = new PushMfaConfig.Input(16384, 128, 128, 64, 128, 128, 2048, 64, 8192);
+        TestableDpopAuthenticator authWithAth =
+                new TestableDpopAuthenticator(session, dpopConfig, inputConfig, authenticator.mockedAccessToken);
+
+        String dpopProof = createValidDpopProof();
+
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("DPoP valid-token");
+        when(headers.getHeaderString("DPoP")).thenReturn(dpopProof);
+
+        BadRequestException ex =
+                assertThrows(BadRequestException.class, () -> authWithAth.authenticate(headers, uriInfo, HTTP_METHOD));
+        assertEquals("Missing field: ath", ex.getMessage());
+    }
+
+    @Test
+    void accessTokenHashRequired_mismatchedAthClaim() throws Exception {
+        PushMfaConfig.Dpop dpopConfig = new PushMfaConfig.Dpop(300, 128, 120, false, true);
+        PushMfaConfig.Input inputConfig = new PushMfaConfig.Input(16384, 128, 128, 64, 128, 128, 2048, 64, 8192);
+        TestableDpopAuthenticator authWithAth =
+                new TestableDpopAuthenticator(session, dpopConfig, inputConfig, authenticator.mockedAccessToken);
+
+        String dpopProof = createDpopProof(
+                HTTP_METHOD, REQUEST_URI, Instant.now(), UUID.randomUUID().toString(), "wrong-ath");
+
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("DPoP valid-token");
+        when(headers.getHeaderString("DPoP")).thenReturn(dpopProof);
+
+        ForbiddenException ex =
+                assertThrows(ForbiddenException.class, () -> authWithAth.authenticate(headers, uriInfo, HTTP_METHOD));
+        assertEquals("DPoP proof ath mismatch", ex.getMessage());
+    }
+
+    @Test
+    void accessTokenHashRequired_matchingAthClaim() throws Exception {
+        PushMfaConfig.Dpop dpopConfig = new PushMfaConfig.Dpop(300, 128, 120, false, true);
+        PushMfaConfig.Input inputConfig = new PushMfaConfig.Input(16384, 128, 128, 64, 128, 128, 2048, 64, 8192);
+        TestableDpopAuthenticator authWithAth =
+                new TestableDpopAuthenticator(session, dpopConfig, inputConfig, authenticator.mockedAccessToken);
+
+        String accessTokenString = "valid-token";
+        String dpopProof = createDpopProof(
+                HTTP_METHOD,
+                REQUEST_URI,
+                Instant.now(),
+                UUID.randomUUID().toString(),
+                computeAccessTokenHash(accessTokenString));
+
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("DPoP " + accessTokenString);
+        when(headers.getHeaderString("DPoP")).thenReturn(dpopProof);
+
+        DpopAuthenticator.DeviceAssertion result = authWithAth.authenticate(headers, uriInfo, HTTP_METHOD);
+        assertNotNull(result);
+    }
+
+    @Test
+    void optionalAccessTokenHash_presentAthClaimIsStillValidated() throws Exception {
+        String dpopProof = createDpopProof(
+                HTTP_METHOD, REQUEST_URI, Instant.now(), UUID.randomUUID().toString(), "wrong-ath");
+
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("DPoP valid-token");
+        when(headers.getHeaderString("DPoP")).thenReturn(dpopProof);
+
+        ForbiddenException ex =
+                assertThrows(ForbiddenException.class, () -> authenticator.authenticate(headers, uriInfo, HTTP_METHOD));
+        assertEquals("DPoP proof ath mismatch", ex.getMessage());
     }
 
     @Test
@@ -866,7 +939,7 @@ class DpopAuthenticatorTest {
         credential.setCredentialData(toJson(differentCredentialData));
 
         // Create access token with WRONG jkt to trigger failure after credentialData is resolved
-        PushMfaConfig.Dpop dpopConfig = new PushMfaConfig.Dpop(300, 128, 120, false);
+        PushMfaConfig.Dpop dpopConfig = new PushMfaConfig.Dpop(300, 128, 120, false, false);
         PushMfaConfig.Input inputConfig = new PushMfaConfig.Input(16384, 128, 128, 64, 128, 128, 2048, 64, 8192);
 
         AccessToken badAccessToken = new AccessToken();
@@ -913,19 +986,25 @@ class DpopAuthenticatorTest {
     }
 
     private String createDpopProof(String method, String uri, Instant iat, String jti) throws Exception {
+        return createDpopProof(method, uri, iat, jti, null);
+    }
+
+    private String createDpopProof(String method, String uri, Instant iat, String jti, String ath) throws Exception {
         JWSHeader header = new JWSHeader.Builder(JWSAlgorithm.ES256)
                 .keyID(deviceKey.getKeyID())
                 .type(new JOSEObjectType("dpop+jwt"))
                 .build();
-        JWTClaimsSet claims = new JWTClaimsSet.Builder()
+        JWTClaimsSet.Builder claims = new JWTClaimsSet.Builder()
                 .claim("htm", method)
                 .claim("htu", uri)
                 .issueTime(Date.from(iat))
                 .jwtID(jti)
                 .subject(USER_ID)
-                .claim("deviceId", DEVICE_ID)
-                .build();
-        SignedJWT dpop = new SignedJWT(header, claims);
+                .claim("deviceId", DEVICE_ID);
+        if (ath != null) {
+            claims.claim("ath", ath);
+        }
+        SignedJWT dpop = new SignedJWT(header, claims.build());
         dpop.sign(new ECDSASigner(deviceKey));
         return dpop.serialize();
     }
@@ -951,6 +1030,12 @@ class DpopAuthenticatorTest {
     private String computeJwkThumbprint(String jwkJson) throws Exception {
         JWK jwk = JWK.parse(jwkJson);
         return jwk.computeThumbprint().toString();
+    }
+
+    private String computeAccessTokenHash(String accessTokenString) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        byte[] hash = digest.digest(accessTokenString.getBytes(StandardCharsets.US_ASCII));
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
     }
 
     private String toJson(PushCredentialData data) {

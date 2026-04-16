@@ -292,10 +292,11 @@ components:
       description: >
         Demonstrating Proof-of-Possession (RFC 9449) bound access token.
         Every request must include both an `Authorization: DPoP <token>` header
-        and a `DPoP: <proof-jwt>` header signed with the device key.
+        and a `DPoP: <proof-jwt>` header signed with the device key. For protected
+        resource requests the proof must also carry the `ath` hash of that access token.
   responses:
     DPoPProofError:
-      description: DPoP proof failed validation (invalid/missing proof, htm/htu mismatch, signature failure, DPoP binding mismatch, replay)
+      description: DPoP proof failed validation (invalid/missing proof, htm/htu/ath mismatch, signature failure, DPoP binding mismatch, replay)
       content:
         application/json:
           schema:

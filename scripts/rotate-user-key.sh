@@ -210,7 +210,7 @@ if [[ -z $ACCESS_TOKEN || $ACCESS_TOKEN == "null" ]]; then
 fi
 
 ROTATE_URL="$REALM_BASE/push-mfa/device/rotate-key"
-ROTATE_DPOP=$(common::create_dpop_proof "PUT" "$ROTATE_URL" "$KEY_FILE" "$PUBLIC_JWK" "$KEY_ID" "$USER_ID" "$DEVICE_ID" "$SIGNING_ALG")
+ROTATE_DPOP=$(common::create_dpop_proof "PUT" "$ROTATE_URL" "$KEY_FILE" "$PUBLIC_JWK" "$KEY_ID" "$USER_ID" "$DEVICE_ID" "$SIGNING_ALG" "$ACCESS_TOKEN")
 echo ">> Rotating user key for $CREDENTIAL_ID"
 RESPONSE=$(curl -s -X PUT \
   -H "Authorization: DPoP $ACCESS_TOKEN" \

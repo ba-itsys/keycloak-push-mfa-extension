@@ -118,7 +118,7 @@ fi
 
 PENDING_URL="$REALM_BASE/push-mfa/login/pending"
 echo ">> Demo: listing pending challenges (response is informational)"
-PENDING_DPOP=$(common::create_dpop_proof "GET" "$PENDING_URL" "$KEY_FILE" "$PUBLIC_JWK" "$KID" "$USER_ID" "$DEVICE_ID" "$SIGNING_ALG")
+PENDING_DPOP=$(common::create_dpop_proof "GET" "$PENDING_URL" "$KEY_FILE" "$PUBLIC_JWK" "$KID" "$USER_ID" "$DEVICE_ID" "$SIGNING_ALG" "$ACCESS_TOKEN")
 PENDING_RESPONSE=$(curl -s -G \
   -H "Authorization: DPoP $ACCESS_TOKEN" \
   -H "DPoP: $PENDING_DPOP" \
@@ -207,7 +207,7 @@ LOGIN_SIGNATURE_B64=$(common::sign_compact_jws "$SIGNING_ALG" "$KEY_FILE" "$LOGI
 DEVICE_LOGIN_TOKEN="$LOGIN_HEADER_B64.$LOGIN_PAYLOAD_B64.$LOGIN_SIGNATURE_B64"
 
 RESPOND_URL="$REALM_BASE/push-mfa/login/challenges/$CHALLENGE_ID/respond"
-LOGIN_DPOP=$(common::create_dpop_proof "POST" "$RESPOND_URL" "$KEY_FILE" "$PUBLIC_JWK" "$KID" "$USER_ID" "$DEVICE_ID" "$SIGNING_ALG")
+LOGIN_DPOP=$(common::create_dpop_proof "POST" "$RESPOND_URL" "$KEY_FILE" "$PUBLIC_JWK" "$KID" "$USER_ID" "$DEVICE_ID" "$SIGNING_ALG" "$ACCESS_TOKEN")
 echo ">> Responding to challenge"
 curl -s -X POST \
   -H "Authorization: DPoP $ACCESS_TOKEN" \

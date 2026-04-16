@@ -114,6 +114,7 @@ common::create_dpop_proof() {
   local user_id=$6
   local device_id=$7
   local alg=${8:-RS256}
+  local access_token=${9:-}
   local iat
   iat=$(date +%s)
   local jti
@@ -127,6 +128,11 @@ common::create_dpop_proof() {
     --arg iat "$iat" \
     --arg jti "$jti" \
     '{"htm": $htm, "htu": $htu, "sub": $sub, "deviceId": $deviceId, "iat": ($iat|tonumber), "jti": $jti}')
+  if [[ -n "$access_token" ]]; then
+    local ath
+    ath=$(printf '%s' "$access_token" | openssl dgst -binary -sha256 | common::b64urlencode)
+    payload=$(printf '%s' "$payload" | jq --arg ath "$ath" '. + {ath: $ath}')
+  fi
   local header_json
   header_json=$(jq -cn --arg alg "$alg" --arg typ "dpop+jwt" --arg kid "$key_id" --argjson jwk "$jwk_json" '{alg:$alg,typ:$typ,kid:$kid,jwk:$jwk}')
   local header_b64 payload_b64 signature_b64

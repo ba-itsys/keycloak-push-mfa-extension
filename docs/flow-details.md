@@ -161,7 +161,7 @@ Each Push MFA credential has **two distinct IDs**:
 - **Confirm token format:** Each login creates a fresh challenge and confirm token signed by the realm key containing only the credential id and `cid` (plus `typ`/`ver` and `exp`).
 - **Confirm token lookup:** The token intentionally omits `client_id` and `client_name`, so the mobile app must call `/push-mfa/login/pending` after receiving a push to fetch the username and client metadata before asking for approval.
 - **Login and enrollment SSE:** SSE status reads require the per-challenge `watchSecret` and reject missing or mismatched secrets or the wrong challenge type before returning any status, but they are capability-URL based rather than session-bound.
-- **DPoP-protected API calls (`/login/pending`, `/login/challenges/{cid}/respond`, `/device/*`):** Keycloak re-verifies the access token, confirms the `cnf.jkt` thumbprint matches the stored JWK, checks the DPoP proof `htm`/`htu`, ensures `iat` is within ±120 seconds, and requires `sub` + `deviceId` to match a stored credential (enforcing the algorithm declared in the JWK) before accepting the request-level DPoP signature.
+- **DPoP-protected API calls (`/login/pending`, `/login/challenges/{cid}/respond`, `/device/*`):** Keycloak re-verifies the access token, confirms the `cnf.jkt` thumbprint matches the stored JWK, checks the DPoP proof `htm`/`htu` and `ath`, ensures `iat` is within ±120 seconds, and requires `sub` + `deviceId` to match a stored credential (enforcing the algorithm declared in the JWK) before accepting the request-level DPoP signature.
 - **Login approval JWT (`POST /realms/demo/push-mfa/login/challenges/{cid}/respond` body):** After DPoP auth, the login token must match the challenge id, pass signature/`exp` checks against the stored key, carry the correct `credId`, use an algorithm compatible with the stored JWK, and declare `action` as `approve` or `deny`. If the challenge is bound to a specific credential id, mismatched devices are rejected. Same-challenge concurrent responses are not retried automatically; the losing request receives `409 Conflict`.
 
 ## DPoP Authentication
@@ -170,8 +170,8 @@ All authenticated push REST endpoints rely on [OAuth 2.0 Demonstration of Proof-
 
 1. **User key material** is generated during enrollment and stored as a credential on the user. Keep the private key on the device; Keycloak stores the public JWK (and an optional `deviceId` if you let a user enroll more than one device).
 2. **Access tokens** are obtained using the device client credentials (`push-device-client`) and an attached DPoP proof. The access token's `cnf.jkt` claim is bound to the user key's thumbprint.
-3. **API calls** supply both `Authorization: DPoP <access_token>` and a fresh `DPoP` header that contains the HTTP method (`htm`), URI without query/fragment (`htu`, per [RFC 9449](https://www.rfc-editor.org/rfc/rfc9449#section-4.2)), timestamp (`iat`), nonce (`jti`), and the same `sub`/`deviceId` used at enrollment.
-4. **Server verification** re-checks the access token signature (using the realm key), ensures the `cnf.jkt` matches the stored JWK, validates the DPoP proof (signature with the user key, method/URL, `sub`/`deviceId`, freshness), and rejects the request if any of those steps fail. The device never sees the realm's signing key, and Keycloak never sees the private user key.
+3. **API calls** supply both `Authorization: DPoP <access_token>` and a fresh `DPoP` header that contains the HTTP method (`htm`), URI without query/fragment (`htu`, per [RFC 9449](https://www.rfc-editor.org/rfc/rfc9449#section-4.2)), access token hash (`ath`), timestamp (`iat`), nonce (`jti`), and the same `sub`/`deviceId` used at enrollment.
+4. **Server verification** re-checks the access token signature (using the realm key), ensures the `cnf.jkt` matches the stored JWK, validates the DPoP proof (signature with the user key, method/URL, `ath`, `sub`/`deviceId`, freshness), and rejects the request if any of those steps fail. The device never sees the realm's signing key, and Keycloak never sees the private user key.
 
 ### DPoP Proof Structure
 
@@ -198,6 +198,7 @@ Payload:
 {
   "htm": "GET",
   "htu": "https://example.com/realms/demo/push-mfa/login/pending",
+  "ath": "fV8b4QwYkY2J7J4N5s4mD3t1xkQW8P8j1m8QX2uD0Kk",
   "iat": 1731402960,
   "jti": "6c1f8a0c-4c6e-4d67-b792-20fd3eb1adfc",
   "sub": "87fa1c21-1b1e-4af8-98b1-1df2e90d3c3d",
@@ -205,7 +206,7 @@ Payload:
 }
 ```
 
-The server rejects proofs if `htm`/`htu` don't match the actual request, if the `sub` user doesn't own the `deviceId`, or if the proof's signature doesn't verify with the stored JWK.
+The server rejects proofs if `htm`/`htu` don't match the actual request, if `ath` does not match the presented access token, if the `sub` user doesn't own the `deviceId`, or if the proof's signature doesn't verify with the stored JWK.
 
 ### Obtaining a DPoP-Bound Access Token
 

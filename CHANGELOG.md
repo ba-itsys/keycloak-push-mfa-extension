@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.0.1](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v2.0.0...v2.0.1) (2026-04-16)
+
+
+### Bug Fixes
+
+* validate dpop ath ([59389d4](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/59389d4269bfa1aa3e85a586a30e4245ffa5b622))
+
+
+### Dependencies
+
+* **deps-dev:** bump com.nimbusds:nimbus-jose-jwt from 10.8 to 10.9 ([a00f8d5](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/a00f8d5017bd3e4f32124609685aaeec66eac7e5))
+* **deps:** bump org.sonatype.central:central-publishing-maven-plugin ([93fe20a](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/93fe20a30fe167cd1adab0c5bc01dcf1fc9cefd2))
+
 ## [2.0.0](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v1.12.0...v2.0.0) (2026-04-15)
 
 

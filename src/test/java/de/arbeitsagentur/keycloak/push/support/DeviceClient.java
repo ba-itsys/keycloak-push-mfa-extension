@@ -331,6 +331,10 @@ public final class DeviceClient {
         return createDpopProof(method, uri, Instant.now(), jti);
     }
 
+    public String createDpopProofWithoutAth(String method, URI uri, String jti) throws Exception {
+        return createDpopProof(method, uri, Instant.now(), jti, null);
+    }
+
     public String createDpopProof(String method, URI uri, Instant issuedAt, String jti) throws Exception {
         return createDpopProof(method, uri, issuedAt, jti, accessToken);
     }

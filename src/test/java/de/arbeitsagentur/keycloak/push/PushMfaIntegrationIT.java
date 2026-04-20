@@ -219,6 +219,23 @@ class PushMfaIntegrationIT {
     }
 
     @Test
+    void dpopProtectedEndpointRejectsProofWithoutAthByDefault() throws Exception {
+        DeviceClient deviceClient = enrollDevice();
+        URI lockoutUri = baseUri.resolve("/realms/demo/push-mfa/login/lockout");
+        String proofWithoutAth = deviceClient.createDpopProofWithoutAth(
+                "POST", lockoutUri, UUID.randomUUID().toString());
+
+        HttpRequest request = HttpRequest.newBuilder(lockoutUri)
+                .header("Authorization", "DPoP " + deviceClient.accessToken())
+                .header("DPoP", proofWithoutAth)
+                .POST(HttpRequest.BodyPublishers.noBody())
+                .build();
+
+        HttpResponse<String> response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+        assertEquals(400, response.statusCode(), () -> "Proof without ath should be rejected: " + response.body());
+    }
+
+    @Test
     void enrollmentDefaultsMissingPushProviderToNone() throws Exception {
         adminClient.resetUserState(TEST_USERNAME);
         DeviceState state = DeviceState.create(DeviceKeyType.RSA);

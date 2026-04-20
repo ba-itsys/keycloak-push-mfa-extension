@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.2](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v2.0.1...v2.0.2) (2026-04-20)
+
+
+### Bug Fixes
+
+* consistency between config, spi registration, docs ([adc2e83](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/adc2e8347a635a43f4534bd60ba38ced2b066c62))
+
 ## [2.0.1](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v2.0.0...v2.0.1) (2026-04-16)
 
 

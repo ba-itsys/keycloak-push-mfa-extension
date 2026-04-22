@@ -183,19 +183,18 @@ public class PushMfaRegisterRequiredAction implements RequiredActionProvider, Cr
         PushEnrollmentRequestStore requestStore = createEnrollmentRequestStore(context.getSession());
         boolean enrollmentUseRequestUri = resolveEnrollmentUseRequestUri(context);
         form.setAttribute("pushUsername", context.getUser().getUsername());
-        form.setAttribute("enrollmentToken", enrollmentToken);
-        String qrPayload = enrollmentToken;
+        String enrollmentValue = enrollmentToken;
         String pushQrUri = ChallengeUrlBuilder.buildPushUri(resolveAppUniversalLink(context), enrollmentToken);
         if (enrollmentUseRequestUri) {
             String requestHandle = ensureEnrollmentRequestHandle(context, authSession, challenge, requestStore);
             String requestUri = buildEnrollmentRequestUri(context, requestHandle);
-            qrPayload = requestUri;
+            enrollmentValue = requestUri;
             pushQrUri = ChallengeUrlBuilder.buildPushUriWithRequestUri(resolveAppUniversalLink(context), requestUri);
         } else {
             cleanupEnrollmentRequestHandle(authSession, requestStore);
         }
+        form.setAttribute("enrollmentToken", enrollmentValue);
         form.setAttribute("enrollmentUseRequestUri", enrollmentUseRequestUri);
-        form.setAttribute("qrPayload", qrPayload);
         form.setAttribute("pushQrUri", pushQrUri);
         form.setAttribute("enrollChallengeId", challenge.getId());
         String eventsUrl = buildEnrollmentEventsUrl(context, challenge);

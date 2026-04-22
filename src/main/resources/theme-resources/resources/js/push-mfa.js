@@ -76,7 +76,7 @@
     }
 
     function initRegisterPage(root, config) {
-        renderQrCode(config.qrContainerId, config.qrPayload);
+        renderQrCode(config.qrContainerId, config.pushQrUri);
         if (config.eventsUrl && config.pollFormId) {
             createChallengeWatcher({
                 eventsUrl: config.eventsUrl,
@@ -102,7 +102,7 @@
                     eventsUrl: dataset.pushEventsUrl || '',
                     pollFormId: dataset.pushPollFormId || '',
                     qrContainerId: dataset.pushQrId || '',
-                    qrPayload: dataset.pushQrValue || ''
+                    pushQrUri: dataset.pushQrValue || ''
                 });
             } else if (page === 'login-wait') {
                 initLoginPage(node, {

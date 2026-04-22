@@ -190,7 +190,12 @@ class PushMfaRegisterRequiredActionCoreTest {
                                 value instanceof String stringValue && hasAbsoluteRequestUriParameter(stringValue)));
         verify(form)
                 .setAttribute(
-                        eq("qrPayload"),
+                        eq("pushQrUri"),
+                        argThat(value ->
+                                value instanceof String stringValue && hasAbsoluteRequestUriParameter(stringValue)));
+        verify(form)
+                .setAttribute(
+                        eq("enrollmentToken"),
                         argThat(value -> value instanceof String stringValue
                                 && URI.create(stringValue).isAbsolute()
                                 && stringValue.startsWith(

@@ -81,7 +81,7 @@
              data-push-events-url="${enrollEventsUrl!""}"
              data-push-poll-form-id="kc-push-register-poll"
              data-push-qr-id="kc-push-qr"
-             data-push-qr-value="${qrPayload!""}">
+             data-push-qr-value="${pushQrUri!''}">
             <div class="${properties.kcFormGroupClass!}">
                 <p class="kc-push-register__hint">${msg("push-mfa-register-instructions", pushUsername!"")}</p>
                 <p class="kc-push-register__hint">
@@ -116,7 +116,7 @@
                         </#if>
                     </h3>
                     <div class="kc-push-register-token-group">
-                        <pre id="kc-push-token" class="kc-push-register-token" tabindex="0">${qrPayload!''}</pre>
+                        <pre id="kc-push-token" class="kc-push-register-token" tabindex="0">${enrollmentToken!''}</pre>
                         <div class="kc-push-register-actions">
                             <button id="kc-push-copy-token"
                                     type="button"

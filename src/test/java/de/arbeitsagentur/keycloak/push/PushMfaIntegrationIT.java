@@ -41,6 +41,7 @@ import de.arbeitsagentur.keycloak.push.support.KeycloakTestContainerSupport;
 import de.arbeitsagentur.keycloak.push.support.SseClient;
 import de.arbeitsagentur.keycloak.push.util.PushMfaConstants;
 import java.net.URI;
+import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -1076,17 +1077,22 @@ class PushMfaIntegrationIT {
         HtmlPage enrollmentPage = session.submitLogin(loginPage, TEST_USERNAME, TEST_PASSWORD);
 
         String visibleEnrollmentValue = session.extractEnrollmentToken(enrollmentPage);
-        String qrPayload = session.extractEnrollmentQrPayload(enrollmentPage);
+        String pushQrUri = session.extractEnrollmentpushQrUri(enrollmentPage);
+        URI sameDeviceLink = session.extractEnrollmentSameDeviceLink(enrollmentPage);
         String requestUriFromLink = session.extractEnrollmentRequestUriFromSameDeviceLink(enrollmentPage);
 
-        assertTrue(URI.create(qrPayload).isAbsolute(), "QR payload request_uri must be absolute");
-        assertEquals(qrPayload, visibleEnrollmentValue, "Visible enrollment value should match the request_uri");
-        assertEquals(qrPayload, requestUriFromLink, "QR payload and same-device request_uri should match");
+        assertEquals(sameDeviceLink.toString(), pushQrUri, "QR payload should match the same-device deep link");
+        assertEquals(requestUriFromLink, extractRequestUriFromDeepLink(pushQrUri));
+        assertEquals(
+                visibleEnrollmentValue,
+                requestUriFromLink,
+                "Visible enrollment value should remain the raw request_uri");
 
         HttpClient http =
                 HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
         HttpResponse<String> response = http.send(
-                HttpRequest.newBuilder(URI.create(qrPayload)).GET().build(), HttpResponse.BodyHandlers.ofString());
+                HttpRequest.newBuilder(URI.create(requestUriFromLink)).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
         assertEquals(200, response.statusCode(), "request_uri fetch should succeed");
 
         SignedJWT fetchedJwt = SignedJWT.parse(response.body());
@@ -1109,7 +1115,7 @@ class PushMfaIntegrationIT {
         HtmlPage loginPage = session.startAuthorization("test-app");
         HtmlPage enrollmentPage = session.submitLogin(loginPage, TEST_USERNAME, TEST_PASSWORD);
 
-        URI requestUri = URI.create(session.extractEnrollmentQrPayload(enrollmentPage));
+        URI requestUri = URI.create(session.extractEnrollmentRequestUriFromSameDeviceLink(enrollmentPage));
         String fetchedEnrollmentToken = fetch(requestUri).body();
 
         assertEventually(
@@ -1124,6 +1130,19 @@ class PushMfaIntegrationIT {
         DeviceClient deviceClient = new DeviceClient(baseUri, DeviceState.create(DeviceKeyType.RSA));
         deviceClient.completeEnrollment(fetchedEnrollmentToken);
         session.submitEnrollmentCheck(enrollmentPage);
+    }
+
+    private static String extractRequestUriFromDeepLink(String deepLink) {
+        URI uri = URI.create(deepLink);
+        String query = uri.getRawQuery();
+        assertNotNull(query, "QR deep link should include a query");
+        for (String pair : query.split("&")) {
+            String[] parts = pair.split("=", 2);
+            if (parts.length == 2 && "request_uri".equals(parts[0])) {
+                return URLDecoder.decode(parts[1], StandardCharsets.UTF_8);
+            }
+        }
+        throw new IllegalStateException("QR deep link missing request_uri parameter");
     }
 
     @Test

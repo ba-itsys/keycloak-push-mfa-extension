@@ -118,19 +118,34 @@ public final class BrowserSession {
         return token.text().trim();
     }
 
-    public String extractEnrollmentQrPayload(HtmlPage page) {
+    public String extractEnrollmentpushQrUri(HtmlPage page) {
         Element root = page.document().getElementById("kc-push-register-root");
         if (root == null) {
             throw new IllegalStateException("Enrollment root element missing");
         }
-        String qrPayload = root.attr("data-push-qr-value");
-        if (qrPayload == null || qrPayload.isBlank()) {
+        String pushQrUri = root.attr("data-push-qr-value");
+        if (pushQrUri == null || pushQrUri.isBlank()) {
             throw new IllegalStateException("Enrollment QR payload missing");
         }
-        return qrPayload;
+        return pushQrUri;
     }
 
     public String extractEnrollmentRequestUriFromSameDeviceLink(HtmlPage page) {
+        URI link = extractEnrollmentSameDeviceLink(page);
+        String query = link.getRawQuery();
+        if (query == null || query.isBlank()) {
+            throw new IllegalStateException("Same-device enrollment link missing query");
+        }
+        for (String pair : query.split("&")) {
+            String[] parts = pair.split("=", 2);
+            if (parts.length == 2 && "request_uri".equals(parts[0])) {
+                return URLDecoder.decode(parts[1], StandardCharsets.UTF_8);
+            }
+        }
+        throw new IllegalStateException("Same-device enrollment link missing request_uri param");
+    }
+
+    public URI extractEnrollmentSameDeviceLink(HtmlPage page) {
         Element button = page.document().getElementById("kc-push-open-app");
         if (button == null) {
             throw new IllegalStateException("Enrollment same-device link button not found");
@@ -144,18 +159,7 @@ public final class BrowserSession {
         if (start < 0 || end <= start) {
             throw new IllegalStateException("Unable to parse same-device link from onclick");
         }
-        URI link = URI.create(onclick.substring(start + 1, end));
-        String query = link.getRawQuery();
-        if (query == null || query.isBlank()) {
-            throw new IllegalStateException("Same-device enrollment link missing query");
-        }
-        for (String pair : query.split("&")) {
-            String[] parts = pair.split("=", 2);
-            if (parts.length == 2 && "request_uri".equals(parts[0])) {
-                return URLDecoder.decode(parts[1], StandardCharsets.UTF_8);
-            }
-        }
-        throw new IllegalStateException("Same-device enrollment link missing request_uri param");
+        return URI.create(onclick.substring(start + 1, end));
     }
 
     public void submitEnrollmentCheck(HtmlPage page) throws Exception {

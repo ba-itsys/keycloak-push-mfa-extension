@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.3](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v2.0.2...v2.0.3) (2026-04-22)
+
+
+### Bug Fixes
+
+* render qr code contents correctly ([b475acf](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/b475acf32c19384e4f8e21d1b8e3da63680122c1))
+
 ## [2.0.2](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v2.0.1...v2.0.2) (2026-04-20)
 
 

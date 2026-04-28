@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.4](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v2.0.3...v2.0.4) (2026-04-28)
+
+
+### Dependencies
+
+* **deps-dev:** bump org.jsoup:jsoup from 1.18.1 to 1.22.2 ([27f25c1](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/27f25c108dbb547ebcb9fbcfdc0175ffb0f8fa0a))
+* **deps-dev:** bump org.testcontainers:testcontainers ([039b46c](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/039b46c9237feec9c9419b94ac1737415ebb5329))
+
 ## [2.0.3](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v2.0.2...v2.0.3) (2026-04-22)
 
 

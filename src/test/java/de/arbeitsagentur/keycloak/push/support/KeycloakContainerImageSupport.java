@@ -16,20 +16,21 @@
 
 package de.arbeitsagentur.keycloak.push.support;
 
-import org.testcontainers.utility.DockerImageName;
+import java.nio.file.Path;
+import java.util.concurrent.Future;
+import org.testcontainers.images.builder.ImageFromDockerfile;
 
 public final class KeycloakContainerImageSupport {
 
-    private static final String DEFAULT_KEYCLOAK_VERSION = "26.5.4";
-    private static final String DEFAULT_KEYCLOAK_IMAGE = "quay.io/keycloak/keycloak";
+    private static final String DEFAULT_KEYCLOAK_VERSION = "26.6.1";
+    private static final Path DOCKERFILE = Path.of("Dockerfile.keycloak-java25").toAbsolutePath();
 
     private KeycloakContainerImageSupport() {}
 
-    public static DockerImageName imageName() {
-        return DockerImageName.parse(System.getProperty("test.keycloak.image", defaultImage()));
-    }
-
-    private static String defaultImage() {
-        return DEFAULT_KEYCLOAK_IMAGE + ":" + System.getProperty("test.keycloak.version", DEFAULT_KEYCLOAK_VERSION);
+    public static Future<String> image() {
+        String keycloakVersion = System.getProperty("test.keycloak.version", DEFAULT_KEYCLOAK_VERSION);
+        return new ImageFromDockerfile("keycloak-push-mfa-java25-test:" + keycloakVersion, false)
+                .withDockerfile(DOCKERFILE)
+                .withBuildArg("KEYCLOAK_VERSION", keycloakVersion);
     }
 }

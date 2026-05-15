@@ -167,7 +167,7 @@ class PushMfaLockoutSpiIT {
     private static GenericContainer<?> instrumentedKeycloakContainer() {
         try {
             return JacocoContainerSupport.instrumentKeycloakContainer(
-                    new GenericContainer<>(KeycloakContainerImageSupport.imageName())
+                    new GenericContainer<>(KeycloakContainerImageSupport.image())
                             .withExposedPorts(8080)
                             .withCopyFileToContainer(
                                     MountableFile.forHostPath(EXTENSION_JAR),

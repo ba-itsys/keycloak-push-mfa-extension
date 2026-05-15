@@ -44,7 +44,7 @@ public final class KeycloakTestContainerSupport {
     public static GenericContainer<?> newKeycloakContainer(
             String execFileName, Network network, String... networkAliases) {
         try {
-            GenericContainer<?> container = new GenericContainer<>(KeycloakContainerImageSupport.imageName())
+            GenericContainer<?> container = new GenericContainer<>(KeycloakContainerImageSupport.image())
                     .withExposedPorts(8080)
                     .withCopyFileToContainer(
                             MountableFile.forHostPath(EXTENSION_JAR), "/opt/keycloak/providers/keycloak-push-mfa.jar")

@@ -30,9 +30,11 @@ public final class JacocoContainerSupport {
 
     private static final String JACOCO_VERSION = "0.8.14";
     private static final String CONTAINER_AGENT_PATH = "/opt/keycloak/providers/jacoco-agent.jar";
+    private static final Path HOST_TARGET_DIR = Paths.get("target").toAbsolutePath();
     private static final Path HOST_EXEC_DIR =
             Paths.get("target", "jacoco-container").toAbsolutePath();
-    private static final String CONTAINER_COVERAGE_DIR = "/coverage";
+    private static final String CONTAINER_TARGET_DIR = "/coverage";
+    private static final String CONTAINER_COVERAGE_DIR = CONTAINER_TARGET_DIR + "/jacoco-container";
     private static final String COVERAGE_INCLUDES = "de.arbeitsagentur.keycloak.push.*";
 
     private JacocoContainerSupport() {}
@@ -44,7 +46,7 @@ public final class JacocoContainerSupport {
         Files.deleteIfExists(HOST_EXEC_DIR.resolve(execFileName));
         return container
                 .withCopyFileToContainer(MountableFile.forHostPath(locateAgentJar()), CONTAINER_AGENT_PATH)
-                .withFileSystemBind(HOST_EXEC_DIR.toString(), CONTAINER_COVERAGE_DIR, BindMode.READ_WRITE)
+                .withFileSystemBind(HOST_TARGET_DIR.toString(), CONTAINER_TARGET_DIR, BindMode.READ_WRITE)
                 .withEnv("JAVA_OPTS_APPEND", agentArgument(execFileName));
     }
 

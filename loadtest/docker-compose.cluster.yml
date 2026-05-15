@@ -12,7 +12,11 @@ services:
       retries: 20
 
   keycloak-1:
-    image: quay.io/keycloak/keycloak:${KEYCLOAK_VERSION:-26.6.1}
+    build:
+      context: ..
+      dockerfile: Dockerfile.keycloak-java25
+      args:
+        KEYCLOAK_VERSION: ${KEYCLOAK_VERSION:-26.6.1}
     command:
       - start
       - --http-enabled=true
@@ -47,7 +51,11 @@ services:
       - ../config:/opt/keycloak/data/import:ro
 
   keycloak-2:
-    image: quay.io/keycloak/keycloak:${KEYCLOAK_VERSION:-26.6.1}
+    build:
+      context: ..
+      dockerfile: Dockerfile.keycloak-java25
+      args:
+        KEYCLOAK_VERSION: ${KEYCLOAK_VERSION:-26.6.1}
     command:
       - start
       - --http-enabled=true

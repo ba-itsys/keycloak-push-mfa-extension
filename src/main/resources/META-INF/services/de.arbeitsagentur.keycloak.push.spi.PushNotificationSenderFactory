@@ -1,2 +1,3 @@
 de.arbeitsagentur.keycloak.push.spi.pushnotification.LoggingPushNotificationSenderFactory
 de.arbeitsagentur.keycloak.push.spi.pushnotification.NoOpPushNotificationSenderFactory
+de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.FcmPushNotificationSenderFactory

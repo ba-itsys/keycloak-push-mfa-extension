@@ -108,6 +108,7 @@ The SSE endpoints keep one browser stream per watch page and read challenge stat
 | [SPI Reference](docs/spi-reference.md) | Push notification, event, and rate limiting SPIs |
 | [UI Customization](docs/ui-customization.md) | Theme and template customization |
 | [Security](docs/security.md) | Security model and mobile app obligations |
-| [Mobile Mock](docs/mobile-mock.md) | Testing without a real mobile app |
+| [Firebase Cloud Messaging Provider](firebase-cloud-messaging-provider.md) | Send real push notifications to your mobile app |
+| [Push Mfa Simulator](docs/push-mfa-simulator.md) | Testing without a real mobile app |
 | [Troubleshooting](docs/troubleshooting.md) | Common issues and solutions |
 | [Load Testing](loadtest/README.md) | Two-node browser+SSE loadtest setup and reproduction commands |

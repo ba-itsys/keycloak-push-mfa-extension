@@ -1,0 +1,22 @@
+{
+  "public": {
+    "e": "AQAB",
+    "kty": "RSA",
+    "n": "tC_J9PA-BSB8oFv4AVNTEghK7suaDHGNTWqwDg8a-yvVpCAri5jZP3io-NGcehbed2f1alh-egaQzzm9l8O_RF2gg5bZOSzlZcw7AjPkV3mSKUSDmGqhGclCRyWgs3-uBxMSiSDi5Ye2Sv_GJwCh4W0DG1HLZx8v8GZbd1JjK-zQBtN9S0Xotwf6Q3j_q3mvxrEJ9brN7JC0Xal1Fi2rQHIYGp7yi1ZUOKBozBFx9c8N1DL9HYSkxa4g9Q7GyCcynGATFCCYkQ8GdH4A6kchj43mOdbW8fUpCJsO0V6b3GVYKuQgNNv-wSV59sB91z6AK-drkPiNMurBUayXUZjBcw",
+    "alg": "RS256",
+    "use": "sig"
+  },
+  "private": {
+    "d": "LosDl0XxN0DPgFqRQsJjvE4xEOK9rYYtUjiDNnZ3aTbG7iizJtF6GHeR6ge27CB5IY3Uaj5mmR2WDTkkfI2_G6k1m5f9D1RGAxgQi_6cdm38L7W3akjsySzf9mHFU2hhKwmlqY85nMGD-HZ-GDgFGKYgfc-Qg1geeXHvIXDCFiecAuXEfYZVwlZ5OVyyLap617g5YOkcNqIM8PeX_k7IE4JXmmifhtztDiFBLs0P9iOnRuya-CL0ivUngkI2E-5T42hh-K1Cu7ROFcRRwuSGSw7-240FosUBqjHbWDWqSM2yGulAnJR5WIm4AufWCIapRTGzxWyo87ysKdA4JLPn1Q",
+    "dp": "3n4wjFZHVKJzDfTLqlcsOmWZ-Wg49YMG_3aoHYrFcrh_Prf-eFckpu_z-G_9jUJr6tpeKP1cBFmX7nbIJwmUwMWhx5pefm9Awtma1X34QIBLdQrpHtHULx_HCG7_TvDecRUA40VEKdc_qt1efkV0tg1bprQnL22mMDoL-5omDEM",
+    "dq": "LNexoBzY3X0x5PLQO8Asl6-BiYe9FKrqYfmz74Q9s56dWNMGOE0Yh7oo3n9gbB4tfC_0FHjJQs2gRBYQEPq9xSLPhOAfYYUFULCW_YiPdIaVc6xsMXQJea3f02h2KoCbVdvGw9Ss7QJlxFtoscRcb2xg_T4X8ZW_oktAnxm6mK0",
+    "e": "AQAB",
+    "kty": "RSA",
+    "n": "tC_J9PA-BSB8oFv4AVNTEghK7suaDHGNTWqwDg8a-yvVpCAri5jZP3io-NGcehbed2f1alh-egaQzzm9l8O_RF2gg5bZOSzlZcw7AjPkV3mSKUSDmGqhGclCRyWgs3-uBxMSiSDi5Ye2Sv_GJwCh4W0DG1HLZx8v8GZbd1JjK-zQBtN9S0Xotwf6Q3j_q3mvxrEJ9brN7JC0Xal1Fi2rQHIYGp7yi1ZUOKBozBFx9c8N1DL9HYSkxa4g9Q7GyCcynGATFCCYkQ8GdH4A6kchj43mOdbW8fUpCJsO0V6b3GVYKuQgNNv-wSV59sB91z6AK-drkPiNMurBUayXUZjBcw",
+    "p": "3sWLi64FurncfywWkkcfEmam2c0cQ61mX-H-FZe3_rWJZ7EMNTJx9CLZ71ixDUUsEDdqjBHWpqBVAvSmBlm-L4dsZoiXUK5GVluwsgEgGaCnym1qyIRk5OBhJvNavaYu9s-JotKsF47dtkO0x9cuERV5f4ElwIbAQLS1Ywp39l8",
+    "q": "zxAmz_CT8i9INHbr71dS13j15l_S6ig0nLUgZgVTKpdZLuKQdvXJuSmxxF-4ouKuv-d5c4HFlq33_IG5rJx3jCPxD0VbbGRWUfVsrO5lR5b84lzjcfG7PNPIQKZm-RHV8irnQ5xgfhpZHd9fM-lims8JbTKmw84F8_ecelVrBW0",
+    "qi": "lLuvesXDYzjxXbl6pBqT0lVbTCpXMJ5F2TVzaQnKuv7NOvtQ7rqPupJSFkyisCTvcbr1hYgr08Rc7jxUXJXV5ccxBo1MgZ3iESK9R1ctHoeid1vYIWptn1mzipKEnONLkI5iJHh-xFRzrPHoMZewuOuqcsMUbBA6BkjZUXy8YAU",
+    "alg": "RS256",
+    "use": "sig"
+  }
+}

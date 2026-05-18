@@ -4,7 +4,7 @@ This document covers the Service Provider Interfaces (SPIs) available for extend
 
 ## Push Notification SPI
 
-The server emits confirm tokens through the `PushNotificationSender` SPI. Each device credential stores a `pushProviderId` (opaque token/identifier for your push backend) and a `pushProviderType` (the Keycloak SPI provider id). At runtime `PushNotificationService` resolves the SPI implementation by calling `session.getProvider(PushNotificationSender.class, pushProviderType)` and passes in the `pushProviderId`. The bundled `log` provider prints the payload and the bundled `none` provider intentionally does nothing, but you can plug in a real APNs/FCM sender by implementing:
+The server emits confirm tokens through the `PushNotificationSender` SPI. Each device credential stores a `pushProviderId` (opaque token/identifier for your push backend) and a `pushProviderType` (the Keycloak SPI provider id). At runtime `PushNotificationService` resolves the SPI implementation by calling `session.getProvider(PushNotificationSender.class, pushProviderType)` and passes in the `pushProviderId`. The bundled `log` provider prints the payload, the bundled `none` provider intentionally does nothing and the bundled `fcm-sender` provider [Firebase Cloud Messaging Provider](firebase-cloud-messaging-provider.md) sends a push notification to Firebase. You can plug in your own APNs sender by implementing:
 
 ```java
 public final class MyPushSender implements PushNotificationSender {

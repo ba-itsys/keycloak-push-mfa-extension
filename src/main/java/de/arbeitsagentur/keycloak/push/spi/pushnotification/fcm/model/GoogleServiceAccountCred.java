@@ -3,9 +3,13 @@ package de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.model;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.io.File;
 import java.io.FileInputStream;
+
 import org.jboss.logging.Logger;
+
+import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.util.ConfigUtil;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class GoogleServiceAccountCred {
@@ -109,7 +113,7 @@ public class GoogleServiceAccountCred {
     }
 
     public static GoogleServiceAccountCred loadFromFile() {
-        String filePath = System.getenv("GOOGLE_APPLICATION_CREDENTIALS");
+        String filePath = ConfigUtil.getEnvString("GOOGLE_APPLICATION_CREDENTIALS");
         if (filePath == null || filePath.isEmpty()) {
             LOG.warn("Environment variable GOOGLE_APPLICATION_CREDENTIALS is not set.");
             return null;

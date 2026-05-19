@@ -12,4 +12,4 @@ See the FCM documentation for further details on FCM [here](https://firebase.goo
 
 ## Proxy
 
-With the realm based attributes `httpProxyHost` and `httpProxyPort` you can configure a proxy for the requests to FCM.
+You can configure a proxy for FCM requests with any of the following environment variables (ranked as written): https_proxy, HTTPS_PROXY, http_proxy, HTTP_PROXY

@@ -1,4 +1,4 @@
-package de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm;
+package de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.util;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.model.FcmPushRequestBody;

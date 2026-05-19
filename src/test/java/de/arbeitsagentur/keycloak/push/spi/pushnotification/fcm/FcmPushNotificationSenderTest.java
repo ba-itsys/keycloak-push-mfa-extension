@@ -81,8 +81,7 @@ public class FcmPushNotificationSenderTest {
 
             HttpClient client = mock(HttpClient.class);
             clientFactory
-                    .when(() -> HttpClientFactory.getHttpClient(Mockito.any()))
-                    .thenReturn(client);
+                    .when(() -> HttpClientFactory.getHttpClient(fcmUrl)).thenReturn(client);
             googleCred.when(GoogleServiceAccountCred::loadFromFile).thenReturn(cred);
 
             String jwt = "dummy-jwt-token";
@@ -127,7 +126,7 @@ public class FcmPushNotificationSenderTest {
 
             HttpClient client = mock(HttpClient.class);
             clientFactory
-                    .when(() -> HttpClientFactory.getHttpClient(Mockito.any()))
+                    .when(() -> HttpClientFactory.getHttpClient(fcmUrl))
                     .thenReturn(client);
             googleCred.when(GoogleServiceAccountCred::loadFromFile).thenReturn(cred);
 
@@ -165,7 +164,7 @@ public class FcmPushNotificationSenderTest {
 
             HttpClient client = mock(HttpClient.class);
             clientFactory
-                    .when(() -> HttpClientFactory.getHttpClient(Mockito.any()))
+                    .when(() -> HttpClientFactory.getHttpClient(fcmUrl))
                     .thenReturn(client);
             googleCred.when(GoogleServiceAccountCred::loadFromFile).thenReturn(cred);
 
@@ -201,7 +200,7 @@ public class FcmPushNotificationSenderTest {
 
             HttpClient client = mock(HttpClient.class);
             clientFactory
-                    .when(() -> HttpClientFactory.getHttpClient(Mockito.any()))
+                    .when(() -> HttpClientFactory.getHttpClient(fcmUrl))
                     .thenReturn(client);
             googleCred.when(GoogleServiceAccountCred::loadFromFile).thenReturn(cred);
 
@@ -239,7 +238,7 @@ public class FcmPushNotificationSenderTest {
 
             HttpClient client = mock(HttpClient.class);
             clientFactory
-                    .when(() -> HttpClientFactory.getHttpClient(Mockito.any()))
+                    .when(() -> HttpClientFactory.getHttpClient(null))
                     .thenReturn(client);
             googleCred.when(GoogleServiceAccountCred::loadFromFile).thenReturn(cred);
 
@@ -285,7 +284,7 @@ public class FcmPushNotificationSenderTest {
 
             HttpClient client = mock(HttpClient.class);
             clientFactory
-                    .when(() -> HttpClientFactory.getHttpClient(Mockito.any()))
+                    .when(() -> HttpClientFactory.getHttpClient(fcmUrl))
                     .thenReturn(client);
             googleCred.when(GoogleServiceAccountCred::loadFromFile).thenReturn(cred);
 
@@ -327,7 +326,7 @@ public class FcmPushNotificationSenderTest {
 
             HttpClient client = mock(HttpClient.class);
             clientFactory
-                    .when(() -> HttpClientFactory.getHttpClient(Mockito.any()))
+                    .when(() -> HttpClientFactory.getHttpClient(fcmUrl))
                     .thenReturn(client);
             googleCred.when(GoogleServiceAccountCred::loadFromFile).thenReturn(cred);
 
@@ -396,7 +395,7 @@ public class FcmPushNotificationSenderTest {
 
             sentNotification = super.getTranslatetedNotification(session, user);
             try {
-                result = super.sendNotification(realm, confirmToken, pushProviderId, sentNotification);
+                result = super.sendNotification(confirmToken, pushProviderId, sentNotification);
             } catch (InterruptedException e) {
                 LOG.error("Interrupted exception occurred", e);
             }

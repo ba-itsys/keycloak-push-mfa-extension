@@ -1,17 +1,16 @@
 package de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm;
 
-import static de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.HttpTools.postMessageRequest;
-import static de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.HttpTools.postTokenRequest;
-
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+
 import de.arbeitsagentur.keycloak.push.spi.PushNotificationSender;
 import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.model.FcmPushMessage;
 import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.model.FcmPushRequestBody;
 import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.model.GoogleServiceAccountCred;
 import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.model.Notification;
 import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.model.NotificationData;
+
 import java.io.IOException;
 import java.net.http.HttpResponse;
 import java.security.KeyFactory;
@@ -26,6 +25,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
+
 import org.jboss.logging.Logger;
 import org.keycloak.common.util.Time;
 import org.keycloak.crypto.AsymmetricSignatureSignerContext;
@@ -38,6 +38,10 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.representations.JsonWebToken;
 import org.keycloak.theme.Theme;
+
+import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.util.HttpClientFactory;
+import static de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.util.HttpTools.postMessageRequest;
+import static de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.util.HttpTools.postTokenRequest;
 
 public class FcmPushNotificationSender implements PushNotificationSender {
     private static final Logger LOG = Logger.getLogger(FcmPushNotificationSender.class);
@@ -67,7 +71,7 @@ public class FcmPushNotificationSender implements PushNotificationSender {
                 () -> {
                     NotificationSendResult result = null;
                     try {
-                        result = sendNotification(realm, confirmToken, pushProviderId, notification);
+                        result = sendNotification(confirmToken, pushProviderId, notification);
                     } catch (InterruptedException e) {
                         LOG.warn("Push notification interrupted", e);
                         Thread.currentThread().interrupt();
@@ -87,7 +91,7 @@ public class FcmPushNotificationSender implements PushNotificationSender {
     }
 
     protected NotificationSendResult sendNotification(
-            RealmModel realmModel, String confirmToken, String providerId, Notification notification)
+            String confirmToken, String providerId, Notification notification)
             throws InterruptedException {
         // send confirmation push to firebase
         // 1. get google access token
@@ -97,7 +101,7 @@ public class FcmPushNotificationSender implements PushNotificationSender {
         }
 
         // get access token from googleServiceAccountCred.tokenUri
-        String accessToken = getAccessToken(googleServiceAccountCred, realmModel);
+        String accessToken = getAccessToken(googleServiceAccountCred);
         if (accessToken == null) {
             return NotificationSendResult.TOKEN_REQUEST_FAILED;
         }
@@ -107,7 +111,7 @@ public class FcmPushNotificationSender implements PushNotificationSender {
         FcmPushMessage fcmPushMessage = new FcmPushMessage(providerId, notification, notificationData);
         FcmPushRequestBody requestBody = new FcmPushRequestBody(fcmPushMessage);
 
-        if (!sendToFcm(this.fcmUrl, requestBody, accessToken, realmModel)) {
+        if (!sendToFcm(this.fcmUrl, requestBody, accessToken)) {
             return NotificationSendResult.NOTIFICATION_SEND_FAILED;
         }
         return NotificationSendResult.SUCCESS;
@@ -133,7 +137,7 @@ public class FcmPushNotificationSender implements PushNotificationSender {
         return new Notification(msg.getProperty(TITLE_KEY, TITLE_DEFAULT), msg.getProperty(BODY_KEY, BODY_DEFAULT));
     }
 
-    private String getAccessToken(GoogleServiceAccountCred cred, RealmModel realmModel) throws InterruptedException {
+    private String getAccessToken(GoogleServiceAccountCred cred) throws InterruptedException {
         String jwt = createSignedJWT(cred);
         HashMap<String, String> params = new HashMap<>();
         params.put("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer");
@@ -141,7 +145,7 @@ public class FcmPushNotificationSender implements PushNotificationSender {
 
         HttpResponse<String> response;
         try {
-            response = postTokenRequest(HttpClientFactory.getHttpClient(realmModel), cred.getTokenUri(), params);
+            response = postTokenRequest(HttpClientFactory.getHttpClient(cred.getTokenUri()), cred.getTokenUri(), params);
         } catch (IOException e) {
             LOG.warn("Exception at retrieving access token from FCM", e);
             return null;
@@ -164,7 +168,7 @@ public class FcmPushNotificationSender implements PushNotificationSender {
         return (String) responseJson.get("access_token");
     }
 
-    private boolean sendToFcm(String url, FcmPushRequestBody requestBody, String accessToken, RealmModel realmModel)
+    private boolean sendToFcm(String url, FcmPushRequestBody requestBody, String accessToken)
             throws InterruptedException {
         if (url == null || url.isEmpty()) {
             LOG.warn("Missing FCM URL attribute");
@@ -173,7 +177,7 @@ public class FcmPushNotificationSender implements PushNotificationSender {
 
         HttpResponse<String> response;
         try {
-            response = postMessageRequest(HttpClientFactory.getHttpClient(realmModel), url, requestBody, accessToken);
+            response = postMessageRequest(HttpClientFactory.getHttpClient(url), url, requestBody, accessToken);
         } catch (IOException e) {
             LOG.warn("Exception at sending notification to FCM", e);
             return false;

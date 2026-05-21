@@ -3,13 +3,10 @@ package de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.model;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
+import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.util.ConfigUtil;
 import java.io.File;
 import java.io.FileInputStream;
-
 import org.jboss.logging.Logger;
-
-import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.util.ConfigUtil;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class GoogleServiceAccountCred {

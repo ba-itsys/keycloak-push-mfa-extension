@@ -10,9 +10,9 @@ import static org.mockito.Mockito.when;
 import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.model.FcmPushRequestBody;
 import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.model.GoogleServiceAccountCred;
 import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.model.Notification;
+import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.util.HttpResult;
+import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.util.HttpTools;
 import java.io.IOException;
-import java.net.http.HttpClient;
-import java.net.http.HttpResponse;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
@@ -75,29 +75,20 @@ public class FcmPushNotificationSenderTest {
         String fcmUrl = "https://fcm.googleapis.com/fcm/send";
         FcmPushNotificationSender provider = new FcmPushNotificationSenderTestImpl(fcmUrl);
 
-        try (MockedStatic<HttpClientFactory> clientFactory = mockStatic(HttpClientFactory.class);
-                MockedStatic<HttpTools> httpTools = mockStatic(HttpTools.class);
+        try (MockedStatic<HttpTools> httpTools = mockStatic(HttpTools.class);
                 MockedStatic<GoogleServiceAccountCred> googleCred = mockStatic(GoogleServiceAccountCred.class)) {
 
-            HttpClient client = mock(HttpClient.class);
-            clientFactory
-                    .when(() -> HttpClientFactory.getHttpClient(fcmUrl)).thenReturn(client);
             googleCred.when(GoogleServiceAccountCred::loadFromFile).thenReturn(cred);
 
             String jwt = "dummy-jwt-token";
-            HttpResponse<String> tokenResponse = mock(HttpResponse.class);
-            when(tokenResponse.statusCode()).thenReturn(200);
-            when(tokenResponse.body()).thenReturn("{\"access_token\":\"" + jwt + "\"}");
+            HttpResult tokenResponse = new HttpResult(200, "{\"access_token\":\"" + jwt + "\"}");
             httpTools
-                    .when(() -> HttpTools.postTokenRequest(
-                            Mockito.any(HttpClient.class), Mockito.anyString(), Mockito.any()))
+                    .when(() -> HttpTools.postTokenRequest(Mockito.anyString(), Mockito.any()))
                     .thenReturn(tokenResponse);
 
-            HttpResponse<String> messageResponse = mock(HttpResponse.class);
-            when(messageResponse.statusCode()).thenReturn(200);
+            HttpResult messageResponse = new HttpResult(200, "OK");
             httpTools
-                    .when(() -> HttpTools.postMessageRequest(
-                            Mockito.any(HttpClient.class), Mockito.anyString(), Mockito.any(), Mockito.anyString()))
+                    .when(() -> HttpTools.postMessageRequest(Mockito.anyString(), Mockito.any(), Mockito.anyString()))
                     .thenReturn(messageResponse);
 
             provider.send(
@@ -107,10 +98,9 @@ public class FcmPushNotificationSenderTest {
 
             assertEquals(expectedNotification.getTitle(), sentNotification.getTitle());
             assertEquals(expectedNotification.getBody(), sentNotification.getBody());
-            httpTools.verify(() ->
-                    HttpTools.postTokenRequest(Mockito.any(HttpClient.class), Mockito.anyString(), Mockito.any()));
-            httpTools.verify(() -> HttpTools.postMessageRequest(
-                    eq(client), eq(fcmUrl), Mockito.any(FcmPushRequestBody.class), eq(jwt)));
+            httpTools.verify(() -> HttpTools.postTokenRequest(Mockito.anyString(), Mockito.any()));
+            httpTools.verify(
+                    () -> HttpTools.postMessageRequest(eq(fcmUrl), Mockito.any(FcmPushRequestBody.class), eq(jwt)));
             assertEquals(NotificationSendResult.SUCCESS, result);
         }
     }
@@ -120,34 +110,23 @@ public class FcmPushNotificationSenderTest {
         String fcmUrl = "https://fcm.googleapis.com/fcm/send";
         FcmPushNotificationSender provider = new FcmPushNotificationSenderTestImpl(fcmUrl);
 
-        try (MockedStatic<HttpClientFactory> clientFactory = mockStatic(HttpClientFactory.class);
-                MockedStatic<HttpTools> httpTools = mockStatic(HttpTools.class);
+        try (MockedStatic<HttpTools> httpTools = mockStatic(HttpTools.class);
                 MockedStatic<GoogleServiceAccountCred> googleCred = mockStatic(GoogleServiceAccountCred.class)) {
 
-            HttpClient client = mock(HttpClient.class);
-            clientFactory
-                    .when(() -> HttpClientFactory.getHttpClient(fcmUrl))
-                    .thenReturn(client);
             googleCred.when(GoogleServiceAccountCred::loadFromFile).thenReturn(cred);
 
-            HttpResponse<String> tokenResponse = mock(HttpResponse.class);
-            when(tokenResponse.statusCode()).thenReturn(500);
+            HttpResult tokenResponse = new HttpResult(500, "Internal Server Error");
             httpTools
-                    .when(() -> HttpTools.postTokenRequest(
-                            Mockito.any(HttpClient.class), Mockito.anyString(), Mockito.any()))
+                    .when(() -> HttpTools.postTokenRequest(Mockito.anyString(), Mockito.any()))
                     .thenReturn(tokenResponse);
 
             provider.send(
                     session, realm, user, "confirmToken", "credentialId", "challengeId", "provider-id", "client-id");
 
-            httpTools.verify(() ->
-                    HttpTools.postTokenRequest(Mockito.any(HttpClient.class), Mockito.anyString(), Mockito.any()));
+            httpTools.verify(() -> HttpTools.postTokenRequest(Mockito.anyString(), Mockito.any()));
             httpTools.verify(
                     () -> HttpTools.postMessageRequest(
-                            Mockito.any(HttpClient.class),
-                            Mockito.anyString(),
-                            Mockito.any(FcmPushRequestBody.class),
-                            Mockito.anyString()),
+                            Mockito.anyString(), Mockito.any(FcmPushRequestBody.class), Mockito.anyString()),
                     never());
             assertEquals(NotificationSendResult.TOKEN_REQUEST_FAILED, result);
         }
@@ -158,32 +137,22 @@ public class FcmPushNotificationSenderTest {
         String fcmUrl = "https://fcm.googleapis.com/fcm/send";
         FcmPushNotificationSender provider = new FcmPushNotificationSenderTestImpl(fcmUrl);
 
-        try (MockedStatic<HttpClientFactory> clientFactory = mockStatic(HttpClientFactory.class);
-                MockedStatic<HttpTools> httpTools = mockStatic(HttpTools.class);
+        try (MockedStatic<HttpTools> httpTools = mockStatic(HttpTools.class);
                 MockedStatic<GoogleServiceAccountCred> googleCred = mockStatic(GoogleServiceAccountCred.class)) {
 
-            HttpClient client = mock(HttpClient.class);
-            clientFactory
-                    .when(() -> HttpClientFactory.getHttpClient(fcmUrl))
-                    .thenReturn(client);
             googleCred.when(GoogleServiceAccountCred::loadFromFile).thenReturn(cred);
 
             httpTools
-                    .when(() -> HttpTools.postTokenRequest(
-                            Mockito.any(HttpClient.class), Mockito.anyString(), Mockito.any()))
+                    .when(() -> HttpTools.postTokenRequest(Mockito.anyString(), Mockito.any()))
                     .thenThrow(new IOException("Failed to complete request after 3 retries"));
 
             provider.send(
                     session, realm, user, "confirmToken", "credentialId", "challengeId", "provider-id", "client-id");
 
-            httpTools.verify(() ->
-                    HttpTools.postTokenRequest(Mockito.any(HttpClient.class), Mockito.anyString(), Mockito.any()));
+            httpTools.verify(() -> HttpTools.postTokenRequest(Mockito.anyString(), Mockito.any()));
             httpTools.verify(
                     () -> HttpTools.postMessageRequest(
-                            Mockito.any(HttpClient.class),
-                            Mockito.anyString(),
-                            Mockito.any(FcmPushRequestBody.class),
-                            Mockito.anyString()),
+                            Mockito.anyString(), Mockito.any(FcmPushRequestBody.class), Mockito.anyString()),
                     never());
             assertEquals(NotificationSendResult.TOKEN_REQUEST_FAILED, result);
         }
@@ -194,35 +163,23 @@ public class FcmPushNotificationSenderTest {
         String fcmUrl = "https://fcm.googleapis.com/fcm/send";
         FcmPushNotificationSender provider = new FcmPushNotificationSenderTestImpl(fcmUrl);
 
-        try (MockedStatic<HttpClientFactory> clientFactory = mockStatic(HttpClientFactory.class);
-                MockedStatic<HttpTools> httpTools = mockStatic(HttpTools.class);
+        try (MockedStatic<HttpTools> httpTools = mockStatic(HttpTools.class);
                 MockedStatic<GoogleServiceAccountCred> googleCred = mockStatic(GoogleServiceAccountCred.class)) {
 
-            HttpClient client = mock(HttpClient.class);
-            clientFactory
-                    .when(() -> HttpClientFactory.getHttpClient(fcmUrl))
-                    .thenReturn(client);
             googleCred.when(GoogleServiceAccountCred::loadFromFile).thenReturn(cred);
 
-            HttpResponse<String> tokenResponse = mock(HttpResponse.class);
-            when(tokenResponse.statusCode()).thenReturn(200);
-            when(tokenResponse.body()).thenReturn("schmarrn");
+            HttpResult tokenResponse = new HttpResult(200, "invalid-json");
             httpTools
-                    .when(() -> HttpTools.postTokenRequest(
-                            Mockito.any(HttpClient.class), Mockito.anyString(), Mockito.any()))
+                    .when(() -> HttpTools.postTokenRequest(Mockito.anyString(), Mockito.any()))
                     .thenReturn(tokenResponse);
 
             provider.send(
                     session, realm, user, "confirmToken", "credentialId", "challengeId", "provider-id", "client-id");
 
-            httpTools.verify(() ->
-                    HttpTools.postTokenRequest(Mockito.any(HttpClient.class), Mockito.anyString(), Mockito.any()));
+            httpTools.verify(() -> HttpTools.postTokenRequest(Mockito.anyString(), Mockito.any()));
             httpTools.verify(
                     () -> HttpTools.postMessageRequest(
-                            Mockito.any(HttpClient.class),
-                            Mockito.anyString(),
-                            Mockito.any(FcmPushRequestBody.class),
-                            Mockito.anyString()),
+                            Mockito.anyString(), Mockito.any(FcmPushRequestBody.class), Mockito.anyString()),
                     never());
             assertEquals(NotificationSendResult.TOKEN_REQUEST_FAILED, result);
         }
@@ -232,42 +189,30 @@ public class FcmPushNotificationSenderTest {
     public void testSendPushNotificationNoFcmUrl() {
         FcmPushNotificationSender provider = new FcmPushNotificationSenderTestImpl(null);
 
-        try (MockedStatic<HttpClientFactory> clientFactory = mockStatic(HttpClientFactory.class);
-                MockedStatic<HttpTools> httpTools = mockStatic(HttpTools.class);
+        try (MockedStatic<HttpTools> httpTools = mockStatic(HttpTools.class);
                 MockedStatic<GoogleServiceAccountCred> googleCred = mockStatic(GoogleServiceAccountCred.class)) {
 
-            HttpClient client = mock(HttpClient.class);
-            clientFactory
-                    .when(() -> HttpClientFactory.getHttpClient(null))
-                    .thenReturn(client);
             googleCred.when(GoogleServiceAccountCred::loadFromFile).thenReturn(cred);
 
             String jwt = "dummy-jwt-token";
-            HttpResponse<String> tokenResponse = mock(HttpResponse.class);
-            when(tokenResponse.statusCode()).thenReturn(200);
-            when(tokenResponse.body()).thenReturn("{\"access_token\":\"" + jwt + "\"}");
+            HttpResult tokenResponse = new HttpResult(200, "{\"access_token\":\"" + jwt + "\"}");
             httpTools
-                    .when(() -> HttpTools.postTokenRequest(
-                            Mockito.any(HttpClient.class), Mockito.anyString(), Mockito.any()))
+                    .when(() -> HttpTools.postTokenRequest(Mockito.anyString(), Mockito.any()))
                     .thenReturn(tokenResponse);
 
-            HttpResponse<String> messageResponse = mock(HttpResponse.class);
+            HttpResult messageResponse = new HttpResult(200, "OK");
             httpTools
                     .when(() -> HttpTools.postMessageRequest(
-                            Mockito.any(HttpClient.class), Mockito.anyString(), Mockito.any(), Mockito.anyString()))
+                            Mockito.anyString(), Mockito.any(FcmPushRequestBody.class), Mockito.anyString()))
                     .thenReturn(messageResponse);
 
             provider.send(
                     session, realm, user, "confirmToken", "credentialId", "challengeId", "provider-id", "client-id");
 
-            httpTools.verify(() ->
-                    HttpTools.postTokenRequest(Mockito.any(HttpClient.class), Mockito.anyString(), Mockito.any()));
+            httpTools.verify(() -> HttpTools.postTokenRequest(Mockito.anyString(), Mockito.any()));
             httpTools.verify(
                     () -> HttpTools.postMessageRequest(
-                            Mockito.any(HttpClient.class),
-                            Mockito.anyString(),
-                            Mockito.any(FcmPushRequestBody.class),
-                            Mockito.anyString()),
+                            Mockito.anyString(), Mockito.any(FcmPushRequestBody.class), Mockito.anyString()),
                     never());
             assertEquals(NotificationSendResult.NOTIFICATION_SEND_FAILED, result);
         }
@@ -278,39 +223,28 @@ public class FcmPushNotificationSenderTest {
         String fcmUrl = "https://fcm.googleapis.com/fcm/send";
         FcmPushNotificationSender provider = new FcmPushNotificationSenderTestImpl(fcmUrl);
 
-        try (MockedStatic<HttpClientFactory> clientFactory = mockStatic(HttpClientFactory.class);
-                MockedStatic<HttpTools> httpTools = mockStatic(HttpTools.class);
+        try (MockedStatic<HttpTools> httpTools = mockStatic(HttpTools.class);
                 MockedStatic<GoogleServiceAccountCred> googleCred = mockStatic(GoogleServiceAccountCred.class)) {
 
-            HttpClient client = mock(HttpClient.class);
-            clientFactory
-                    .when(() -> HttpClientFactory.getHttpClient(fcmUrl))
-                    .thenReturn(client);
             googleCred.when(GoogleServiceAccountCred::loadFromFile).thenReturn(cred);
 
             String jwt = "dummy-jwt-token";
-            HttpResponse<String> tokenResponse = mock(HttpResponse.class);
-            when(tokenResponse.statusCode()).thenReturn(200);
-            when(tokenResponse.body()).thenReturn("{\"access_token\":\"" + jwt + "\"}");
+            HttpResult tokenResponse = new HttpResult(200, "{\"access_token\":\"" + jwt + "\"}");
             httpTools
-                    .when(() -> HttpTools.postTokenRequest(
-                            Mockito.any(HttpClient.class), Mockito.anyString(), Mockito.any()))
+                    .when(() -> HttpTools.postTokenRequest(Mockito.anyString(), Mockito.any()))
                     .thenReturn(tokenResponse);
 
-            HttpResponse<String> messageResponse = mock(HttpResponse.class);
-            when(messageResponse.statusCode()).thenReturn(500);
+            HttpResult messageResponse = new HttpResult(500, "Internal Server Error");
             httpTools
-                    .when(() -> HttpTools.postMessageRequest(
-                            Mockito.any(HttpClient.class), Mockito.anyString(), Mockito.any(), Mockito.anyString()))
+                    .when(() -> HttpTools.postMessageRequest(Mockito.anyString(), Mockito.any(), Mockito.anyString()))
                     .thenReturn(messageResponse);
 
             provider.send(
                     session, realm, user, "confirmToken", "credentialId", "challengeId", "provider-id", "client-id");
 
-            httpTools.verify(() ->
-                    HttpTools.postTokenRequest(Mockito.any(HttpClient.class), Mockito.anyString(), Mockito.any()));
-            httpTools.verify(() -> HttpTools.postMessageRequest(
-                    eq(client), eq(fcmUrl), Mockito.any(FcmPushRequestBody.class), eq(jwt)));
+            httpTools.verify(() -> HttpTools.postTokenRequest(Mockito.anyString(), Mockito.any()));
+            httpTools.verify(
+                    () -> HttpTools.postMessageRequest(eq(fcmUrl), Mockito.any(FcmPushRequestBody.class), eq(jwt)));
             assertEquals(NotificationSendResult.NOTIFICATION_SEND_FAILED, result);
         }
     }
@@ -320,37 +254,27 @@ public class FcmPushNotificationSenderTest {
         String fcmUrl = "https://fcm.googleapis.com/fcm/send";
         FcmPushNotificationSender provider = new FcmPushNotificationSenderTestImpl(fcmUrl);
 
-        try (MockedStatic<HttpClientFactory> clientFactory = mockStatic(HttpClientFactory.class);
-                MockedStatic<HttpTools> httpTools = mockStatic(HttpTools.class);
+        try (MockedStatic<HttpTools> httpTools = mockStatic(HttpTools.class);
                 MockedStatic<GoogleServiceAccountCred> googleCred = mockStatic(GoogleServiceAccountCred.class)) {
 
-            HttpClient client = mock(HttpClient.class);
-            clientFactory
-                    .when(() -> HttpClientFactory.getHttpClient(fcmUrl))
-                    .thenReturn(client);
             googleCred.when(GoogleServiceAccountCred::loadFromFile).thenReturn(cred);
 
             String jwt = "dummy-jwt-token";
-            HttpResponse<String> tokenResponse = mock(HttpResponse.class);
-            when(tokenResponse.statusCode()).thenReturn(200);
-            when(tokenResponse.body()).thenReturn("{\"access_token\":\"" + jwt + "\"}");
+            HttpResult tokenResponse = new HttpResult(200, "{\"access_token\":\"" + jwt + "\"}");
             httpTools
-                    .when(() -> HttpTools.postTokenRequest(
-                            Mockito.any(HttpClient.class), Mockito.anyString(), Mockito.any()))
+                    .when(() -> HttpTools.postTokenRequest(Mockito.anyString(), Mockito.any()))
                     .thenReturn(tokenResponse);
 
             httpTools
-                    .when(() -> HttpTools.postMessageRequest(
-                            Mockito.any(HttpClient.class), Mockito.anyString(), Mockito.any(), Mockito.anyString()))
+                    .when(() -> HttpTools.postMessageRequest(Mockito.anyString(), Mockito.any(), Mockito.anyString()))
                     .thenThrow(new IOException("Failed to complete request after 3 retries"));
 
             provider.send(
                     session, realm, user, "confirmToken", "credentialId", "challengeId", "provider-id", "client-id");
 
-            httpTools.verify(() ->
-                    HttpTools.postTokenRequest(Mockito.any(HttpClient.class), Mockito.anyString(), Mockito.any()));
-            httpTools.verify(() -> HttpTools.postMessageRequest(
-                    eq(client), eq(fcmUrl), Mockito.any(FcmPushRequestBody.class), eq(jwt)));
+            httpTools.verify(() -> HttpTools.postTokenRequest(Mockito.anyString(), Mockito.any()));
+            httpTools.verify(
+                    () -> HttpTools.postMessageRequest(eq(fcmUrl), Mockito.any(FcmPushRequestBody.class), eq(jwt)));
             assertEquals(NotificationSendResult.NOTIFICATION_SEND_FAILED, result);
         }
     }

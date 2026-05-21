@@ -3,7 +3,7 @@ package de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -11,24 +11,41 @@ import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.model.FcmPushMes
 import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.model.FcmPushRequestBody;
 import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.model.Notification;
 import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.model.NotificationData;
+import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.util.HttpClientFactory;
+import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.util.HttpResponseHandler;
+import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.util.HttpResult;
+import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.util.HttpTools;
 import java.io.IOException;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
+import org.apache.http.HttpEntity;
+import org.apache.http.HttpResponse;
+import org.apache.http.NameValuePair;
+import org.apache.http.StatusLine;
+import org.apache.http.client.ResponseHandler;
+import org.apache.http.client.methods.HttpUriRequest;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.message.BasicNameValuePair;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.MockedStatic;
+import org.mockito.invocation.InvocationOnMock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
 public class HttpToolsTest {
     @Mock
-    private HttpClient mockHttpClient;
+    private CloseableHttpClient mockHttpClient;
 
     @Mock
-    private HttpResponse<String> mockHttpResponse;
+    private HttpResponse mockHttpResponse;
+
+    @Mock
+    private StatusLine mockStatusLine;
+
+    @Mock
+    private HttpEntity mockHttpEntity;
 
     @Test
     public void testPostMessageRequest_Success() throws Exception {
@@ -40,21 +57,29 @@ public class HttpToolsTest {
         String url = "http://mock-fcm-url.com/message:send";
         String jwt = "jwt.token";
 
-        when(mockHttpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
-                .thenReturn(mockHttpResponse);
-        when(mockHttpResponse.statusCode()).thenReturn(200);
+        when(mockHttpClient.execute(any(HttpUriRequest.class), any(ResponseHandler.class)))
+                .thenAnswer((InvocationOnMock invocation) -> {
+                    return new HttpResponseHandler().handleResponse(mockHttpResponse);
+                });
+        when(mockHttpResponse.getStatusLine()).thenReturn(mockStatusLine);
+        when(mockStatusLine.getStatusCode()).thenReturn(200);
+        when(mockHttpResponse.getEntity()).thenReturn(mockHttpEntity);
+        when(mockHttpEntity.getContent()).thenReturn(new java.io.ByteArrayInputStream("{}".getBytes()));
 
-        // When
-        HttpResponse<String> response =
-                HttpTools.postMessageRequest(mockHttpClient, url, new FcmPushRequestBody(message), jwt);
+        try (MockedStatic<HttpClientFactory> mockedFactory = mockStatic(HttpClientFactory.class)) {
+            mockedFactory.when(HttpClientFactory::getHttpClient).thenReturn(mockHttpClient);
 
-        // Then
-        verify(mockHttpClient).send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class));
-        assertEquals(200, response.statusCode());
+            // When
+            HttpResult response = HttpTools.postMessageRequest(url, new FcmPushRequestBody(message), jwt);
+
+            // Then
+            verify(mockHttpClient).execute(any(HttpUriRequest.class), any(ResponseHandler.class));
+            assertEquals(200, response.statusCode());
+        }
     }
 
     @Test
-    public void testPostMessageRequest_Retry_Success() throws Exception {
+    public void testPostMessageRequest_Error() throws Exception {
         // Given
         Notification notification = new Notification("Test Title", "Test Body");
         NotificationData data = new NotificationData("another-token");
@@ -63,22 +88,30 @@ public class HttpToolsTest {
         String url = "http://mock-fcm-url.com/message:send";
         String jwt = "jwt.token";
 
-        when(mockHttpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
-                .thenThrow(new IOException("Mocked IOException"))
-                .thenReturn(mockHttpResponse);
-        when(mockHttpResponse.statusCode()).thenReturn(200);
+        when(mockHttpClient.execute(any(HttpUriRequest.class), any(ResponseHandler.class)))
+                .thenAnswer((InvocationOnMock invocation) -> {
+                    return new HttpResponseHandler().handleResponse(mockHttpResponse);
+                });
+        when(mockHttpResponse.getStatusLine()).thenReturn(mockStatusLine);
+        when(mockStatusLine.getStatusCode()).thenReturn(500);
+        when(mockHttpResponse.getEntity()).thenReturn(mockHttpEntity);
+        when(mockHttpEntity.getContent()).thenReturn(new java.io.ByteArrayInputStream("Server Error".getBytes()));
 
-        // When
-        HttpResponse<String> response =
-                HttpTools.postMessageRequest(mockHttpClient, url, new FcmPushRequestBody(message), jwt);
+        try (MockedStatic<HttpClientFactory> mockedFactory = mockStatic(HttpClientFactory.class)) {
+            mockedFactory.when(HttpClientFactory::getHttpClient).thenReturn(mockHttpClient);
 
-        // Then
-        verify(mockHttpClient, times(2)).send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class));
-        assertEquals(200, response.statusCode());
+            // When
+            HttpResult response = HttpTools.postMessageRequest(url, new FcmPushRequestBody(message), jwt);
+
+            // Then
+            verify(mockHttpClient).execute(any(HttpUriRequest.class), any(ResponseHandler.class));
+            assertEquals(500, response.statusCode());
+            assertEquals("Server Error", response.body());
+        }
     }
 
     @Test
-    public void testPostMessageRequest_Retry_Failure_Exception() throws Exception {
+    public void testPostMessageRequest_IOException() throws Exception {
         // Given
         Notification notification = new Notification("Test Title", "Test Body");
         NotificationData data = new NotificationData("another-token");
@@ -87,61 +120,110 @@ public class HttpToolsTest {
         String url = "http://mock-fcm-url.com/message:send";
         String jwt = "jwt.token";
 
-        when(mockHttpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+        when(mockHttpClient.execute(any(HttpUriRequest.class), any(ResponseHandler.class)))
                 .thenThrow(new IOException("Mocked IOException"));
 
-        // When
-        assertThrows(IOException.class, () -> {
-            HttpTools.postMessageRequest(mockHttpClient, url, new FcmPushRequestBody(message), jwt);
-        });
+        try (MockedStatic<HttpClientFactory> mockedFactory = mockStatic(HttpClientFactory.class)) {
+            mockedFactory.when(HttpClientFactory::getHttpClient).thenReturn(mockHttpClient);
+            // When
+            IOException thrown = assertThrows(IOException.class, () -> {
+                HttpTools.postMessageRequest(url, new FcmPushRequestBody(message), jwt);
+            });
 
-        // Then
-        verify(mockHttpClient, times(HttpTools.NUMBER_OF_RETRIES))
-                .send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class));
-    }
-
-    @Test
-    public void testPostMessageRequest_Retry_Status_failure() throws Exception {
-        // Given
-        Notification notification = new Notification("Test Title", "Test Body");
-        NotificationData data = new NotificationData("another-token");
-        FcmPushMessage message = new FcmPushMessage("token", notification, data);
-
-        String url = "http://mock-fcm-url.com/message:send";
-        String jwt = "jwt.token";
-
-        when(mockHttpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
-                .thenReturn(mockHttpResponse);
-        when(mockHttpResponse.statusCode()).thenReturn(500);
-
-        // When
-        HttpResponse<String> response =
-                HttpTools.postMessageRequest(mockHttpClient, url, new FcmPushRequestBody(message), jwt);
-
-        // Then
-        verify(mockHttpClient, times(HttpTools.NUMBER_OF_RETRIES))
-                .send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class));
-        assertEquals(500, response.statusCode());
+            // Then
+            verify(mockHttpClient).execute(any(HttpUriRequest.class), any(ResponseHandler.class));
+            assertEquals("Mocked IOException", thrown.getMessage());
+        }
     }
 
     @Test
     public void testPostTokenRequest_Success() throws Exception {
         // Given
-        String url = "http://mock-fcm-url.com/token:send";
-        Map<String, String> formParams = new HashMap<>();
-        formParams.put("grant_type", "client_credentials");
-        formParams.put("client_id", "client-id");
-        formParams.put("client_secret", "client-secret");
+        List<NameValuePair> params = new ArrayList<>();
+        params.add(new BasicNameValuePair("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer"));
+        params.add(new BasicNameValuePair("assertion", "jwt-token"));
 
-        when(mockHttpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
-                .thenReturn(mockHttpResponse);
-        when(mockHttpResponse.statusCode()).thenReturn(200);
+        String url = "http://mock-fcm-url.com/token";
+        String responseJson =
+                "{\n  \"access_token\": \"mocked-access-token\",\n  \"token_type\": \"Bearer\",\n  \"expires_in\": 3600\n}";
 
-        // When
-        HttpResponse<String> response = HttpTools.postTokenRequest(mockHttpClient, url, formParams);
+        when(mockHttpClient.execute(any(HttpUriRequest.class), any(ResponseHandler.class)))
+                .thenAnswer((InvocationOnMock invocation) -> {
+                    return new HttpResponseHandler().handleResponse(mockHttpResponse);
+                });
+        when(mockHttpResponse.getStatusLine()).thenReturn(mockStatusLine);
+        when(mockStatusLine.getStatusCode()).thenReturn(200);
+        when(mockHttpResponse.getEntity()).thenReturn(mockHttpEntity);
+        when(mockHttpEntity.getContent()).thenReturn(new java.io.ByteArrayInputStream(responseJson.getBytes()));
 
-        // Then
-        verify(mockHttpClient).send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class));
-        assertEquals(200, response.statusCode());
+        try (MockedStatic<HttpClientFactory> mockedFactory = mockStatic(HttpClientFactory.class)) {
+            mockedFactory.when(HttpClientFactory::getHttpClient).thenReturn(mockHttpClient);
+
+            // When
+            HttpResult response = HttpTools.postTokenRequest(url, params);
+
+            // Then
+            verify(mockHttpClient).execute(any(HttpUriRequest.class), any(ResponseHandler.class));
+            assertEquals(200, response.statusCode());
+            assertEquals(responseJson, response.body());
+        }
+    }
+
+    @Test
+    public void testPostTokenRequest_Error() throws Exception {
+        // Given
+        List<NameValuePair> params = new ArrayList<>();
+        params.add(new BasicNameValuePair("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer"));
+        params.add(new BasicNameValuePair("assertion", "jwt-token"));
+
+        String url = "http://mock-fcm-url.com/token";
+        String responseJson = "Client Error";
+
+        when(mockHttpClient.execute(any(HttpUriRequest.class), any(ResponseHandler.class)))
+                .thenAnswer((InvocationOnMock invocation) -> {
+                    return new HttpResponseHandler().handleResponse(mockHttpResponse);
+                });
+        when(mockHttpResponse.getStatusLine()).thenReturn(mockStatusLine);
+        when(mockStatusLine.getStatusCode()).thenReturn(400);
+        when(mockHttpResponse.getEntity()).thenReturn(mockHttpEntity);
+        when(mockHttpEntity.getContent()).thenReturn(new java.io.ByteArrayInputStream(responseJson.getBytes()));
+
+        try (MockedStatic<HttpClientFactory> mockedFactory = mockStatic(HttpClientFactory.class)) {
+            mockedFactory.when(HttpClientFactory::getHttpClient).thenReturn(mockHttpClient);
+
+            // When
+            HttpResult response = HttpTools.postTokenRequest(url, params);
+
+            // Then
+            verify(mockHttpClient).execute(any(HttpUriRequest.class), any(ResponseHandler.class));
+            assertEquals(400, response.statusCode());
+            assertEquals(responseJson, response.body());
+        }
+    }
+
+    @Test
+    public void testPostTokenRequest_IOException() throws Exception {
+        // Given
+        List<NameValuePair> params = new ArrayList<>();
+        params.add(new BasicNameValuePair("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer"));
+        params.add(new BasicNameValuePair("assertion", "jwt-token"));
+
+        String url = "http://mock-fcm-url.com/token";
+
+        when(mockHttpClient.execute(any(HttpUriRequest.class), any(ResponseHandler.class)))
+                .thenThrow(new IOException("error"));
+
+        try (MockedStatic<HttpClientFactory> mockedFactory = mockStatic(HttpClientFactory.class)) {
+            mockedFactory.when(HttpClientFactory::getHttpClient).thenReturn(mockHttpClient);
+
+            // When
+            IOException thrown = assertThrows(IOException.class, () -> {
+                HttpTools.postTokenRequest(url, params);
+            });
+
+            // Then
+            verify(mockHttpClient).execute(any(HttpUriRequest.class), any(ResponseHandler.class));
+            assertEquals("error", thrown.getMessage());
+        }
     }
 }

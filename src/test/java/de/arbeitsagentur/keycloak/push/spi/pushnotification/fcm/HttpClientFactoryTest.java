@@ -2,106 +2,233 @@ package de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
-import java.io.IOException;
+import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.util.ConfigUtil;
+import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.util.HttpClientFactory;
 import java.lang.reflect.Field;
-import java.net.Proxy;
 import java.net.URI;
-import java.net.http.HttpClient;
-import java.util.List;
-import java.util.Map;
-
+import java.util.stream.Stream;
+import org.apache.http.HttpHost;
+import org.apache.http.HttpRequest;
+import org.apache.http.conn.routing.HttpRoute;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClientBuilder;
+import org.apache.http.protocol.HttpContext;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.keycloak.connections.httpclient.ProxyMappings;
+import org.keycloak.connections.httpclient.ProxyMappingsAwareRoutePlanner;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Captor;
+import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.util.ConfigUtil;
-
 @ExtendWith(MockitoExtension.class)
 public class HttpClientFactoryTest {
-    public static final String CHILD_PROCESS_TAG = "child_process";
-    public static final String TAG = String.format("-Dgroups=%s", CHILD_PROCESS_TAG);
-    private final String testClass = String.format("-Dtest=%s", getClass().getName());
-    private final String[] arguments = {"mvn", "test", TAG, testClass};
+
+    @Mock
+    HttpClientBuilder builder;
+
+    @Captor
+    ArgumentCaptor<ProxyMappingsAwareRoutePlanner> proxyCaptor;
 
     @AfterEach
-    void cleanUp() {
+    public void reset() {
         try {
-            Field clientField = HttpClientFactory.class.getDeclaredField("singletonInstance");
+            Field clientField = HttpClientFactory.class.getDeclaredField("cachedProxyMappings");
             clientField.setAccessible(true);
             clientField.set(null, null);
         } catch (Exception e) {
             // Ignore exceptions during cleanup
         }
+        Mockito.reset(builder);
+        ProxyMappings.clearCache();
     }
-
-    @Test
-    void givenChildProcessTestRunner_whenRunTheTest_thenAllSucceed()
-    throws IOException, InterruptedException {
-        ProcessBuilder processBuilder = new ProcessBuilder();
-        processBuilder.inheritIO();
-
-        Map<String, String> environment = processBuilder.environment();
-        environment.put("WITH_PROXY", "true");
-        environment.put("HTTPS_PROXY", "web.proxy.svc.cluster.local:8081");
-        Process process = processBuilder.command(arguments).start();
-
-        int errorCode = process.waitFor();
-        assertEquals(0, errorCode);
-    }
-
 
     @Test
     public void shouldCreateHttpClientWithoutProxy() {
         // Given
-        String url = "http://test.com/messages:send";
 
         // When
-        HttpClient client = HttpClientFactory.getHttpClient(url);
+        CloseableHttpClient client = HttpClientFactory.getHttpClient();
 
         // Then
         assertNotNull(client);
-        assertTrue(client.proxy().isEmpty());
+        assertTrue(client instanceof CloseableHttpClient);
     }
 
     @Test
     public void shouldCreateHttpClientWithProxy() throws Exception {
         // Given
-        String url = "http://test.com/messages:send";
+        URI expectedProxyUri = new URI("https://web.proxy.svc.cluster.local:8081");
 
         // When
-        try (MockedStatic<ConfigUtil> mockedConfigUtil = Mockito.mockStatic(ConfigUtil.class)) {
-            mockedConfigUtil.when(() -> ConfigUtil.getEnvString("HTTPS_PROXY")).thenReturn("https://web.proxy.svc.cluster.local:8081");
+        try (MockedStatic<ConfigUtil> mockedConfigUtil = Mockito.mockStatic(ConfigUtil.class);
+                MockedStatic<HttpClientBuilder> mockedHttpClientBuilder = Mockito.mockStatic(HttpClientBuilder.class)) {
+            mockedConfigUtil.when(() -> ConfigUtil.getEnvString("HTTPS_PROXY")).thenReturn(expectedProxyUri.toString());
 
-            HttpClient client = HttpClientFactory.getHttpClient(url);
+            when(builder.setConnectionTimeToLive(Mockito.anyLong(), Mockito.any()))
+                    .thenReturn(builder);
+            when(builder.setRoutePlanner(Mockito.any(ProxyMappingsAwareRoutePlanner.class)))
+                    .thenReturn(builder);
+            mockedHttpClientBuilder.when(HttpClientBuilder::create).thenReturn(builder);
+
+            HttpClientFactory.getHttpClient();
 
             // Then
-            assertNotNull(client);
-            assertTrue(client.proxy().isPresent());
-            List<Proxy> proxies = client.proxy().get().select(new URI("http://test.com/messages:send"));
-            assertTrue(proxies.getFirst().address().toString().contains("web.proxy.svc.cluster.local"));
-            assertTrue(proxies.getFirst().address().toString().contains(":8081"));
+            verify(builder).setConnectionTimeToLive(10, java.util.concurrent.TimeUnit.SECONDS);
+            verify(builder).setRoutePlanner(proxyCaptor.capture());
+
+            ProxyMappingsAwareRoutePlanner routePlanner = proxyCaptor.getValue();
+            assertNotNull(routePlanner);
+            HttpRoute route = routePlanner.determineRoute(
+                    new HttpHost("test.com"), mock(HttpRequest.class), mock(HttpContext.class));
+            assertNotNull(route);
+
+            HttpHost proxyHost = route.getProxyHost();
+            assertNotNull(proxyHost);
+            assertEquals(expectedProxyUri.getHost(), proxyHost.getHostName());
+            assertEquals(expectedProxyUri.getPort(), proxyHost.getPort());
+        }
+    }
+
+    @ParameterizedTest
+    @MethodSource("provideProxyEnv")
+    public void shouldCreateHttpClientWithProxyEnvPrecedence(String env1, String value1, String env2, String value2)
+            throws Exception {
+        // Given
+
+        // When
+        try (MockedStatic<ConfigUtil> mockedConfigUtil = Mockito.mockStatic(ConfigUtil.class);
+                MockedStatic<HttpClientBuilder> mockedHttpClientBuilder = Mockito.mockStatic(HttpClientBuilder.class)) {
+            mockedConfigUtil.when(() -> ConfigUtil.getEnvString(env1)).thenReturn(value1);
+            mockedConfigUtil.when(() -> ConfigUtil.getEnvString(env2)).thenReturn(value2);
+
+            when(builder.setConnectionTimeToLive(Mockito.anyLong(), Mockito.any()))
+                    .thenReturn(builder);
+            when(builder.setRoutePlanner(Mockito.any(ProxyMappingsAwareRoutePlanner.class)))
+                    .thenReturn(builder);
+            mockedHttpClientBuilder.when(HttpClientBuilder::create).thenReturn(builder);
+
+            HttpClientFactory.getHttpClient();
+
+            // Then
+            verify(builder).setConnectionTimeToLive(10, java.util.concurrent.TimeUnit.SECONDS);
+            verify(builder).setRoutePlanner(proxyCaptor.capture());
+
+            ProxyMappingsAwareRoutePlanner routePlanner = proxyCaptor.getValue();
+            assertNotNull(routePlanner);
+            HttpRoute route = routePlanner.determineRoute(
+                    new HttpHost("test.com"), mock(HttpRequest.class), mock(HttpContext.class));
+            assertNotNull(route);
+
+            URI expectedProxyUri = new URI(value2);
+            HttpHost proxyHost = route.getProxyHost();
+            assertNotNull(proxyHost);
+            assertEquals(expectedProxyUri.getHost(), proxyHost.getHostName());
+            assertEquals(expectedProxyUri.getPort(), proxyHost.getPort());
         }
     }
 
     @Test
-    public void shouldCreateHttpClientOnlyOnce() {
+    public void shouldCreateHttpClientWithProxyNoProxy() throws Exception {
         // Given
-        String url = "http://test.com/messages:send";
+        URI expectedProxyUri = new URI("https://web.proxy.svc.cluster.local:8081");
 
         // When
-        HttpClient client1 = HttpClientFactory.getHttpClient(url);
-        HttpClient client2 = HttpClientFactory.getHttpClient(url);
+        try (MockedStatic<ConfigUtil> mockedConfigUtil = Mockito.mockStatic(ConfigUtil.class);
+                MockedStatic<HttpClientBuilder> mockedHttpClientBuilder = Mockito.mockStatic(HttpClientBuilder.class)) {
+            mockedConfigUtil.when(() -> ConfigUtil.getEnvString("HTTPS_PROXY")).thenReturn(expectedProxyUri.toString());
+            mockedConfigUtil.when(() -> ConfigUtil.getEnvString("NO_PROXY")).thenReturn("test.com");
+
+            when(builder.setConnectionTimeToLive(Mockito.anyLong(), Mockito.any()))
+                    .thenReturn(builder);
+            when(builder.setRoutePlanner(Mockito.any(ProxyMappingsAwareRoutePlanner.class)))
+                    .thenReturn(builder);
+            mockedHttpClientBuilder.when(HttpClientBuilder::create).thenReturn(builder);
+
+            HttpClientFactory.getHttpClient();
+
+            // Then
+            verify(builder).setConnectionTimeToLive(10, java.util.concurrent.TimeUnit.SECONDS);
+            verify(builder).setRoutePlanner(proxyCaptor.capture());
+
+            ProxyMappingsAwareRoutePlanner routePlanner = proxyCaptor.getValue();
+            assertNotNull(routePlanner);
+            HttpRoute route = routePlanner.determineRoute(
+                    new HttpHost("test.com"), mock(HttpRequest.class), mock(HttpContext.class));
+            assertNotNull(route);
+
+            HttpHost proxyHost = route.getProxyHost();
+            assertNull(proxyHost);
+        }
+    }
+
+    @Test
+    public void shouldCreateHttpClientNoProxyPrecedence() throws Exception {
+        // Given
+        URI expectedProxyUri = new URI("https://web.proxy.svc.cluster.local:8081");
+
+        // When
+        try (MockedStatic<ConfigUtil> mockedConfigUtil = Mockito.mockStatic(ConfigUtil.class);
+                MockedStatic<HttpClientBuilder> mockedHttpClientBuilder = Mockito.mockStatic(HttpClientBuilder.class)) {
+            mockedConfigUtil.when(() -> ConfigUtil.getEnvString("HTTPS_PROXY")).thenReturn(expectedProxyUri.toString());
+            mockedConfigUtil.when(() -> ConfigUtil.getEnvString("NO_PROXY")).thenReturn("abc.net");
+            mockedConfigUtil.when(() -> ConfigUtil.getEnvString("no_proxy")).thenReturn("test.com");
+
+            when(builder.setConnectionTimeToLive(Mockito.anyLong(), Mockito.any()))
+                    .thenReturn(builder);
+            when(builder.setRoutePlanner(Mockito.any(ProxyMappingsAwareRoutePlanner.class)))
+                    .thenReturn(builder);
+            mockedHttpClientBuilder.when(HttpClientBuilder::create).thenReturn(builder);
+
+            HttpClientFactory.getHttpClient();
+
+            // Then
+            verify(builder).setConnectionTimeToLive(10, java.util.concurrent.TimeUnit.SECONDS);
+            verify(builder).setRoutePlanner(proxyCaptor.capture());
+
+            ProxyMappingsAwareRoutePlanner routePlanner = proxyCaptor.getValue();
+            assertNotNull(routePlanner);
+            HttpRoute route = routePlanner.determineRoute(
+                    new HttpHost("test.com"), mock(HttpRequest.class), mock(HttpContext.class));
+            assertNotNull(route);
+
+            HttpHost proxyHost = route.getProxyHost();
+            assertNull(proxyHost);
+        }
+    }
+
+    @Test
+    public void shouldAlwaysCreateNewHttpClient() {
+        // Given
+
+        // When
+        CloseableHttpClient client1 = HttpClientFactory.getHttpClient();
+        CloseableHttpClient client2 = HttpClientFactory.getHttpClient();
 
         // Then
         assertNotNull(client1);
         assertNotNull(client2);
-        assertEquals(client1, client2);
+        assertTrue(client1 != client2);
+    }
+
+    private static Stream<Arguments> provideProxyEnv() {
+        return Stream.of(
+                Arguments.of("HTTPS_PROXY", "http://proxy1.com:3000", "https_proxy", "http://proxy2.com:5000"),
+                Arguments.of("HTTP_PROXY", "http://proxy1.com:3000", "https_proxy", "http://proxy2.com:5000"),
+                Arguments.of("HTTP_PROXY", "http://proxy1.com:3000", "HTTPS_PROXY", "http://proxy2.com:5000"),
+                Arguments.of("HTTP_PROXY", "http://proxy1.com:3000", "http_proxy", "http://proxy2.com:5000"));
     }
 }

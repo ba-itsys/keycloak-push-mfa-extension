@@ -3,29 +3,30 @@ package de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 import de.arbeitsagentur.keycloak.push.spi.PushNotificationSender;
 import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.model.FcmPushMessage;
 import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.model.FcmPushRequestBody;
 import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.model.GoogleServiceAccountCred;
 import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.model.Notification;
 import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.model.NotificationData;
-
+import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.util.HttpResult;
+import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.util.HttpTools;
 import java.io.IOException;
-import java.net.http.HttpResponse;
 import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.PKCS8EncodedKeySpec;
+import java.util.ArrayList;
 import java.util.Base64;
-import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
-
+import org.apache.http.NameValuePair;
+import org.apache.http.message.BasicNameValuePair;
 import org.jboss.logging.Logger;
 import org.keycloak.common.util.Time;
 import org.keycloak.crypto.AsymmetricSignatureSignerContext;
@@ -38,10 +39,6 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.representations.JsonWebToken;
 import org.keycloak.theme.Theme;
-
-import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.util.HttpClientFactory;
-import static de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.util.HttpTools.postMessageRequest;
-import static de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.util.HttpTools.postTokenRequest;
 
 public class FcmPushNotificationSender implements PushNotificationSender {
     private static final Logger LOG = Logger.getLogger(FcmPushNotificationSender.class);
@@ -90,8 +87,7 @@ public class FcmPushNotificationSender implements PushNotificationSender {
         // close not needed
     }
 
-    protected NotificationSendResult sendNotification(
-            String confirmToken, String providerId, Notification notification)
+    protected NotificationSendResult sendNotification(String confirmToken, String providerId, Notification notification)
             throws InterruptedException {
         // send confirmation push to firebase
         // 1. get google access token
@@ -139,13 +135,13 @@ public class FcmPushNotificationSender implements PushNotificationSender {
 
     private String getAccessToken(GoogleServiceAccountCred cred) throws InterruptedException {
         String jwt = createSignedJWT(cred);
-        HashMap<String, String> params = new HashMap<>();
-        params.put("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer");
-        params.put("assertion", jwt);
+        List<NameValuePair> params = new ArrayList<>();
+        params.add(new BasicNameValuePair("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer"));
+        params.add(new BasicNameValuePair("assertion", jwt));
 
-        HttpResponse<String> response;
+        HttpResult response;
         try {
-            response = postTokenRequest(HttpClientFactory.getHttpClient(cred.getTokenUri()), cred.getTokenUri(), params);
+            response = HttpTools.postTokenRequest(cred.getTokenUri(), params);
         } catch (IOException e) {
             LOG.warn("Exception at retrieving access token from FCM", e);
             return null;
@@ -175,9 +171,9 @@ public class FcmPushNotificationSender implements PushNotificationSender {
             return false;
         }
 
-        HttpResponse<String> response;
+        HttpResult response;
         try {
-            response = postMessageRequest(HttpClientFactory.getHttpClient(url), url, requestBody, accessToken);
+            response = HttpTools.postMessageRequest(url, requestBody, accessToken);
         } catch (IOException e) {
             LOG.warn("Exception at sending notification to FCM", e);
             return false;

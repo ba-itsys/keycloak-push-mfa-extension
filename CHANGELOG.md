@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.2.0](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v2.1.0...v2.2.0) (2026-05-22)
+
+
+### Features
+
+* add firebase cloud messaging provider ([9a9347f](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/9a9347f20115a5584788914d0bfb19de36264be4))
+* change proxy config to env variables ([1a9cde3](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/1a9cde347ee6f38a7ad7b1e9596283d1edc0322b))
+* change to apache httpclient ([65572e7](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/65572e75b329946adec7de072b633dac1f739902))
+
+
+### Dependencies
+
+* **deps-dev:** bump com.diffplug.spotless:spotless-maven-plugin ([a69dff2](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/a69dff20dbae07335abaefc3794c5a9dea5bf869))
+* **deps:** bump org.slf4j:slf4j-api from 2.0.17 to 2.0.18 ([e6c38d1](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/e6c38d16ee21dec0798540ba3e100b0505ea6b09))
+
 ## [2.1.0](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v2.0.4...v2.1.0) (2026-05-15)
 
 

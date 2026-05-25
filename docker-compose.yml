@@ -27,7 +27,7 @@ services:
       - ./config:/opt/keycloak/data/import:ro
       - ./mock/mock-google-credentials.json:/var/secrets/google-service-account.json:ro
   pushmfa-simulator:
-    image: ghcr.io/ba-itsys/keycloak-push-mfa-extension-simulator:v1.12.0
+    image: ghcr.io/ba-itsys/keycloak-push-mfa-extension-simulator:v1.12.2
     ports:
       - "5000:5000"
     environment:

@@ -90,7 +90,7 @@ services:
       - ../config:/opt/keycloak/data/import:ro
 
   haproxy:
-    image: haproxy:3.1
+    image: haproxy:3.3
     depends_on:
       keycloak-1:
         condition: service_healthy

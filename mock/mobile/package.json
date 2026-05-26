@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "body-parser": "2.2.2",
-    "dotenv": "^16.4.5",
+    "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "jose": "^5.9.3",
     "uuid": "^14.0.0"

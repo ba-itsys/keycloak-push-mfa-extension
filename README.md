@@ -112,3 +112,19 @@ The SSE endpoints keep one browser stream per watch page and read challenge stat
 | [Push Mfa Simulator](docs/push-mfa-simulator.md) | Testing without a real mobile app |
 | [Troubleshooting](docs/troubleshooting.md) | Common issues and solutions |
 | [Load Testing](loadtest/README.md) | Two-node browser+SSE loadtest setup and reproduction commands |
+
+## Local Development
+
+### Prerequisites
+
+- **JDK**: See `pom.xml` for the required Java version.
+- **Maven**: Used for building the project.
+- **Docker**: Required for local setup (see `docker-compose.yml`) and integration tests.
+
+### Checks (formatting and tests)
+
+Run the following commands locally to ensure code quality:
+
+- **Formatting**: `mvn spotless:apply` (Ensures consistent code style).
+- **Verification**: `mvn verify` (Runs the full test suite and builds the project).
+- **Build without tests:** `mvn -DskipTests package`

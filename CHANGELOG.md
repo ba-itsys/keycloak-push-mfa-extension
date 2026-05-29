@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.2.2](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v2.2.1...v2.2.2) (2026-05-29)
+
+
+### Bug Fixes
+
+* change provider id for firebase provider from fcm-provider to fcm ([2d94805](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/2d94805c56e2109dacbd21f9b85ae71f428aa8fd))
+
+
+### Dependencies
+
+* **deps-dev:** bump @types/express in /mock/mobile ([5ae7042](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/5ae704297a151ab388d4bebb65e55ba80ba663ec))
+* **deps-dev:** bump @types/node from 22.19.1 to 25.9.1 in /mock/mobile ([220d86c](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/220d86cd6330770498058cad5aa2d3e3fea82ba5))
+* **deps:** bump body-parser from 2.2.1 to 2.2.2 in /mock/mobile ([8e035ec](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/8e035ec103858e6f8184cb1566461549e732d6ab))
+* **deps:** bump uuid from 13.0.0 to 14.0.0 in /mock/mobile ([e736f53](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/e736f53c656bb46e33b651f413d5d4ef9579ba4d))
+
+
+### Documentation
+
+* use correct link to fcm doc in readme ([#209](https://github.com/ba-itsys/keycloak-push-mfa-extension/issues/209)) ([dc74c7b](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/dc74c7b43e0033cbe7ac62fab292d27e138d5684))
+
 ## [2.2.1](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v2.2.0...v2.2.1) (2026-05-26)
 
 

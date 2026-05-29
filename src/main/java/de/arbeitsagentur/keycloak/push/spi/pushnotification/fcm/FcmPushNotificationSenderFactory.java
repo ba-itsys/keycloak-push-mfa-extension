@@ -8,7 +8,7 @@ import org.keycloak.models.KeycloakSessionFactory;
 
 public class FcmPushNotificationSenderFactory implements PushNotificationSenderFactory {
 
-    private static final String ID = "fcm-provider";
+    private static final String ID = "fcm";
     private String fcmUrl;
 
     @Override

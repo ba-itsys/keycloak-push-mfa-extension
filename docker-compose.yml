@@ -18,7 +18,7 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: admin
       KC_LOG_LEVEL: info,de.arbeitsagentur.keycloak.push:debug
       GOOGLE_APPLICATION_CREDENTIALS: /var/secrets/google-service-account.json
-      KC_SPI_PUSH_NOTIFICATION_SENDER__FCM_PROVIDER__GOOGLE_FCM_URL: http://pushmfa-simulator:5000/fcm/messages:send
+      KC_SPI_PUSH_NOTIFICATION_SENDER__FCM__GOOGLE_FCM_URL: http://pushmfa-simulator:5000/fcm/messages:send
     ports:
       - "8080:8080"
       - "8787:8787"
@@ -34,7 +34,7 @@ services:
       SERVER_SERVLET_CONTEXT_PATH: "/"
       APP_CLIENTID: push-device-client
       APP_CLIENTSECRET: device-client-secret
-      APP_PROVIDERIDS: log,fcm-provider,none
+      APP_PROVIDERIDS: log,fcm,none
       APP_LOCALHOSTREPLACEMENT: keycloak
     volumes:
       - ./mock/mock-rsa-jwk.json:/app/static/keys/rsa-jwk.json

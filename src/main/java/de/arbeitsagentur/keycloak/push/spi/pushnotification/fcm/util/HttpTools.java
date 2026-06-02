@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.model.FcmPushRequestBody;
 import jakarta.ws.rs.core.HttpHeaders;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.apache.http.NameValuePair;
 import org.apache.http.client.entity.UrlEncodedFormEntity;
@@ -26,7 +27,7 @@ public class HttpTools {
         HttpPost request = new HttpPost(url);
         request.setHeader(HttpHeaders.AUTHORIZATION, "Bearer " + jwt);
         request.setHeader(HttpHeaders.CONTENT_TYPE, ContentType.APPLICATION_JSON.getMimeType());
-        request.setEntity(new StringEntity(json));
+        request.setEntity(new StringEntity(json, StandardCharsets.UTF_8));
 
         try (CloseableHttpClient client = HttpClientFactory.getHttpClient()) {
             return client.execute(request, new HttpResponseHandler());

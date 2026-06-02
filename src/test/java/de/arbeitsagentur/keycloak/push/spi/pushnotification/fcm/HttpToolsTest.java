@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.model.FcmPushMessage;
 import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.model.FcmPushRequestBody;
 import de.arbeitsagentur.keycloak.push.spi.pushnotification.fcm.model.Notification;
@@ -23,11 +24,13 @@ import org.apache.http.HttpResponse;
 import org.apache.http.NameValuePair;
 import org.apache.http.StatusLine;
 import org.apache.http.client.ResponseHandler;
+import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpUriRequest;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.message.BasicNameValuePair;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.invocation.InvocationOnMock;
@@ -50,9 +53,10 @@ public class HttpToolsTest {
     @Test
     public void testPostMessageRequest_Success() throws Exception {
         // Given
-        Notification notification = new Notification("Test Title", "Test Body");
+        Notification notification = new Notification("Test Title with UTF-8 üäöß", "Test Body");
         NotificationData data = new NotificationData("another-token");
         FcmPushMessage message = new FcmPushMessage("token", notification, data);
+        FcmPushRequestBody requestBody = new FcmPushRequestBody(message);
 
         String url = "http://mock-fcm-url.com/message:send";
         String jwt = "jwt.token";
@@ -70,10 +74,15 @@ public class HttpToolsTest {
             mockedFactory.when(HttpClientFactory::getHttpClient).thenReturn(mockHttpClient);
 
             // When
-            HttpResult response = HttpTools.postMessageRequest(url, new FcmPushRequestBody(message), jwt);
+            HttpResult response = HttpTools.postMessageRequest(url, requestBody, jwt);
 
             // Then
-            verify(mockHttpClient).execute(any(HttpUriRequest.class), any(ResponseHandler.class));
+            ArgumentCaptor<HttpUriRequest> requestCaptor = ArgumentCaptor.forClass(HttpUriRequest.class);
+            verify(mockHttpClient).execute(requestCaptor.capture(), any(ResponseHandler.class));
+            HttpPost capturedRequest = (HttpPost) requestCaptor.getValue();
+            assertEquals(
+                    new ObjectMapper().writeValueAsString(requestBody),
+                    new String(capturedRequest.getEntity().getContent().readAllBytes()));
             assertEquals(200, response.statusCode());
         }
     }

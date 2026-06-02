@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.3](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v2.2.2...v2.2.3) (2026-06-02)
+
+
+### Bug Fixes
+
+* use utf-8 for fcm request body ([3296b2c](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/3296b2ca829f03f25475693a3b2c88b0b732f53f))
+
 ## [2.2.2](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v2.2.1...v2.2.2) (2026-05-29)
 
 

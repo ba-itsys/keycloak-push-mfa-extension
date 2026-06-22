@@ -13,7 +13,7 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "jose": "^5.9.3",
-    "uuid": "^14.0.0"
+    "uuid": "^14.0.1"
   },
   "devDependencies": {
     "@types/body-parser": "^1.19.5",

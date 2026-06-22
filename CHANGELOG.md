@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.2.4](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v2.2.3...v2.2.4) (2026-06-22)
+
+
+### Dependencies
+
+* **deps-dev:** bump com.diffplug.spotless:spotless-maven-plugin ([434c5a8](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/434c5a8c25fa3ca8058557cba9834b4d10ab084d))
+* **deps-dev:** bump com.nimbusds:nimbus-jose-jwt from 10.9 to 10.9.1 ([9fe7e82](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/9fe7e82c7eb63652b2bb766edfcd457f94c01b1f))
+* **deps-dev:** bump org.apache.maven.plugins:maven-failsafe-plugin ([faf43f9](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/faf43f9de6b46e7fc07e2f0d641b31eae10e3938))
+* **deps-dev:** bump org.apache.maven.plugins:maven-surefire-plugin ([6bd2123](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/6bd2123258dabb5d6f318ed924c3b4c596bfed24))
+* **deps:** bump com.fasterxml.jackson.core:jackson-databind ([8262321](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/8262321506e8ba781c1c6f73fd4c7349958a8c8a))
+
 ## [2.2.3](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v2.2.2...v2.2.3) (2026-06-02)
 
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.2.6](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v2.2.5...v2.2.6) (2026-06-29)
+
+
+### Dependencies
+
+* **deps-dev:** bump org.junit.jupiter:junit-jupiter from 6.1.0 to 6.1.1 ([a2da310](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/a2da3108a1b88dbc44c1e5085eddadb89d2833a6))
+* **deps:** bump keycloak.version from 26.6.3 to 26.6.4 ([e45e381](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/e45e381ca679e2f096048436dc2cf67aeee512c1))
+
 ## [2.2.5](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v2.2.4...v2.2.5) (2026-06-25)
 
 

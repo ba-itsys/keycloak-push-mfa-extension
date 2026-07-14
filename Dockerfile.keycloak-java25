@@ -1,4 +1,4 @@
-ARG KEYCLOAK_VERSION=26.6.1
+ARG KEYCLOAK_VERSION=26.7.0
 
 FROM eclipse-temurin:25-jre AS jre
 FROM quay.io/keycloak/keycloak:${KEYCLOAK_VERSION}

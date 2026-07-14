@@ -22,7 +22,7 @@ import org.testcontainers.images.builder.ImageFromDockerfile;
 
 public final class KeycloakContainerImageSupport {
 
-    private static final String DEFAULT_KEYCLOAK_VERSION = "26.6.1";
+    private static final String DEFAULT_KEYCLOAK_VERSION = "26.7.0";
     private static final Path DOCKERFILE = Path.of("Dockerfile.keycloak-java25").toAbsolutePath();
 
     private KeycloakContainerImageSupport() {}

@@ -6,7 +6,7 @@ services:
       context: .
       dockerfile: Dockerfile.keycloak-java25
       args:
-        KEYCLOAK_VERSION: ${KEYCLOAK_VERSION:-26.6.1}
+        KEYCLOAK_VERSION: ${KEYCLOAK_VERSION:-26.7.0}
     command:
       - start-dev
       - --debug

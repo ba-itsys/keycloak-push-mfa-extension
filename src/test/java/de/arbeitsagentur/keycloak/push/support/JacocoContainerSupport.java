@@ -28,7 +28,7 @@ import org.testcontainers.utility.MountableFile;
 
 public final class JacocoContainerSupport {
 
-    private static final String JACOCO_VERSION = "0.8.14";
+    private static final String DEFAULT_JACOCO_VERSION = "0.8.15";
     private static final String CONTAINER_AGENT_PATH = "/opt/keycloak/providers/jacoco-agent.jar";
     private static final Path HOST_TARGET_DIR = Paths.get("target").toAbsolutePath();
     private static final Path HOST_EXEC_DIR =
@@ -51,6 +51,9 @@ public final class JacocoContainerSupport {
     }
 
     private static Path locateAgentJar() {
+
+        String jacocoVersion = System.getProperty("jacoco.version", DEFAULT_JACOCO_VERSION);
+
         Path agentJar = Paths.get(
                         System.getProperty("user.home"),
                         ".m2",
@@ -58,8 +61,8 @@ public final class JacocoContainerSupport {
                         "org",
                         "jacoco",
                         "org.jacoco.agent",
-                        JACOCO_VERSION,
-                        "org.jacoco.agent-" + JACOCO_VERSION + "-runtime.jar")
+                        jacocoVersion,
+                        "org.jacoco.agent-" + jacocoVersion + "-runtime.jar")
                 .toAbsolutePath();
         if (!Files.exists(agentJar)) {
             throw new IllegalStateException("JaCoCo agent JAR not found: " + agentJar);

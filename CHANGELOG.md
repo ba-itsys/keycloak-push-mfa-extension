@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.1](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v2.3.0...v2.3.1) (2026-07-22)
+
+
+### Bug Fixes
+
+* **deps:** update JaCoCo to 0.8.15 and make version configurable ([d13f0dc](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/d13f0dc533140a1fe35bf07731f6e2af7f88fc31))
+
 ## [2.3.0](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v2.2.6...v2.3.0) (2026-07-14)
 
 

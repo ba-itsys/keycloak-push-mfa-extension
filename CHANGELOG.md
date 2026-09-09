@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.3.5](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v2.3.4...v2.3.5) (2026-09-09)
+
+
+### Dependencies
+
+* **deps-dev:** bump org.apache.maven.plugins:maven-compiler-plugin ([49c217f](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/49c217f8f5f16bc8f0c0774086502d42835253af))
+* **deps-dev:** bump org.apache.maven.plugins:maven-failsafe-plugin ([474932c](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/474932c5cf95a535e9c7fa8b4ba46c9b14b389e2))
+* **deps-dev:** bump org.apache.maven.plugins:maven-surefire-plugin ([74209f3](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/74209f37ef3ce6ca665814e7c76c485a97ffb2a5))
+* **deps:** bump keycloak.version from 26.7.2 to 26.7.3 ([5392185](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/5392185944ee6f71fbeeb6c30950052477fbcbd8))
+* **deps:** bump org.slf4j:slf4j-api from 2.0.18 to 2.0.19 ([f56e4cf](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/f56e4cf1aaf643c029d4124603bb77d6e5e678ad))
+
 ## [2.3.4](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v2.3.3...v2.3.4) (2026-09-04)
 
 

@@ -2,7 +2,8 @@
 
 [![Maven Central](https://img.shields.io/maven-central/v/de.arbeitsagentur.opdt/keycloak-push-mfa-extension)](https://central.sonatype.com/artifact/de.arbeitsagentur.opdt/keycloak-push-mfa-extension)
 
-A Keycloak extension that adds push-based multi-factor authentication with passkey-inspired key continuity and pseudonymous credential handles.
+A Keycloak extension that adds push-based multi-factor authentication with passkey-inspired key continuity and
+pseudonymous credential handles.
 
 ## Quick Start
 
@@ -11,6 +12,7 @@ A Keycloak extension that adds push-based multi-factor authentication with passk
 Add the dependency to your project:
 
 ```xml
+
 <dependency>
     <groupId>de.arbeitsagentur.opdt</groupId>
     <artifactId>keycloak-push-mfa-extension</artifactId>
@@ -37,7 +39,11 @@ docker compose up
 
 ## Introduction
 
-This project extends Keycloak with a push-style second factor that borrows some passkey-like ideas without implementing WebAuthn or passkeys themselves. After initial enrollment, the mobile app never receives the real user identifier from Keycloak; instead, it works with a credential id that only the app can map back to the real user, and later approvals remain bound to the enrolled device key. Everything is implemented with standard Keycloak SPIs plus a small JAX-RS resource exposed under `/realms/<realm>/push-mfa`.
+This project extends Keycloak with a push-style second factor that borrows some passkey-like ideas without implementing
+WebAuthn or passkeys themselves. After initial enrollment, the mobile app never receives the real user identifier from
+Keycloak; instead, it works with a credential id that only the app can map back to the real user, and later approvals
+remain bound to the enrolled device key. Everything is implemented with standard Keycloak SPIs plus a small JAX-RS
+resource exposed under `/realms/<realm>/push-mfa`.
 
 ## High Level Flow
 
@@ -48,70 +54,65 @@ sequenceDiagram
     participant Keycloak as Keycloak Server
     participant Provider as Push Provider (FCM/APNs)
     participant Mobile as Mobile App
-
     Note over Browser, Mobile: **Phase 1: Enrollment (Register Push MFA Device)**
-
-    Browser->>Keycloak: Login & Trigger Enrollment
-    Keycloak-->>Browser: Render QR Code & Start SSE Listener
+    Browser ->> Keycloak: Login & Trigger Enrollment
+    Keycloak -->> Browser: Render QR Code & Start SSE Listener
 
     par Parallel Actions
-        Browser->>Keycloak: SSE Request (Read Current Status)
-        Browser->>Mobile: Scan QR Code
+        Browser ->> Keycloak: SSE Request (Read Current Status)
+        Browser ->> Mobile: Scan QR Code
     end
 
     Note over Mobile: Verify Token & Generate User Key Pair
-
-    Mobile->>Keycloak: POST /enroll/complete
+    Mobile ->> Keycloak: POST /enroll/complete
     Note right of Mobile: Payload: Device JWT + Public JWK<br/>Signed with new Device Private Key
-
-    Keycloak->>Keycloak: Verify Signature & Store Device Credential
-    Keycloak-->>Browser: SSE Event: { status: "APPROVED" }
-    Browser->>Keycloak: Auto-Submit Form (Enrollment Complete)
-
+    Keycloak ->> Keycloak: Verify Signature & Store Device Credential
+    Keycloak -->> Browser: SSE Event: { status: "APPROVED" }
+    Browser ->> Keycloak: Auto-Submit Form (Enrollment Complete)
     Note over Browser, Mobile: **Phase 2: Login (Push MFA Confirmation)**
-
-    Browser->>Keycloak: Login (Username/Password)
-    Keycloak->>Keycloak: Generate Challenge & ConfirmToken
+    Browser ->> Keycloak: Login (Username/Password)
+    Keycloak ->> Keycloak: Generate Challenge & ConfirmToken
 
     par Parallel Actions
-        Keycloak-->>Browser: Render "Waiting for approval..." Page
-        Browser->>Keycloak: SSE Request (Read Current Challenge Status)
-        Keycloak->>Provider: Send Push Notification
+        Keycloak -->> Browser: Render "Waiting for approval..." Page
+        Browser ->> Keycloak: SSE Request (Read Current Challenge Status)
+        Keycloak ->> Provider: Send Push Notification
         Note right of Keycloak: Payload: ConfirmToken<br/>(Credential ID, ChallengeID)
     end
 
-    Provider->>Mobile: Deliver Push Notification
-
-    Mobile->>Mobile: Decrypt Token & Resolve User ID
-    Mobile-->>Browser: (User Prompt: Approve?)
-    Browser-->>Mobile: User Taps "Approve"
-
-    Mobile->>Keycloak: POST /login/challenges/{cid}/respond
+    Provider ->> Mobile: Deliver Push Notification
+    Mobile ->> Mobile: Decrypt Token & Resolve User ID
+    Mobile -->> Browser: (User Prompt: Approve?)
+    Browser -->> Mobile: User Taps "Approve"
+    Mobile ->> Keycloak: POST /login/challenges/{cid}/respond
     Note right of Mobile: Payload: LoginToken (Action: Approve)<br/>Auth: DPoP Header + Access Token<br/>Signed with Device Private Key
-
-    Keycloak->>Keycloak: Verify DPoP, Signature & Challenge ID
-    Keycloak-->>Browser: SSE Event: { status: "APPROVED" }
-    Browser->>Keycloak: Auto-Submit Form (Login Success)
+    Keycloak ->> Keycloak: Verify DPoP, Signature & Challenge ID
+    Keycloak -->> Browser: SSE Event: { status: "APPROVED" }
+    Browser ->> Keycloak: Auto-Submit Form (Login Success)
 ```
 
-The SSE endpoints keep one browser stream per watch page and read challenge state from shared storage. Pending streams get periodic heartbeat comments and are rotated after a configurable maximum lifetime so browsers reconnect cleanly through proxies and firewalls. Cross-node delivery works because every node reads the same challenge state from shared storage; if a node dies, the browser's normal `EventSource` reconnect can land on another node and that node becomes responsible for the stream.
+The SSE endpoints keep one browser stream per watch page and read challenge state from shared storage. Pending streams
+get periodic heartbeat comments and are rotated after a configurable maximum lifetime so browsers reconnect cleanly
+through proxies and firewalls. Cross-node delivery works because every node reads the same challenge state from shared
+storage; if a node dies, the browser's normal `EventSource` reconnect can land on another node and that node becomes
+responsible for the stream.
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| [Setup Guide](docs/setup.md) | Step-by-step configuration instructions and Keycloak concepts |
-| [Flow Details](docs/flow-details.md) | Technical details of enrollment, login, SSE, and DPoP authentication |
-| [API Reference](docs/api-reference.md) | REST endpoints for mobile apps |
-| [Configuration](docs/configuration.md) | All configuration options reference |
-| [App Implementation](docs/app-implementation.md) | Guide for mobile app developers |
-| [SPI Reference](docs/spi-reference.md) | Push notification, event, and rate limiting SPIs |
-| [UI Customization](docs/ui-customization.md) | Theme and template customization |
-| [Security](docs/security.md) | Security model and mobile app obligations |
-| [Firebase Cloud Messaging Provider](docs/firebase-cloud-messaging-provider.md) | Send real push notifications to your mobile app |
-| [Push Mfa Simulator](docs/push-mfa-simulator.md) | Testing without a real mobile app |
-| [Troubleshooting](docs/troubleshooting.md) | Common issues and solutions |
-| [Load Testing](loadtest/README.md) | Two-node browser+SSE loadtest setup and reproduction commands |
+| Document                                                                       | Description                                                          |
+|--------------------------------------------------------------------------------|----------------------------------------------------------------------|
+| [Setup Guide](docs/setup.md)                                                   | Step-by-step configuration instructions and Keycloak concepts        |
+| [Flow Details](docs/flow-details.md)                                           | Technical details of enrollment, login, SSE, and DPoP authentication |
+| [API Reference](docs/api-reference.md)                                         | REST endpoints for mobile apps                                       |
+| [Configuration](docs/configuration.md)                                         | All configuration options reference                                  |
+| [App Implementation](docs/app-implementation.md)                               | Guide for mobile app developers                                      |
+| [SPI Reference](docs/spi-reference.md)                                         | Push notification, event, and rate limiting SPIs                     |
+| [UI Customization](docs/ui-customization.md)                                   | Theme and template customization                                     |
+| [Security](docs/security.md)                                                   | Security model and mobile app obligations                            |
+| [Firebase Cloud Messaging Provider](docs/firebase-cloud-messaging-provider.md) | Send real push notifications to your mobile app                      |
+| [Push Mfa Simulator](docs/push-mfa-simulator.md)                               | Testing without a real mobile app                                    |
+| [Troubleshooting](docs/troubleshooting.md)                                     | Common issues and solutions                                          |
+| [Load Testing](loadtest/README.md)                                             | Two-node browser+SSE loadtest setup and reproduction commands        |
 
 ## Local Development
 
@@ -128,3 +129,20 @@ Run the following commands locally to ensure code quality:
 - **Formatting**: `mvn spotless:apply` (Ensures consistent code style).
 - **Verification**: `mvn verify` (Runs the full test suite and builds the project).
 - **Build without tests:** `mvn -DskipTests package`
+
+## Contributing
+
+Contributions are welcome! For detailed instructions, please refer to our
+central [Contributing Guide](https://github.com/ba-itsys/.github/blob/main/CONTRIBUTING.md).
+
+In short:
+
+- **Commit Guidelines**: We strictly follow [Conventional Commits](https://www.conventionalcommits.org/) — the commit
+  type (e.g., `feat`, `fix`, `docs`) drives our automated versioning and changelog generation. All commits must be
+  signed off with `git commit -s` (DCO).
+- **Pull Request Process**: Fork the repository, create a feature branch from `main`, and open a Pull Request against
+  `main` (rebased on the latest `main`). Every bug fix or new feature should include corresponding tests.
+- **Release Process**: Releases are automated with [release-please](https://github.com/googleapis/release-please), which
+  parses the conventional commits from the merged history to create version bumps, changelogs, and releases. See
+  the [Release Process documentation](https://github.com/ba-itsys/.github/blob/main/docs/release-process.md) for details
+  on commit types, validation, and the full release flow.

@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.3.7](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v2.3.6...v2.3.7) (2026-09-25)
+
+
+### Dependencies
+
+* **deps-dev:** bump com.nimbusds:nimbus-jose-jwt from 10.9.1 to 10.10 ([2f2bef9](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/2f2bef951d00e7d7b590ca50c219871b01f497ab))
+* **deps:** bump keycloak.version from 26.7.3 to 26.7.4 ([9d1da60](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/9d1da601435e049f10ef9b4932c4cc6227b49eae))
+
+
+### Documentation
+
+* add contributing guidelines to README ([cca07c2](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/cca07c2efdceb88a6640108dcfb2aaf21069cbc0))
+
 ## [2.3.6](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v2.3.5...v2.3.6) (2026-09-21)
 
 

@@ -21,6 +21,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
+import java.util.List;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
 import org.testcontainers.containers.wait.strategy.Wait;
@@ -41,8 +42,23 @@ public final class KeycloakTestContainerSupport {
         return newKeycloakContainer(execFileName, null);
     }
 
+    // Appends extraStartOptions to the default start command.
+    public static GenericContainer<?> newKeycloakContainerWithOptions(
+            String execFileName, List<String> extraStartOptions) {
+        return newKeycloakContainer(execFileName, startCommand(extraStartOptions), null);
+    }
+
     public static GenericContainer<?> newKeycloakContainer(
             String execFileName, Network network, String... networkAliases) {
+        return newKeycloakContainer(execFileName, START_COMMAND, network, networkAliases);
+    }
+
+    private static String startCommand(List<String> extraStartOptions) {
+        return START_COMMAND + " " + String.join(" ", extraStartOptions);
+    }
+
+    private static GenericContainer<?> newKeycloakContainer(
+            String execFileName, String startCommand, Network network, String... networkAliases) {
         try {
             GenericContainer<?> container = new GenericContainer<>(KeycloakContainerImageSupport.image())
                     .withExposedPorts(8080)
@@ -52,7 +68,7 @@ public final class KeycloakTestContainerSupport {
                             MountableFile.forHostPath(REALM_FILE), "/opt/keycloak/data/import/demo-realm.json")
                     .withEnv("KEYCLOAK_ADMIN", "admin")
                     .withEnv("KEYCLOAK_ADMIN_PASSWORD", "admin")
-                    .withCommand(START_COMMAND)
+                    .withCommand(startCommand)
                     .waitingFor(Wait.forHttp("/realms/master").forStatusCode(200))
                     .withStartupTimeout(STARTUP_TIMEOUT);
             if (network != null) {

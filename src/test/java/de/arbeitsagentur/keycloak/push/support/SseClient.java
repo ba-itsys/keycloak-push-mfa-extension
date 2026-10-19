@@ -18,101 +18,152 @@ package de.arbeitsagentur.keycloak.push.support;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.io.BufferedReader;
-import java.io.InputStream;
-import java.io.InputStreamReader;
+import jakarta.ws.rs.client.Client;
+import jakarta.ws.rs.client.ClientBuilder;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+import java.io.IOException;
 import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import org.glassfish.jersey.media.sse.EventInput;
+import org.glassfish.jersey.media.sse.InboundEvent;
 
+// Reads one SSE connection with the Jersey SSE client. Does not reconnect.
 public final class SseClient implements AutoCloseable {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    private final BlockingQueue<String> statuses = new LinkedBlockingQueue<>();
-    private final CompletableFuture<HttpResponse<InputStream>> responseFuture;
-    private final CompletableFuture<Void> readerFuture;
+    // Each open stream blocks its reader thread. The common pool has too few threads for that on small machines.
+    private static final ExecutorService READERS = Executors.newVirtualThreadPerTaskExecutor();
+
+    // A received event. Heartbeats arrive as events with only a comment.
+    public record Event(String name, String data, String comment, Long retry) {
+
+        public boolean isComment() {
+            return name == null && data == null && comment != null;
+        }
+
+        public JsonNode json() throws IOException {
+            return MAPPER.readTree(data);
+        }
+
+        public String status() throws IOException {
+            return json().path("status").asText(null);
+        }
+    }
+
+    // Queued when the stream ends. Compared by identity.
+    private static final Event END = new Event(null, null, null, null);
+
+    private final Client client = ClientBuilder.newClient();
+    private final BlockingQueue<Event> events = new LinkedBlockingQueue<>();
+    private final CompletableFuture<Response> response;
+    private volatile EventInput input;
 
     public SseClient(URI eventsUri) {
-        HttpClient http =
-                HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
-        HttpRequest request = HttpRequest.newBuilder(eventsUri)
-                .header("Accept", "text/event-stream")
-                .GET()
-                .build();
-        this.responseFuture = http.sendAsync(request, HttpResponse.BodyHandlers.ofInputStream());
-        this.readerFuture = responseFuture.thenAcceptAsync(response -> readEvents(response.body()));
+        this.response = CompletableFuture.supplyAsync(
+                () -> client.target(eventsUri)
+                        .request(MediaType.SERVER_SENT_EVENTS_TYPE)
+                        .get(),
+                READERS);
+        response.thenAcceptAsync(this::readEvents, READERS);
     }
 
     public int awaitStatusCode(Duration timeout) throws Exception {
-        return responseFuture.get(timeout.toMillis(), TimeUnit.MILLISECONDS).statusCode();
+        return awaitResponse(timeout).getStatus();
     }
 
+    public String awaitHeader(String name, Duration timeout) throws Exception {
+        return awaitResponse(timeout).getHeaderString(name);
+    }
+
+    // Returns the status of the next "status" event, or null on timeout or end of stream.
     public String awaitStatus(Duration timeout) throws Exception {
-        return statuses.poll(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        long deadline = System.nanoTime() + timeout.toNanos();
+        while (true) {
+            Event event = awaitEvent(Duration.ofNanos(Math.max(0, deadline - System.nanoTime())));
+            if (event == null) {
+                return null;
+            }
+            if ("status".equals(event.name())) {
+                return event.status();
+            }
+        }
     }
 
-    private void readEvents(InputStream stream) {
-        try (InputStream input = stream;
-                BufferedReader reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8))) {
-            String eventName = null;
-            List<String> dataLines = new ArrayList<>();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (line.isEmpty()) {
-                    emitEvent(eventName, dataLines);
-                    eventName = null;
-                    dataLines.clear();
-                    continue;
-                }
-                if (line.startsWith(":")) {
-                    continue;
-                }
-                if (line.startsWith("event:")) {
-                    eventName = line.substring("event:".length()).trim();
-                    continue;
-                }
-                if (line.startsWith("data:")) {
-                    dataLines.add(line.substring("data:".length()).trim());
+    // Returns the next event including heartbeats, or null on timeout or end of stream.
+    public Event awaitEvent(Duration timeout) throws InterruptedException {
+        Event event = events.poll(timeout.toNanos(), TimeUnit.NANOSECONDS);
+        if (event == END) {
+            events.offer(END);
+            return null;
+        }
+        return event;
+    }
+
+    // Waits for the server to close the stream and returns the events received until then.
+    public List<Event> awaitEnd(Duration timeout) throws InterruptedException {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        List<Event> received = new ArrayList<>();
+        while (true) {
+            long remaining = deadline - System.nanoTime();
+            Event event = remaining > 0 ? events.poll(remaining, TimeUnit.NANOSECONDS) : null;
+            if (event == null) {
+                throw new AssertionError("SSE stream did not end within " + timeout + ", received " + received);
+            }
+            if (event == END) {
+                events.offer(END);
+                return received;
+            }
+            received.add(event);
+        }
+    }
+
+    private Response awaitResponse(Duration timeout) throws Exception {
+        return response.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+    }
+
+    private void readEvents(Response streamResponse) {
+        try {
+            if (streamResponse.getStatus() != 200) {
+                return;
+            }
+            try (EventInput eventInput = streamResponse.readEntity(EventInput.class)) {
+                input = eventInput;
+                InboundEvent event;
+                while ((event = eventInput.read()) != null) {
+                    events.offer(toEvent(event));
                 }
             }
-            emitEvent(eventName, dataLines);
-        } catch (Exception ignored) {
-            // Closing the client terminates the stream and ends the reader.
+        } catch (RuntimeException ignored) {
+            // close() ends a blocked read with an exception
+        } finally {
+            events.offer(END);
         }
     }
 
-    private void emitEvent(String eventName, List<String> dataLines) throws Exception {
-        if (!"status".equals(eventName) || dataLines.isEmpty()) {
-            return;
-        }
-        JsonNode payload = MAPPER.readTree(String.join("\n", dataLines));
-        String status = payload.path("status").asText(null);
-        if (status != null) {
-            statuses.offer(status);
-        }
+    private static Event toEvent(InboundEvent event) {
+        return new Event(
+                event.getName(),
+                event.isEmpty() ? null : event.readData(String.class),
+                event.getComment(),
+                event.isReconnectDelaySet() ? event.getReconnectDelay() : null);
     }
 
     @Override
     public void close() {
-        responseFuture
-                .thenAccept(response -> {
-                    try {
-                        response.body().close();
-                    } catch (Exception ignored) {
-                        // no-op
-                    }
-                })
-                .cancel(true);
-        readerFuture.cancel(true);
+        EventInput eventInput = input;
+        if (eventInput != null) {
+            eventInput.close();
+        }
+        client.close();
     }
 }

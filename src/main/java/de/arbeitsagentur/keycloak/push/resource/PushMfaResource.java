@@ -42,7 +42,6 @@ import de.arbeitsagentur.keycloak.push.util.PushMfaKeyUtil;
 import de.arbeitsagentur.keycloak.push.util.PushMfaStringUtil;
 import de.arbeitsagentur.keycloak.push.util.PushSignatureVerifier;
 import de.arbeitsagentur.keycloak.push.util.TokenLogHelper;
-import io.smallrye.common.annotation.RunOnVirtualThread;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.ClientErrorException;
@@ -56,14 +55,15 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.ServiceUnavailableException;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.core.StreamingOutput;
 import jakarta.ws.rs.core.UriInfo;
+import jakarta.ws.rs.sse.Sse;
+import jakarta.ws.rs.sse.SseEventSink;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -73,6 +73,7 @@ import java.util.concurrent.TimeUnit;
 import org.jboss.logging.Logger;
 import org.keycloak.credential.CredentialModel;
 import org.keycloak.crypto.KeyWrapper;
+import org.keycloak.http.HttpResponse;
 import org.keycloak.jose.jws.Algorithm;
 import org.keycloak.jose.jws.JWSInput;
 import org.keycloak.models.*;
@@ -95,7 +96,6 @@ public class PushMfaResource {
     private final PushMfaConfig config;
     private final PushChallengeStore challengeStore;
     private final DpopAuthenticator dpopAuth;
-    private final SseEventEmitter sseEmitter;
 
     public PushMfaResource(KeycloakSession session) {
         this.session = session;
@@ -106,21 +106,27 @@ public class PushMfaResource {
         this.config = configProvider.getConfig();
         this.challengeStore = new PushChallengeStore(session);
         this.dpopAuth = new DpopAuthenticator(session, config.dpop(), config.input());
-        this.sseEmitter = new SseEventEmitter();
     }
 
     @GET
     @Path("enroll/challenges/{challengeId}/events")
     @Produces(MediaType.SERVER_SENT_EVENTS)
     @Transactional(Transactional.TxType.NOT_SUPPORTED)
-    @RunOnVirtualThread
-    public Response streamEnrollmentEvents(
-            @PathParam("challengeId") String challengeId, @QueryParam("secret") String secret) {
+    public void streamEnrollmentEvents(
+            @PathParam("challengeId") String challengeId,
+            @QueryParam("secret") String secret,
+            @Context SseEventSink sink,
+            @Context Sse sse) {
         String cid = PushMfaInputValidator.requireUuid(challengeId, "challengeId");
         String sec =
                 PushMfaInputValidator.optionalBoundedText(secret, config.sse().maxSecretLength(), "secret");
         LOG.debugf("Received enrollment SSE stream request for challenge %s", cid);
-        return buildEnrollmentChallengeStreamResponse(cid, sec);
+        openChallengeStream(
+                cid,
+                sec,
+                new SseEventEmitter(sink, sse),
+                SseEventEmitter.EventType.ENROLLMENT,
+                registry -> registry.readEnrollmentChallenge(cid, sec));
     }
 
     @GET
@@ -498,73 +504,89 @@ public class PushMfaResource {
     @Path("login/challenges/{cid}/events")
     @Produces(MediaType.SERVER_SENT_EVENTS)
     @Transactional(Transactional.TxType.NOT_SUPPORTED)
-    @RunOnVirtualThread
-    public Response streamLoginChallengeEvents(
-            @PathParam("cid") String challengeId, @QueryParam("secret") String secret) {
+    public void streamLoginChallengeEvents(
+            @PathParam("cid") String challengeId,
+            @QueryParam("secret") String secret,
+            @Context SseEventSink sink,
+            @Context Sse sse) {
         String cid = PushMfaInputValidator.requireUuid(challengeId, "cid");
         String sec =
                 PushMfaInputValidator.optionalBoundedText(secret, config.sse().maxSecretLength(), "secret");
         LOG.debugf("Received login SSE stream request for challenge %s", cid);
-        return buildLoginChallengeStreamResponse(cid, sec);
-    }
-
-    private Response buildEnrollmentChallengeStreamResponse(String challengeId, String secret) {
-        return buildChallengeStreamResponse(
-                challengeId,
-                secret,
-                SseEventEmitter.EventType.ENROLLMENT,
-                registry -> registry.readEnrollmentChallenge(challengeId, secret));
-    }
-
-    private Response buildLoginChallengeStreamResponse(String challengeId, String secret) {
-        return buildChallengeStreamResponse(
-                challengeId,
-                secret,
+        openChallengeStream(
+                cid,
+                sec,
+                new SseEventEmitter(sink, sse),
                 SseEventEmitter.EventType.LOGIN,
-                registry -> registry.readAuthenticationChallenge(challengeId, secret));
+                registry -> registry.readAuthenticationChallenge(cid, sec));
     }
 
-    private Response buildChallengeStreamResponse(
-            String challengeId, String secret, SseEventEmitter.EventType type, ChallengeStreamReader challengeReader) {
+    // Rejections are answered on the request thread. Accepted streams poll on their own virtual thread.
+    // We do not use @RunOnVirtualThread because Quarkus in Keycloak 26.8 detects Java 17 from the Keycloak classes
+    // and rejects the annotation at build time.
+    private void openChallengeStream(
+            String challengeId,
+            String secret,
+            SseEventEmitter emitter,
+            SseEventEmitter.EventType type,
+            ChallengeStreamReader challengeReader) {
         PushMfaSseRegistry registry = getSseRegistry();
         if (StringUtil.isBlank(secret)) {
             LOG.warnf("%s SSE rejected for %s due to missing secret", type, challengeId);
-            return singleStatusStreamResponse("INVALID", type);
+            sendSingleStatus(emitter, "INVALID");
+            return;
         }
 
         PushMfaSseRegistry.ChallengeReadResult readResult =
                 readChallengeSafely(registry, challengeId, type, challengeReader);
         if (readResult == null) {
-            return Response.status(Response.Status.SERVICE_UNAVAILABLE).build();
+            throw new ServiceUnavailableException();
         }
         if (readResult.failureStatus() != null) {
-            return singleStatusStreamResponse(readResult.failureStatus(), type);
+            sendSingleStatus(emitter, readResult.failureStatus());
+            return;
         }
 
         PushChallenge challenge = readResult.challenge();
         if (!registry.tryAcquireConnection()) {
             LOG.warnf("Rejecting %s SSE for %s due to maxConnections=%d", type, challengeId, registry.maxConnections());
-            return retryStatusStreamResponse(
-                    "TOO_MANY_CONNECTIONS", challenge, type, config.sse().reconnectDelayMillis());
+            sendSingleRetryStatus(
+                    emitter,
+                    "TOO_MANY_CONNECTIONS",
+                    challenge,
+                    type,
+                    config.sse().reconnectDelayMillis());
+            return;
         }
 
-        StreamingOutput stream = output -> {
+        applySseResponseHeaders();
+        Runnable stream = () -> {
             try {
-                streamChallengeEvents(registry, challengeId, challenge, output, type, challengeReader);
+                streamChallengeEvents(registry, challengeId, challenge, emitter, type, challengeReader);
             } catch (RuntimeException ex) {
                 LOG.warnf(ex, "SSE stream for %s failed while reading challenge state", challengeId);
             } finally {
                 registry.releaseConnection();
+                emitter.close();
             }
         };
-        return sseResponse(stream);
+        boolean started = false;
+        try {
+            Thread.ofVirtual().name("push-mfa-sse-" + challengeId).start(stream);
+            started = true;
+        } finally {
+            if (!started) {
+                registry.releaseConnection();
+                emitter.close();
+            }
+        }
     }
 
     private void streamChallengeEvents(
             PushMfaSseRegistry registry,
             String challengeId,
             PushChallenge initialChallenge,
-            OutputStream output,
+            SseEventEmitter emitter,
             SseEventEmitter.EventType type,
             ChallengeStreamReader challengeReader) {
         PushChallengeStatus lastStatus = null;
@@ -573,9 +595,13 @@ public class PushMfaResource {
         PushChallenge currentChallenge = initialChallenge;
 
         while (true) {
+            if (emitter.isClosed()) {
+                LOG.debugf("SSE stream for %s closed by client", challengeId);
+                return;
+            }
             long now = System.currentTimeMillis();
             if (now - connectedAtMillis >= registry.maxConnectionLifetimeMillis()) {
-                sendReconnectState(output, currentChallenge, lastStatus, type, challengeId);
+                sendReconnectState(emitter, currentChallenge, lastStatus, type, challengeId);
                 return;
             }
 
@@ -590,7 +616,7 @@ public class PushMfaResource {
                     failureStatus = PushChallengeStatus.EXPIRED.name();
                 }
                 try {
-                    sseEmitter.writeStatusEvent(output, failureStatus, currentChallenge, type);
+                    emitter.sendStatusEvent(failureStatus, currentChallenge, type);
                 } catch (IOException ioException) {
                     LOG.debugf(ioException, "SSE stream for %s closed while sending terminal status", challengeId);
                 }
@@ -601,7 +627,7 @@ public class PushMfaResource {
             PushChallengeStatus currentStatus = currentChallenge.getStatus();
             if (lastStatus != currentStatus) {
                 try {
-                    sseEmitter.writeStatusEvent(output, currentStatus.name(), currentChallenge, type);
+                    emitter.sendStatusEvent(currentStatus.name(), currentChallenge, type);
                 } catch (IOException ioException) {
                     LOG.debugf(ioException, "SSE stream for %s closed while sending status", challengeId);
                     return;
@@ -615,7 +641,7 @@ public class PushMfaResource {
                 return;
             } else if (now - lastActivityMillis >= registry.heartbeatIntervalMillis()) {
                 try {
-                    sseEmitter.writeHeartbeat(output);
+                    emitter.sendHeartbeat();
                 } catch (IOException ioException) {
                     LOG.debugf(ioException, "SSE stream for %s closed while sending heartbeat", challengeId);
                     return;
@@ -633,7 +659,7 @@ public class PushMfaResource {
     }
 
     private void sendReconnectState(
-            OutputStream output,
+            SseEventEmitter emitter,
             PushChallenge challenge,
             PushChallengeStatus lastStatus,
             SseEventEmitter.EventType type,
@@ -644,8 +670,7 @@ public class PushMfaResource {
         String status =
                 lastStatus != null ? lastStatus.name() : challenge.getStatus().name();
         try {
-            sseEmitter.writeRetryStatusEvent(
-                    output, status, challenge, type, config.sse().reconnectDelayMillis());
+            emitter.sendRetryStatusEvent(status, challenge, type, config.sse().reconnectDelayMillis());
         } catch (IOException ioException) {
             LOG.debugf(ioException, "SSE stream for %s closed while sending reconnect state", challengeId);
         }
@@ -671,37 +696,39 @@ public class PushMfaResource {
         }
     }
 
-    private Response singleStatusStreamResponse(String status, SseEventEmitter.EventType type) {
-        StreamingOutput stream = output -> {
-            try {
-                sseEmitter.writeStatusEvent(output, status, type);
-            } catch (IOException ioException) {
-                LOG.debugf(ioException, "One-shot SSE response for status %s closed before write completed", status);
-            }
-        };
-        return sseResponse(stream);
+    private void sendSingleStatus(SseEventEmitter emitter, String status) {
+        applySseResponseHeaders();
+        try {
+            emitter.sendStatusEvent(status);
+        } catch (IOException ioException) {
+            LOG.debugf(ioException, "One-shot SSE response for status %s closed before write completed", status);
+        } finally {
+            emitter.close();
+        }
     }
 
-    private Response retryStatusStreamResponse(
-            String status, PushChallenge challenge, SseEventEmitter.EventType type, long retryAfterMillis) {
-        StreamingOutput stream = output -> {
-            try {
-                sseEmitter.writeRetryStatusEvent(output, status, challenge, type, retryAfterMillis);
-            } catch (IOException ioException) {
-                LOG.debugf(
-                        ioException, "One-shot SSE retry response for status %s closed before write completed", status);
-            }
-        };
-        return sseResponse(stream);
+    private void sendSingleRetryStatus(
+            SseEventEmitter emitter,
+            String status,
+            PushChallenge challenge,
+            SseEventEmitter.EventType type,
+            long retryAfterMillis) {
+        applySseResponseHeaders();
+        try {
+            emitter.sendRetryStatusEvent(status, challenge, type, retryAfterMillis);
+        } catch (IOException ioException) {
+            LOG.debugf(ioException, "One-shot SSE retry response for status %s closed before write completed", status);
+        } finally {
+            emitter.close();
+        }
     }
 
-    private Response sseResponse(StreamingOutput stream) {
-        return Response.ok(stream)
-                .type(MediaType.SERVER_SENT_EVENTS)
-                .header(HttpHeaders.CACHE_CONTROL, "no-store")
-                .header("Pragma", "no-cache")
-                .header("X-Accel-Buffering", "no")
-                .build();
+    // Call this before the first send because the first event writes the response headers.
+    private void applySseResponseHeaders() {
+        HttpResponse response = session.getContext().getHttpResponse();
+        response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
+        response.setHeader("Pragma", "no-cache");
+        response.setHeader("X-Accel-Buffering", "no");
     }
 
     @FunctionalInterface

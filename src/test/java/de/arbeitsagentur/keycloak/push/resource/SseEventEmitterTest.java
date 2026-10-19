@@ -16,75 +16,167 @@
 
 package de.arbeitsagentur.keycloak.push.resource;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.RETURNS_SELF;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallenge;
 import de.arbeitsagentur.keycloak.push.challenge.PushChallengeStatus;
-import java.io.ByteArrayOutputStream;
-import java.nio.charset.StandardCharsets;
+import jakarta.ws.rs.sse.OutboundSseEvent;
+import jakarta.ws.rs.sse.Sse;
+import jakarta.ws.rs.sse.SseEventSink;
+import java.io.IOException;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeoutException;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.keycloak.util.JsonSerialization;
+import org.mockito.ArgumentCaptor;
 
 class SseEventEmitterTest {
 
-    @Test
-    void statusEventOmitsRetryWhenNotRequested() throws Exception {
-        SseEventEmitter emitter = new SseEventEmitter();
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
+    private final SseEventSink sink = mock(SseEventSink.class);
+    private final OutboundSseEvent.Builder builder = mock(OutboundSseEvent.Builder.class, RETURNS_SELF);
+    private final OutboundSseEvent event = mock(OutboundSseEvent.class);
+    private SseEventEmitter emitter;
 
-        emitter.writeStatusEvent(
-                output, "PENDING", challenge(PushChallengeStatus.PENDING), SseEventEmitter.EventType.LOGIN);
-
-        String event = output.toString(StandardCharsets.UTF_8);
-        assertTrue(event.contains("event: status"));
-        assertTrue(event.contains("\"status\":\"PENDING\""));
-        assertFalse(event.contains("retry:"));
+    @BeforeEach
+    void setUp() {
+        Sse sse = mock(Sse.class);
+        when(sse.newEventBuilder()).thenReturn(builder);
+        when(builder.build()).thenReturn(event);
+        when(sink.send(event)).thenAnswer(invocation -> CompletableFuture.completedFuture(null));
+        emitter = new SseEventEmitter(sink, sse, Duration.ofMillis(50));
     }
 
     @Test
-    void retryStatusEventIncludesReconnectDelay() throws Exception {
-        SseEventEmitter emitter = new SseEventEmitter();
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
+    void loginStatusEventCarriesChallengeDetailsWithoutRetry() throws Exception {
+        emitter.sendStatusEvent("PENDING", challenge(), SseEventEmitter.EventType.LOGIN);
 
-        emitter.writeRetryStatusEvent(
-                output,
-                "TOO_MANY_CONNECTIONS",
-                challenge(PushChallengeStatus.PENDING),
-                SseEventEmitter.EventType.LOGIN,
-                1500L);
-
-        String event = output.toString(StandardCharsets.UTF_8);
-        assertTrue(event.contains("retry: 1500"));
-        assertTrue(event.contains("\"retryAfterMillis\":1500"));
+        verify(builder).name("status");
+        verify(builder, never()).reconnectDelay(anyLong());
+        verify(sink).send(event);
+        JsonNode payload = sentPayload();
+        assertEquals("PENDING", payload.get("status").asText());
+        assertEquals("challenge-1", payload.get("challengeId").asText());
+        assertEquals("client-1", payload.get("clientId").asText());
+        assertTrue(payload.hasNonNull("expiresAt"));
+        assertFalse(payload.has("retryAfterMillis"));
     }
 
     @Test
-    void retryStatusEventCanCarryPendingStateForReconnect() throws Exception {
-        SseEventEmitter emitter = new SseEventEmitter();
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
+    void enrollmentStatusEventOmitsClientId() throws Exception {
+        emitter.sendStatusEvent("APPROVED", challenge(), SseEventEmitter.EventType.ENROLLMENT);
 
-        emitter.writeRetryStatusEvent(
-                output, "PENDING", challenge(PushChallengeStatus.PENDING), SseEventEmitter.EventType.LOGIN, 3000L);
-
-        String event = output.toString(StandardCharsets.UTF_8);
-        assertTrue(event.contains("retry: 3000"));
-        assertTrue(event.contains("\"status\":\"PENDING\""));
-        assertTrue(event.contains("\"retryAfterMillis\":3000"));
+        assertFalse(sentPayload().has("clientId"));
     }
 
     @Test
-    void heartbeatUsesSseCommentFormat() throws Exception {
-        SseEventEmitter emitter = new SseEventEmitter();
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
+    void statusOnlyEventCarriesOnlyTheStatus() throws Exception {
+        emitter.sendStatusEvent("INVALID");
 
-        emitter.writeHeartbeat(output);
-
-        assertTrue(output.toString(StandardCharsets.UTF_8).contains(": keepalive"));
+        JsonNode payload = sentPayload();
+        assertEquals(1, payload.size());
+        assertEquals("INVALID", payload.get("status").asText());
     }
 
-    private PushChallenge challenge(PushChallengeStatus status) {
+    @Test
+    void retryStatusEventSetsReconnectDelayAndPayloadHint() throws Exception {
+        emitter.sendRetryStatusEvent("TOO_MANY_CONNECTIONS", challenge(), SseEventEmitter.EventType.LOGIN, 1500L);
+
+        verify(builder).reconnectDelay(1500L);
+        JsonNode payload = sentPayload();
+        assertEquals("TOO_MANY_CONNECTIONS", payload.get("status").asText());
+        assertEquals(1500L, payload.get("retryAfterMillis").asLong());
+    }
+
+    @Test
+    void heartbeatIsCommentOnly() throws Exception {
+        emitter.sendHeartbeat();
+
+        verify(builder).comment("keepalive");
+        verify(builder, never()).name(anyString());
+        verify(builder, never()).data(any(Class.class), any());
+        verify(sink).send(event);
+    }
+
+    @Test
+    void sendingToClosedSinkFailsWithoutSending() {
+        when(sink.isClosed()).thenReturn(true);
+
+        assertThrows(IOException.class, emitter::sendHeartbeat);
+        verify(sink, never()).send(any());
+    }
+
+    @Test
+    void failedSendIsReportedAsIoExceptionWithCause() {
+        IllegalStateException failure = new IllegalStateException("connection reset");
+        when(sink.send(event)).thenAnswer(invocation -> CompletableFuture.failedFuture(failure));
+
+        IOException thrown = assertThrows(IOException.class, emitter::sendHeartbeat);
+
+        assertSame(failure, thrown.getCause());
+    }
+
+    @Test
+    void sendRejectedBySinkIsReportedAsIoException() {
+        IllegalStateException rejected = new IllegalStateException("closed");
+        when(sink.send(event)).thenThrow(rejected);
+
+        IOException thrown = assertThrows(IOException.class, emitter::sendHeartbeat);
+
+        assertSame(rejected, thrown.getCause());
+    }
+
+    @Test
+    void stalledSendTimesOut() {
+        when(sink.send(event)).thenAnswer(invocation -> new CompletableFuture<>());
+
+        IOException thrown = assertThrows(IOException.class, emitter::sendHeartbeat);
+
+        assertInstanceOf(TimeoutException.class, thrown.getCause());
+    }
+
+    @Test
+    void isClosedFollowsSink() {
+        assertFalse(emitter.isClosed());
+        when(sink.isClosed()).thenReturn(true);
+        assertTrue(emitter.isClosed());
+    }
+
+    @Test
+    void closeClosesSinkOnce() {
+        emitter.close();
+        emitter.close();
+
+        verify(sink, times(1)).close();
+        assertTrue(emitter.isClosed());
+    }
+
+    private JsonNode sentPayload() throws IOException {
+        ArgumentCaptor<Object> data = ArgumentCaptor.forClass(Object.class);
+        verify(builder).data(eq(String.class), data.capture());
+        return JsonSerialization.mapper.readTree((String) data.getValue());
+    }
+
+    private static PushChallenge challenge() {
         Instant now = Instant.now();
         return new PushChallenge(
                 "challenge-1",
@@ -97,9 +189,9 @@ class SseEventEmitterTest {
                 "root-session-1",
                 now.plusSeconds(60),
                 PushChallenge.Type.AUTHENTICATION,
-                status,
+                PushChallengeStatus.PENDING,
                 now,
-                status == PushChallengeStatus.PENDING ? null : now,
+                null,
                 PushChallenge.UserVerificationMode.NONE,
                 null,
                 List.of());

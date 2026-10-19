@@ -16,7 +16,7 @@ services:
       context: ..
       dockerfile: Dockerfile.keycloak-java25
       args:
-        KEYCLOAK_VERSION: ${KEYCLOAK_VERSION:-26.7.0}
+        KEYCLOAK_VERSION: ${KEYCLOAK_VERSION:-26.8.1}
     command:
       - start
       - --http-enabled=true
@@ -55,7 +55,7 @@ services:
       context: ..
       dockerfile: Dockerfile.keycloak-java25
       args:
-        KEYCLOAK_VERSION: ${KEYCLOAK_VERSION:-26.7.0}
+        KEYCLOAK_VERSION: ${KEYCLOAK_VERSION:-26.8.1}
     command:
       - start
       - --http-enabled=true

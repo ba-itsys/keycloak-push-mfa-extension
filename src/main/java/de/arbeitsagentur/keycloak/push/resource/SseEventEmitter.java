@@ -17,14 +17,24 @@
 package de.arbeitsagentur.keycloak.push.resource;
 
 import de.arbeitsagentur.keycloak.push.challenge.PushChallenge;
+import jakarta.ws.rs.sse.OutboundSseEvent;
+import jakarta.ws.rs.sse.Sse;
+import jakarta.ws.rs.sse.SseEventSink;
 import java.io.IOException;
-import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.keycloak.util.JsonSerialization;
 
-/** Helper for writing SSE events for enrollment and login challenges. */
+/**
+ * Writes challenge status events to one SSE connection. Sends block until the event is written and throw
+ * {@link IOException} if the connection is closed, fails or stalls.
+ */
 public final class SseEventEmitter {
 
     public enum EventType {
@@ -32,32 +42,81 @@ public final class SseEventEmitter {
         ENROLLMENT
     }
 
-    public void writeStatusEvent(OutputStream output, String status, EventType type) throws IOException {
-        writeStatusEvent(output, status, type, payloadForStatus(status));
+    // Limits how long a send waits for a client that stopped reading.
+    private static final Duration DEFAULT_SEND_TIMEOUT = Duration.ofSeconds(30);
+
+    private final SseEventSink sink;
+    private final Sse sse;
+    private final Duration sendTimeout;
+    private final AtomicBoolean closed = new AtomicBoolean();
+
+    public SseEventEmitter(SseEventSink sink, Sse sse) {
+        this(sink, sse, DEFAULT_SEND_TIMEOUT);
     }
 
-    public void writeStatusEvent(OutputStream output, String status, PushChallenge challenge, EventType type)
-            throws IOException {
-        writeStatusEvent(output, status, type, payloadForStatus(status, challenge, type));
+    SseEventEmitter(SseEventSink sink, Sse sse, Duration sendTimeout) {
+        this.sink = Objects.requireNonNull(sink, "sink");
+        this.sse = Objects.requireNonNull(sse, "sse");
+        this.sendTimeout = Objects.requireNonNull(sendTimeout, "sendTimeout");
     }
 
-    public void writeRetryStatusEvent(
-            OutputStream output, String status, PushChallenge challenge, EventType type, long retryAfterMillis)
+    public void sendStatusEvent(String status) throws IOException {
+        sendStatusEvent(payloadForStatus(status), null);
+    }
+
+    public void sendStatusEvent(String status, PushChallenge challenge, EventType type) throws IOException {
+        sendStatusEvent(payloadForStatus(status, challenge, type), null);
+    }
+
+    public void sendRetryStatusEvent(String status, PushChallenge challenge, EventType type, long retryAfterMillis)
             throws IOException {
         Map<String, Object> payload = payloadForStatus(status, challenge, type);
         payload.put("retryAfterMillis", retryAfterMillis);
-        write(output, "retry: " + retryAfterMillis + '\n');
-        writeStatusEvent(output, status, type, payload);
+        sendStatusEvent(payload, retryAfterMillis);
     }
 
-    public void writeHeartbeat(OutputStream output) throws IOException {
-        write(output, ": keepalive\n\n");
+    public void sendHeartbeat() throws IOException {
+        send(sse.newEventBuilder().comment("keepalive").build());
     }
 
-    private void writeStatusEvent(OutputStream output, String status, EventType type, Map<String, Object> payload)
-            throws IOException {
-        write(output, "event: status\n");
-        write(output, "data: " + JsonSerialization.writeValueAsString(payload) + "\n\n");
+    // True once the client disconnected or close() was called.
+    public boolean isClosed() {
+        return closed.get() || sink.isClosed();
+    }
+
+    // Closes the connection. Further calls do nothing.
+    public void close() {
+        if (closed.compareAndSet(false, true)) {
+            sink.close();
+        }
+    }
+
+    private void sendStatusEvent(Map<String, Object> payload, Long retryAfterMillis) throws IOException {
+        OutboundSseEvent.Builder builder =
+                sse.newEventBuilder().name("status").data(String.class, JsonSerialization.writeValueAsString(payload));
+        if (retryAfterMillis != null) {
+            builder.reconnectDelay(retryAfterMillis);
+        }
+        send(builder.build());
+    }
+
+    private void send(OutboundSseEvent event) throws IOException {
+        if (sink.isClosed()) {
+            throw new IOException("SSE connection is closed");
+        }
+        try {
+            sink.send(event).toCompletableFuture().get(sendTimeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (ExecutionException ex) {
+            throw new IOException("Unable to send SSE event", ex.getCause());
+        } catch (TimeoutException ex) {
+            throw new IOException("Timed out after " + sendTimeout + " sending SSE event", ex);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while sending SSE event", ex);
+        } catch (IllegalStateException ex) {
+            // The sink throws this if the connection closed after the isClosed() check.
+            throw new IOException("SSE connection is closed", ex);
+        }
     }
 
     private Map<String, Object> payloadForStatus(String status) {
@@ -74,10 +133,5 @@ public final class SseEventEmitter {
             payload.put("clientId", challenge.getClientId());
         }
         return payload;
-    }
-
-    private void write(OutputStream output, String event) throws IOException {
-        output.write(event.getBytes(StandardCharsets.UTF_8));
-        output.flush();
     }
 }

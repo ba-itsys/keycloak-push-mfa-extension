@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.0](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v2.3.7...v2.4.0) (2026-10-19)
+
+
+### Features
+
+* update to Keycloak 26.8.1 ([bb08551](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/bb085514300ec91eda1754ff7ce449688317d35c))
+
 ## [2.3.7](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v2.3.6...v2.3.7) (2026-09-25)
 
 

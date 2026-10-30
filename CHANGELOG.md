@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.4.1](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v2.4.0...v2.4.1) (2026-10-30)
+
+
+### Dependencies
+
+* **deps-dev:** Bump jersey.version from 4.0.2 to 4.0.3 ([63c0d45](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/63c0d450bd96d98c66cde6d36b049961e225ac1a))
+* **deps-dev:** bump org.apache.maven.plugins:maven-failsafe-plugin ([d7fc185](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/d7fc185dee6078dbbedbea61eba8fd86fbc5c415))
+* **deps-dev:** bump org.apache.maven.plugins:maven-surefire-plugin ([95f0470](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/95f047072310244d4f18e73d4824278249c748e1))
+* **deps-dev:** bump org.jacoco:jacoco-maven-plugin ([28cf578](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/28cf578bdeb73fe8b84dbec3baeaa5130d476b8f))
+* **deps:** bump com.fasterxml.jackson.core:jackson-databind ([ce80b73](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/ce80b7338194dfdb6d3a0151453d7abec0f57bec))
+
 ## [2.4.0](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v2.3.7...v2.4.0) (2026-10-19)
 
 

@@ -16,8 +16,16 @@ updates:
 
   - package-ecosystem: "npm"
     directory: "/mock/mobile"
+    open-pull-requests-limit: 10
     schedule:
       interval: "weekly"
+    groups:
+      body-parser:
+        patterns: [ "body-parser", "@types/body-parser" ]
+      express:
+        patterns: [ "express", "@types/express" ]
+      uuid:
+        patterns: [ "uuid", "@types/uuid" ]
 
   - package-ecosystem: "github-actions"
     directory: "/"

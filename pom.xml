@@ -33,7 +33,7 @@
   </scm>
 
   <properties>
-    <keycloak.version>26.8.1</keycloak.version>
+    <keycloak.version>26.8.2</keycloak.version>
     <jacoco.version>0.8.16</jacoco.version>
     <jersey.version>4.0.3</jersey.version>
     <docker.api.version>1.44</docker.api.version>

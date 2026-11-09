@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.4.2](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v2.4.1...v2.4.2) (2026-11-09)
+
+
+### Dependencies
+
+* **deps-dev:** Bump com.diffplug.spotless:spotless-maven-plugin ([6b25f73](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/6b25f7370ca0d1b56fec029a33bb7a4cbe5fae09))
+* **deps-dev:** Bump org.jsoup:jsoup from 1.23.2 to 1.24.1 ([c779afe](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/c779afeccfe8b38e97cf4801c2291eb72d132556))
+* **deps:** Bump keycloak.version from 26.8.1 to 26.8.2 ([d3844e4](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/d3844e4f1cb8fb5db13eccb0d4cbe51514ba37b0))
+
 ## [2.4.1](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v2.4.0...v2.4.1) (2026-11-02)
 
 

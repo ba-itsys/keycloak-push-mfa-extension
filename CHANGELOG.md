@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.3](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v2.4.2...v2.4.3) (2026-11-16)
+
+
+### Dependencies
+
+* **deps:** Bump com.fasterxml.jackson.core:jackson-databind ([d69fe35](https://github.com/ba-itsys/keycloak-push-mfa-extension/commit/d69fe355dfbd0fe39502bc49a4b15969af305b2d))
+
 ## [2.4.2](https://github.com/ba-itsys/keycloak-push-mfa-extension/compare/v2.4.1...v2.4.2) (2026-11-09)
 
 
